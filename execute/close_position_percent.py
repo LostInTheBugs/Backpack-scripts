@@ -28,10 +28,10 @@ def close_position_percent(public_key: str, secret_key: str, symbol: str, percen
         if net_qty == 0:
             raise ValueError(f"No open position found for symbol '{symbol}'.")
 
-        side = "SELL" if net_qty > 0 else "BUY"
+        side = "Ask" if net_qty > 0 else "Bid"
         qty_to_close = abs(net_qty) * (percent / 100)
 
-        print(f"Submitting MARKET {side} order for {qty_to_close:.6f} {symbol} ({percent:.0f}% of position)")
+        print(f"⏳ Submitting MARKET {side} order for {qty_to_close:.6f} {symbol} ({percent:.0f}% of position)")
 
         account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
         response = account.execute_order(
