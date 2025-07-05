@@ -10,7 +10,7 @@ def get_borrow_lend_positions(public_key: str, secret_key: str):
     positions = account.get_borrow_lend_positions()
 
     if not isinstance(positions, list):
-        raise ValueError(f"Erreur lors de la récupération des positions : {positions}")
+        raise ValueError(f"Error when retrieving positions: {positions}")
     
     return positions
 
@@ -24,7 +24,7 @@ def display_borrow_lend_positions(positions: list):
         net_qty = float(detail.get("netQuantity", "0"))
 
         if net_qty == 0:
-            continue  # Ne pas afficher les positions nulles
+            continue 
 
         pos_type = "LEND" if net_qty > 0 else "BORROW"
 

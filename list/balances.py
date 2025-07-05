@@ -10,7 +10,7 @@ def get_account_balances(public_key: str, secret_key: str):
     balances = account.get_balances()
 
     if not isinstance(balances, dict):
-        raise ValueError(f"Erreur lors de la récupération des soldes : {balances}")
+        raise ValueError(f"Error retrieving balances : {balances}")
     
     return balances
 
