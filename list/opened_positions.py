@@ -14,7 +14,7 @@ def get_open_positions(public_key: str, secret_key: str):
     positions = account.get_open_positions()
 
     if not isinstance(positions, list):
-        raise ValueError(f"❌ Failed to retrieve open positions: {positions}")
+        raise ValueError(f"Failed to retrieve open positions: {positions}")
     
     return positions
 

@@ -1,4 +1,5 @@
 from bpx.account import Account
+from tabulate import tabulate
 import os
 
 public_key = os.environ.get("bpx_bot_public_key")
@@ -17,15 +18,27 @@ def display_collateral(collateral_list: list):
     if not collateral_list:
         print("No collateral positions found")
         return
-
-    print("[Collateral used]")
+    headers = [
+        "Symbol",
+        "lendQuantity",
+        "collateralValue",
+    ]
+    table = []
+    
     for detail in collateral_list:
         symbol = detail.get("symbol", "UNKNOWN")
         lend_qty = float(detail.get("lendQuantity", "0"))
         collateral_val = float(detail.get("collateralValue", "0"))
 
         if lend_qty > 0:
-            print(f" - {symbol}: lendQuantity={lend_qty:.6f}, collateralValue=${collateral_val:.2f}")
+            table.append([
+                symbol,
+                lend_qty,
+                collateral_val,
+        ])
+            
+    print("[Collateral used]")       
+    print(tabulate(table, headers=headers, tablefmt="grid"))       
 
 def main():
     try:
