@@ -62,7 +62,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str):
     side = "Bid" if direction.lower() == "long" else "Ask"
     order_type = "Market"
 
-    print(f"⏳ Submitting {order_type} {side} order on {symbol} using {usdc_amount} USDC ≈ {quantity_str} units")
+    print(f"Submitting {order_type} {side} order on {symbol} using {usdc_amount} USDC ≈ {quantity_str} units")
 
     response = account.execute_order(
         symbol=symbol,

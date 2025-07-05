@@ -1,5 +1,6 @@
 from bpx.account import Account, OrderTypeEnum
 from bpx.public import Public
+from tabulate import tabulate  # <- ajouté
 import sys
 import subprocess
 import os
@@ -27,6 +28,10 @@ def close_position_percent(public_key: str, secret_key: str, symbol: str, percen
 
     account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
     public = Public()
+
+    headers = ["Symbol", "Side", "Order type", "Quantity Executed/Ordered", "Amount Executed/Ordered", "Status"]
+    table = []
+
     markets = public.get_markets()
     market_info = next((m for m in markets if m.get("symbol") == symbol), None)
     if not market_info:
@@ -57,7 +62,25 @@ def close_position_percent(public_key: str, secret_key: str, symbol: str, percen
             reduce_only=True
         )
 
-        print("Order response:", response)
+        # récupération des infos pour affichage
+        executed_quantity = response.get("executedQuantity", "N/A")
+        quantity_ordered = response.get("quantity", f"{qty_to_close:.{step_size_decimals}f}")
+        executed_quote_qty = response.get("executedQuoteQuantity", "N/A")
+        quote_quantity = response.get("quoteQuantity", "N/A")
+        status = response.get("status", "N/A")
+        order_type = response.get("orderType", "Market")
+
+        table.append([
+            symbol,
+            side,
+            order_type,
+            f"{executed_quantity} / {quantity_ordered}",
+            f"{executed_quote_qty} / {quote_quantity}",
+            status,
+        ])
+
+        print("Order response:")
+        print(tabulate(table, headers=headers, tablefmt="grid"))
         return
 
     raise ValueError(f"No position found for symbol '{symbol}'.")
