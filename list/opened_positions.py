@@ -63,7 +63,7 @@ def display_open_positions(positions: list):
             f"{entry_price:.6f}",
             f"{liq_price:.6f}",
             pnl_unrealized_str,
-            pnl_realized_str",
+            pnl_realized_str,
         ])
 
     print("[Opened positions]")
