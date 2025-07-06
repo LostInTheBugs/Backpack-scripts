@@ -34,7 +34,7 @@ def display_collateral(collateral_list: list):
             table.append([
                 symbol,
                 lend_qty,
-                collateral_val,
+                f"{collateral_val} $",
         ])
             
     print("[Collateral used]")       
