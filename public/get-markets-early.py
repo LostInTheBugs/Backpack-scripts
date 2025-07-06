@@ -16,7 +16,7 @@ def get_markets():
     market = list_allmarkets.get_markets()
     
     for market in market:
-        created_at = market.get("createdAt", 0)
+        created_at = int(market.get("createdAt", 0))
         if created_at >= min_created_at:
             created_at = datetime.fromtimestamp(created_at / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             table.append([
