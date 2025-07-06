@@ -17,6 +17,7 @@ def get_markets():
         created_at_str = market.get("createdAt", "")
         try:
             created_at_dt = datetime.fromisoformat(created_at_str)
+            created_at_dt = created_at_dt.replace(tzinfo=timezone.utc)  # 🔧 rendre la datetime "aware"
         except ValueError:
             continue
 
