@@ -9,4 +9,3 @@ def get_markets():
 
 if __name__ == "__main__":
     get_markets()
-:q!
