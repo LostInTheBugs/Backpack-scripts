@@ -8,21 +8,25 @@ def get_markets():
     headers = ["Symbol", "Base Symbol", "Quote Symbol", "Market Type", "Order Book State", "Created At"]
     table = []
 
-    current_time = int(datetime.now(timezone.utc).timestamp() * 1000)
-    twenty_four_hours = 24 * 60 * 60 * 1000
-    min_created_at = current_time - twenty_four_hours
+    current_time = datetime()
+    min_created_at = current_time - timedelta(hours=24)
 
 
     market = list_allmarkets.get_markets()
     
     for market in market:
-        created_at = int(market.get("createdAt", 0))
-        if created_at >= min_created_at:
-            created_at = datetime.fromtimestamp(created_at / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        created_at_str = market.get("createdAt", "")
+        try:
+            created_at_dt = datetime.fromisoformat(created_at_str)
+        except ValueError:
+            continue
+
+        if created_at_str >= min_created_at:
+            created_at_str = created_at_dt.strftime("%Y-%m-%d %H:%M:%S")
             table.append([
                 market['symbol'],
-                market['baseSymbol'],
-                market['quoteSymbol'],
+                 market['baseSymbol'],
+                 market['quoteSymbol'],
                 market['marketType'],
                 market['orderBookState'],
                 market['createdAt'],     
