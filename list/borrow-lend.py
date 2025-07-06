@@ -43,7 +43,7 @@ def main():
         positions = get_borrow_lend_positions(public_key, secret_key)
         display_borrow_lend_positions(positions)
     except Exception as e:
-        print(f"❌ Erreur : {e}")
+        print(f"Erreur : {e}")
 
 if __name__ == "__main__":
     main()
