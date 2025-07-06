@@ -4,7 +4,7 @@ from tabulate import tabulate
 list_allmarkets = Public()
 
 def get_markets():
-    headers = ["Symbol", "Base Symbol", "Quote Symbol", "Market Type", "Funding Interval", "Funding Rate Upper Bound", "Funding Rate Lower Bound", "Open Interest Limit", "Order Book State", "Created At"]
+    headers = ["Symbol", "Base Symbol", "Quote Symbol", "Market Type", "Funding Interval", "Funding Rate Upper Bound", "Funding Rate Lower Bound", "Open Interest Limit", "Order Book State"]
     table = []
     market = list_allmarkets.get_markets()
     for market in market:
@@ -17,8 +17,7 @@ def get_markets():
             market['fundingRateUpperBound'],
             market['fundingRateLowerBound'],
             market['openInterestLimit'],
-            market['orderBookState'],
-            market['createdAt'],            
+            market['orderBookState'],           
         ])
 
     print(tabulate(table, headers=headers, tablefmt="grid"))
