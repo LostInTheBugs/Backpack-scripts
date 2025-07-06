@@ -32,7 +32,7 @@ def display_borrow_lend_positions(positions: list):
             symbol,
             pos_type,
             f"{abs(net_qty):.6f}",
-            f"{abs(interest):.6f} $",
+            f"{abs(interest):.6f}",
         ])
 
     print("[Available borrow and lending positions]")
