@@ -1,11 +1,12 @@
 from bpx.public import Public
+from tabulate import tabulate
 
 list_allmarkets = Public()
 
 def get_markets():
-    markets = list_allmarkets.get_markets()
-    for market in markets:
-        print(f"{market['name']:15} | {market['status']:8} | base: {market['baseAssetSymbol']}, quote: {market['quoteAssetSymbol']}")
+    market = list_allmarkets.get_markets()
+    for market in market:
+        print(f"{market['symbol']})
 
 if __name__ == "__main__":
     get_markets()
