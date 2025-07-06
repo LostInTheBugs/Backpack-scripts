@@ -49,6 +49,13 @@ def display_open_positions(positions: list):
         elif pnl_unrealized > 0:
             pnl_unrealized_str = f"{GREEN}{pnl_unrealized_str}{RESET}"
 
+        pnl_realized_str = f"{pnl_realized:.2f}"
+        if pnl_realized < 0:
+            pnl_realized_str = f"{RED}{pnl_realized_str}{RESET}"
+        elif pnl_realized > 0:
+            pnl_realized_str = f"{GREEN}{pnl_realized_str}{RESET}"
+
+
         table.append([
             symbol,
             side,
@@ -56,7 +63,7 @@ def display_open_positions(positions: list):
             f"{entry_price:.6f}",
             f"{liq_price:.6f}",
             pnl_unrealized_str,
-            f"{pnl_realized:.2f}",
+            pnl_realized_str",
         ])
 
     print("[Opened positions]")
