@@ -1,44 +1,43 @@
-import sys
-import os
 import asyncio
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
+import sys
+import time
 from execute.open_position_usdc import open_position
-from list.orderbook_signal import analyze_orderbook_signal
+from list.orderbook_signal import get_orderbook_signal
 
+async def run_bot(symbol, usdc_amount, interval, leverage):
+    print(f"🔄 Starting bot for {symbol} with {usdc_amount} USDC | Interval: {interval}s | Leverage: x{leverage}")
 
-async def run_bot(symbol, usdc_amount):
-    print(f"🔄 Starting bot for {symbol} with {usdc_amount} USDC")
-    
     while True:
         try:
-            signal = await analyze_orderbook_signal(symbol)
-
+            signal = await get_orderbook_signal(symbol)
             if signal == "BUY":
-                print("Signal is BUY  opening long position.")
-                open_position(symbol, usdc_amount, "long")
+                print("📈 Signal: BUY")
+                open_position(symbol, usdc_amount * leverage, "long")
             elif signal == "SELL":
-                print("Signal is SELL  opening short position.")
-                open_position(symbol, usdc_amount, "short")
+                print("📉 Signal: SELL")
+                open_position(symbol, usdc_amount * leverage, "short")
             else:
-                print("Signal is HOLD  no action taken.")
+                print(f"⏸️ No signal for {symbol}")
 
-            await asyncio.sleep(10)  # Pause avant la prochaine analyse
+            await asyncio.sleep(interval)
 
         except Exception as e:
-            print(f"Error in bot loop: {e}")
-            await asyncio.sleep(10)
+            print(f"⚠️ Error in bot loop: {e}")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python bot_orderbook.py <SYMBOL> <USDC_AMOUNT>")
+    if len(sys.argv) < 3:
+        print("Usage: python3 bot_orderbook.py <SYMBOL> <USDC_AMOUNT> [INTERVAL] [LEVERAGE]")
         sys.exit(1)
 
     symbol = sys.argv[1]
     try:
         usdc_amount = float(sys.argv[2])
     except ValueError:
-        print("USDC amount must be a valid number.")
+        print("Invalid USDC amount.")
         sys.exit(1)
 
-    asyncio.run(run_bot(symbol, usdc_amount))
+    interval = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+    leverage = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
+
+    asyncio.run(run_bot(symbol, usdc_amount, interval, leverage))
