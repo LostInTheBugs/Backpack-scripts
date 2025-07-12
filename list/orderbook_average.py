@@ -43,10 +43,10 @@ async def listen_orderbook(symbol):
                 median_ask_price = median(ask_prices) if ask_prices else 0
 
                 print(f"\nOrderbook stats for {symbol}")
-                print(f"🔵 Bids: total volume = {total_bid_token:.4f} Token (~{total_bid_usdc:.2f} USDC)")
+                print(f"Bids: total volume = {total_bid_token:.4f} Token (~{total_bid_usdc:.2f} USDC)")
                 print(f"    Weighted avg price = {avg_bid_price:.4f} USDC")
                 print(f"    Median price = {median_bid_price:.4f} USDC")
-                print(f"🔴 Asks: total volume = {total_ask_token:.4f} Token (~{total_ask_usdc:.2f} USDC)")
+                print(f"Asks: total volume = {total_ask_token:.4f} Token (~{total_ask_usdc:.2f} USDC)")
                 print(f"    Weighted avg price = {avg_ask_price:.4f} USDC")
                 print(f"    Median price = {median_ask_price:.4f} USDC")
 
