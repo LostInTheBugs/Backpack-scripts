@@ -87,7 +87,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 async def analyze_orderbook_signal(symbol: str) -> str:
-    signal = await get_orderbook_signal(symbol)
+    signal = get_orderbook_signal(symbol)
     return signal
 
 def get_orderbook_signal(symbol: str) -> str:
