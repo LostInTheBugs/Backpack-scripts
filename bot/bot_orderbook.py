@@ -105,7 +105,9 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage):
 
                 print(f"📤 Soumission ordre {signal} de {quantity:.6f} unités (~{usdc_amount*leverage} USDC)")
 
-                open_position(symbol, usdc_amount * leverage, signal.lower())
+                # Conversion signal BUY/SELL en long/short
+                direction = "long" if signal == "BUY" else "short"
+                open_position(symbol, usdc_amount * leverage, direction)
                 has_position = True  # verrou local activé
 
             else:
