@@ -18,42 +18,24 @@ def open_position_perp(symbol: str, usdc_amount: float, direction: str, leverage
     account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
     public = Public()
 
-    # Configurer le levier (seulement sur les marchés PERP)
-    try:
-        account.set_leverage(symbol=symbol, leverage=leverage)
-        print(f"Leverage set to x{leverage} for {symbol}")
-    except Exception as e:
-        print(f"Failed to set leverage: {e}")
+    print(f"⚙️ Requested leverage: x{leverage} — configure manually on Backpack UI if needed")
 
     # Vérifier position ouverte existante
     positions = account.get_open_positions()
     existing_position = next((p for p in positions if p.get("symbol") == symbol and abs(float(p.get("quantity", 0))) > 0), None)
 
-    # Récupérer la liste des marchés
+    # Récupérer les infos de marché
     markets = public.get_markets()
-    if not isinstance(markets, list):
-        print("Failed to retrieve market list.")
-        return
-
-    if not any(m.get("symbol") == symbol for m in markets):
+    market_info = next((m for m in markets if m.get("symbol") == symbol), None)
+    if not market_info:
         print(f"Symbol '{symbol}' not found in market list.")
         return
 
-    # Récupérer le ticker (dernier prix)
     ticker = public.get_ticker(symbol)
-    if not isinstance(ticker, dict):
-        print("Failed to retrieve ticker data.")
-        return
-
     mark_price = float(ticker.get("lastPrice", "0"))
     if mark_price == 0:
-        print("Invalid mark price from ticker.")
+        print("Invalid mark price.")
         return
-
-    market_info = next((m for m in markets if m.get("symbol") == symbol), None)
-    if not market_info:
-        print(f"Symbol '{symbol}' not found.")
-        return 
 
     step_size_decimals = get_step_size_decimals(market_info)
     quantity = round(usdc_amount / mark_price, step_size_decimals)
@@ -62,8 +44,7 @@ def open_position_perp(symbol: str, usdc_amount: float, direction: str, leverage
     order_type = "Market"
 
     if existing_position:
-        print(f"Position already open on {symbol} with qty {existing_position.get('quantity')}. Adding {quantity} units without modifying TP/SL.")
-
+        print(f"📌 Existing position detected. Adding {quantity} units.")
         response = account.execute_order(
             symbol=symbol,
             side=side,
@@ -71,12 +52,10 @@ def open_position_perp(symbol: str, usdc_amount: float, direction: str, leverage
             quantity=quantity,
             reduce_only=False
         )
-
-        print("Added to position response:", response)
+        print("Added to position:", response)
         return
 
-    # Nouvelle position
-    print(f"Submitting {order_type} {side} order on {symbol} using {usdc_amount} USDC ≈ {quantity} units")
+    print(f"📤 Submitting {order_type} {side} order on {symbol} with {usdc_amount} USDC ≈ {quantity} units")
 
     response = account.execute_order(
         symbol=symbol,
@@ -91,49 +70,38 @@ def open_position_perp(symbol: str, usdc_amount: float, direction: str, leverage
     status = response.get("status", "UNKNOWN")
     avg_price = float(response.get("avgPrice", mark_price))
 
-    def price_tp_sl(price, tp_p, sl_p, side):
-        if tp_p is None and sl_p is None:
-            return None, None
-        if side.lower() == "bid":  # long
-            tp_price = price * (1 + tp_p / 100) if tp_p is not None else None
-            sl_price = price * (1 - sl_p / 100) if sl_p is not None else None
-        else:  # short
-            tp_price = price * (1 - tp_p / 100) if tp_p is not None else None
-            sl_price = price * (1 + sl_p / 100) if sl_p is not None else None
-        return tp_price, sl_price
+    def compute_tp_sl(price, tp_p, sl_p, side):
+        if side.lower() == "bid":
+            tp = price * (1 + (tp_p or 0) / 100)
+            sl = price * (1 - (sl_p or 0) / 100)
+        else:
+            tp = price * (1 - (tp_p or 0) / 100)
+            sl = price * (1 + (sl_p or 0) / 100)
+        return round(tp, step_size_decimals), round(sl, step_size_decimals)
 
-    tp_price, sl_price = price_tp_sl(avg_price, tp_percent, sl_percent, side)
+    tp_price, sl_price = compute_tp_sl(avg_price, tp_percent, sl_percent, side)
 
-    print(f"Order executed: {executedQuantity} units at avg price {avg_price}")
-    if tp_price:
-        print(f"Take Profit price set at: {tp_price:.{step_size_decimals}f}")
-    if sl_price:
-        print(f"Stop Loss price set at: {sl_price:.{step_size_decimals}f}")
+    print(f"✅ Order executed: {executedQuantity} units at avg price {avg_price}")
+    if tp_percent:
+        print(f"🎯 TP @ {tp_price}")
+    if sl_percent:
+        print(f"🛑 SL @ {sl_price} (not applied)")
 
-    if tp_price:
+    # Placer le TP uniquement (SL non supporté)
+    if tp_percent:
         tp_response = account.execute_order(
             symbol=symbol,
             side="Ask" if side == "Bid" else "Bid",
             order_type="Limit",
             quantity=executedQuantity,
-            price=round(tp_price, step_size_decimals),
+            price=tp_price,
             reduce_only=True
         )
-        print("Take Profit order response:", tp_response)
+        print("📈 TP order response:", tp_response)
 
-    if sl_price:
-        try:
-            sl_response = account.execute_order(
-                symbol=symbol,
-                side="Ask" if side == "Bid" else "Bid",
-                order_type="StopMarket",
-                quantity=executedQuantity,
-                stop_price=round(sl_price, step_size_decimals),
-                reduce_only=True
-            )
-            print("Stop Loss order response:", sl_response)
-        except TypeError:
-            print("Stop loss order not placed: 'stop_price' param not supported by execute_order.")
+    # ⚠️ SL non pris en charge, avertir
+    if sl_percent:
+        print("⚠️ SL not set: 'StopMarket' likely not supported by this SDK")
 
     table = [[
         symbol,
@@ -142,45 +110,19 @@ def open_position_perp(symbol: str, usdc_amount: float, direction: str, leverage
         f"{executedQuoteQuantity} / {usdc_amount}",
         status,
     ]]
+    print(tabulate(table, headers=["Symbol", "Side", "Qty Ex/Ord", "USDC Ex/Ord", "Status"], tablefmt="grid"))
 
-    print(tabulate(table, headers=["Symbol", "Order type", "Quantity Executed/Ordered", "Amount Executed/Ordered", "Status"], tablefmt="grid"))
-
-
+# Entrée script
 if __name__ == "__main__":
-    argc = len(sys.argv)
-    if argc < 5 or argc > 7:
-        print("Usage: python open_position_perp.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> <LEVERAGE> [TP_PERCENT] [SL_PERCENT]")
-        print("Example: python open_position_perp.py SOL_USDC_PERP 25 long 10 3 1")
+    if len(sys.argv) < 5:
+        print("Usage: python open_position_perp.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> <LEVERAGE> [TP] [SL]")
         sys.exit(1)
 
     symbol = sys.argv[1]
-    try:
-        usdc_amount = float(sys.argv[2])
-    except ValueError:
-        print("USDC amount must be a number.")
-        sys.exit(1)
-
+    usdc_amount = float(sys.argv[2])
     direction = sys.argv[3]
-
-    try:
-        leverage = float(sys.argv[4])
-    except ValueError:
-        print("Leverage must be a number.")
-        sys.exit(1)
-
-    tp_percent = None
-    sl_percent = None
-    if argc >= 6:
-        try:
-            tp_percent = float(sys.argv[5])
-        except ValueError:
-            print("TP percent must be a number.")
-            sys.exit(1)
-    if argc == 7:
-        try:
-            sl_percent = float(sys.argv[6])
-        except ValueError:
-            print("SL percent must be a number.")
-            sys.exit(1)
+    leverage = float(sys.argv[4])
+    tp_percent = float(sys.argv[5]) if len(sys.argv) > 5 else None
+    sl_percent = float(sys.argv[6]) if len(sys.argv) > 6 else None
 
     open_position_perp(symbol, usdc_amount, direction, leverage, tp_percent, sl_percent)
