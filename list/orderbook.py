@@ -36,6 +36,7 @@ async def stream_orderbook(symbol: str, depth: int = 5):
         print(f"🔴 Total Ask Volume: {total_ask:.2f}\n")
         print(tabulate(table, headers=headers, tablefmt="grid"))
 
+    stream_name = f"depth.{symbol.replace('_', '-')}"
     ws.subscribe([f"depth.{symbol}"], callback=on_depth)
 
     while True:
