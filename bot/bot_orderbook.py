@@ -1,5 +1,8 @@
-import asyncio
 import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import asyncio
 import time
 from execute.open_position_usdc import open_position
 from list.orderbook_signal import get_orderbook_signal
