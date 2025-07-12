@@ -6,7 +6,7 @@ import sys
 async def listen_orderbook(symbol):
     # Conversion _ → -
     symbol_ws = symbol.replace("_", "-")
-    url = "wss://ws.backpack.exchange/ws/v1"
+    url = "wss://ws.backpack.exchange/"
     async with websockets.connect(url) as ws:
         # S'abonner au canal depth.<symbol>
         subscribe_msg = {
