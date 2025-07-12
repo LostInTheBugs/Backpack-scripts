@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from execute.open_position_usdc import open_position
+from ..execute.open_position_usdc import open_position
 from list.orderbook_signal import analyze_orderbook_signal
 
 async def run_bot(symbol, usdc_amount):
