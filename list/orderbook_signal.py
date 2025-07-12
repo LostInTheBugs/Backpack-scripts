@@ -62,7 +62,7 @@ async def print_stats():
             signal = "⚪ NEUTRAL"
 
         print(f"📈 Signal: {signal} (Bid/Ask ratio = {ratio:.2f})")
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
 
 def update_orderbook(data):
     for side in ["b", "a"]:

@@ -41,7 +41,7 @@ async def listen_orderbook(symbol):
                 print(f"🔴 Total Ask: {total_ask_token:.4f} Token (~{total_ask_usdc:.2f} USDC)\n")
                 print(tabulate(table, headers=headers, tablefmt="grid"))
 
-                await asyncio.sleep(3)
+                await asyncio.sleep(1)
 
         # Launch printing concurrently
         asyncio.create_task(print_orderbook())
