@@ -5,7 +5,7 @@ from tabulate import tabulate
 import os
 import sys
 
-# Clés API depuis variables d'environnement
+
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
