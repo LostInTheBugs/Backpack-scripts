@@ -7,7 +7,7 @@ import time
 from execute.open_position_usdc import open_position
 from list.orderbook_signal import get_orderbook_signal  # Tu peux remplacer par la fonction intégrée ci-dessous si besoin
 
-from public import Public
+from bpx.public import Public
 
 public = Public()
 
