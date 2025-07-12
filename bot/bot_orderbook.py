@@ -1,7 +1,11 @@
-import asyncio
 import sys
-from ..execute.open_position_usdc import open_position
+import os
+import asyncio
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from execute.open_position_usdc import open_position
 from list.orderbook_signal import analyze_orderbook_signal
+
 
 async def run_bot(symbol, usdc_amount):
     print(f"🔄 Starting bot for {symbol} with {usdc_amount} USDC")
