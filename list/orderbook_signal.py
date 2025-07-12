@@ -89,3 +89,25 @@ if __name__ == "__main__":
 async def analyze_orderbook_signal(symbol: str) -> str:
     signal = await get_orderbook_signal(symbol)
     return signal
+
+def get_orderbook_signal(symbol: str) -> str:
+    """
+    Basic signal decision based on bid/ask imbalance.
+
+    Returns:
+        - "BUY" if bids > asks by 20%
+        - "SELL" if asks > bids by 20%
+        - "NEUTRAL" otherwise
+    """
+    bids = orderbook.get("bids", [])
+    asks = orderbook.get("asks", [])
+
+    total_bid_volume = sum(float(b[1]) for b in bids)
+    total_ask_volume = sum(float(a[1]) for a in asks)
+
+    if total_bid_volume > 1.2 * total_ask_volume:
+        return "BUY"
+    elif total_ask_volume > 1.2 * total_bid_volume:
+        return "SELL"
+    else:
+        return "NEUTRAL"
