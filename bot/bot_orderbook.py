@@ -25,19 +25,19 @@ def position_exists(symbol: str) -> bool:
             return True
     return False
 
-def get_orderbook_signal(volume_threshold=50, sensitivity=1.1):
-    top_bids = sorted(orderbook["bids"].items(), key=lambda x: float(x[0]), reverse=True)[:10]
-    top_asks = sorted(orderbook["asks"].items(), key=lambda x: float(x[0]))[:10]
+def get_orderbook_signal(symbol: str, sensitivity=1.1):
+    """
+    Analyse l'ordre book pour déterminer un signal 'BUY', 'SELL' ou 'HOLD'
+    en fonction de l'asymétrie entre les volumes bids/asks.
+    """
+    orderbook = public.get_orderbook(symbol, depth=10)
+    bids = orderbook.get("bids", [])
+    asks = orderbook.get("asks", [])
 
-    bid_volume = sum(float(size) for _, size in top_bids)
-    ask_volume = sum(float(size) for _, size in top_asks)
+    bid_volume = sum(float(bid[1]) for bid in bids)
+    ask_volume = sum(float(ask[1]) for ask in asks)
 
     print(f"📊 Bids volume: {bid_volume:.2f} | Asks volume: {ask_volume:.2f}")
-
-    total_volume = bid_volume + ask_volume
-    if total_volume < volume_threshold:
-        print(f"⚠️ Volume total trop faible ({total_volume:.2f}), pas de signal")
-        return "HOLD"
 
     if bid_volume > ask_volume * sensitivity:
         return "BUY"
@@ -45,6 +45,7 @@ def get_orderbook_signal(volume_threshold=50, sensitivity=1.1):
         return "SELL"
     else:
         return "HOLD"
+    
 
 async def bot_orderbook(symbol, usdc_amount, interval, leverage):
     url = "wss://ws.backpack.exchange"
