@@ -26,27 +26,27 @@ def open_position(symbol: str, usdc_amount: float, direction: str, tp_percent: f
     # Récupérer la liste des marchés
     markets = public.get_markets()
     if not isinstance(markets, list):
-        print("❌ Failed to retrieve market list.")
+        print("Failed to retrieve market list.")
         return
 
     if not any(m.get("symbol") == symbol for m in markets):
-        print(f"❌ Symbol '{symbol}' not found in market list.")
+        print(f"Symbol '{symbol}' not found in market list.")
         return
 
     # Récupérer le ticker (dernier prix)
     ticker = public.get_ticker(symbol)
     if not isinstance(ticker, dict):
-        print("❌ Failed to retrieve ticker data.")
+        print("Failed to retrieve ticker data.")
         return
 
     mark_price = float(ticker.get("lastPrice", "0"))
     if mark_price == 0:
-        print("❌ Invalid mark price from ticker.")
+        print("Invalid mark price from ticker.")
         return
 
     market_info = next((m for m in markets if m.get("symbol") == symbol), None)
     if not market_info:
-        print(f"❌ Symbol '{symbol}' not found.")
+        print(f"Symbol '{symbol}' not found.")
         return 
 
     step_size_decimals = get_step_size_decimals(market_info)
@@ -57,7 +57,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str, tp_percent: f
 
     if existing_position:
         # Position existante : on ajoute uniquement de la quantité sans poser TP/SL
-        print(f"⚠️ Position already open on {symbol} with qty {existing_position.get('quantity')}. Adding {quantity} units without modifying TP/SL.")
+        print(f"Position already open on {symbol} with qty {existing_position.get('quantity')}. Adding {quantity} units without modifying TP/SL.")
 
         response = account.execute_order(
             symbol=symbol,
@@ -67,11 +67,11 @@ def open_position(symbol: str, usdc_amount: float, direction: str, tp_percent: f
             reduce_only=False
         )
 
-        print("✅ Added to position response:", response)
+        print("Added to position response:", response)
         return
 
     # Sinon nouvelle position, on ouvre + pose TP/SL si fournis
-    print(f"⏳ Submitting {order_type} {side} order on {symbol} using {usdc_amount} USDC ≈ {quantity} units")
+    print(f"Submitting {order_type} {side} order on {symbol} using {usdc_amount} USDC ≈ {quantity} units")
 
     response = account.execute_order(
         symbol=symbol,
@@ -99,7 +99,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str, tp_percent: f
 
     tp_price, sl_price = price_tp_sl(avg_price, tp_percent, sl_percent, side)
 
-    print(f"✅ Order executed: {executedQuantity} units at avg price {avg_price}")
+    print(f"Order executed: {executedQuantity} units at avg price {avg_price}")
     if tp_price:
         print(f"Take Profit price set at: {tp_price:.{step_size_decimals}f}")
     if sl_price:
@@ -128,7 +128,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str, tp_percent: f
             )
             print("Stop Loss order response:", sl_response)
         except TypeError:
-            print("⚠️ Stop loss order not placed: 'stop_price' param not supported by execute_order.")
+            print("Stop loss order not placed: 'stop_price' param not supported by execute_order.")
 
     table = [[
         symbol,
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     try:
         usdc_amount = float(sys.argv[2])
     except ValueError:
-        print("❌ USDC amount must be a number.")
+        print("USDC amount must be a number.")
         sys.exit(1)
 
     direction = sys.argv[3]
@@ -162,13 +162,13 @@ if __name__ == "__main__":
         try:
             tp_percent = float(sys.argv[4])
         except ValueError:
-            print("❌ TP percent must be a number.")
+            print("TP percent must be a number.")
             sys.exit(1)
     if argc == 6:
         try:
             sl_percent = float(sys.argv[5])
         except ValueError:
-            print("❌ SL percent must be a number.")
+            print("SL percent must be a number.")
             sys.exit(1)
 
     open_position(symbol, usdc_amount, direction, tp_percent, sl_percent)
