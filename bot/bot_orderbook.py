@@ -3,10 +3,11 @@ import os
 import asyncio
 import json
 import websockets
-from execute.open_position_usdc import open_position
-from bpx.account import Account
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from execute.open_position_usdc import open_position
+from bpx.account import Account
 
 account = Account(
     public_key=os.environ.get("bpx_bot_public_key"),
