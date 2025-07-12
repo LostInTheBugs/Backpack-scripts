@@ -12,7 +12,7 @@ async def run_bot(symbol, usdc_amount, interval, leverage):
 
     while True:
         try:
-            signal = await get_orderbook_signal(symbol)
+            signal = get_orderbook_signal(symbol)
             if signal == "BUY":
                 print("📈 Signal: BUY")
                 open_position(symbol, usdc_amount * leverage, "long")
