@@ -1,29 +1,31 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import asyncio
 import time
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from bpx.account import Account
 from execute.open_position_usdc import open_position
-from list.orderbook_signal import get_orderbook_signal  # Tu peux remplacer par la fonction intégrée ci-dessous si besoin
 
 from bpx.public import Public
 
 public = Public()
+account = Account(
+    public_key=os.environ.get("bpx_bot_public_key"),
+    secret_key=os.environ.get("bpx_bot_secret_key"),
+    window=5000
+)
 
 def get_orderbook_signal(symbol: str, volume_threshold=50, sensitivity=1.1):
     """
-    Récupère l'ordre du carnet et renvoie un signal 'BUY', 'SELL' ou 'HOLD'
+    Récupère le carnet d'ordres et renvoie un signal 'BUY', 'SELL' ou 'HOLD'
     basé sur l'asymétrie des volumes bid/ask.
-    - volume_threshold : volume total minimum pour considérer un signal
-    - sensitivity : ratio bid/ask pour déclencher BUY ou SELL
     """
-    # Récupération du carnet de commandes (depth)
     orderbook = public.get_orderbook(symbol, depth=10)
     bids = orderbook.get("bids", [])
     asks = orderbook.get("asks", [])
 
-    # Calcul du volume cumulé
     bid_volume = sum(float(bid[1]) for bid in bids)
     ask_volume = sum(float(ask[1]) for ask in asks)
 
@@ -41,18 +43,27 @@ def get_orderbook_signal(symbol: str, volume_threshold=50, sensitivity=1.1):
     else:
         return "HOLD"
 
+def position_exists(symbol: str) -> bool:
+    positions = account.get_open_positions()
+    for p in positions:
+        qty = float(p.get("quantity", 0))
+        if p.get("symbol") == symbol and abs(qty) > 0:
+            return True
+    return False
+
 async def run_bot(symbol, usdc_amount, interval, leverage):
     print(f"🔄 Starting bot for {symbol} with {usdc_amount} USDC | Interval: {interval}s | Leverage: x{leverage}")
 
     while True:
         try:
             signal = get_orderbook_signal(symbol)
-            if signal == "BUY":
-                print("📈 Signal: BUY")
-                open_position(symbol, usdc_amount * leverage, "long")
-            elif signal == "SELL":
-                print("📉 Signal: SELL")
-                open_position(symbol, usdc_amount * leverage, "short")
+            if signal in ["BUY", "SELL"]:
+                if position_exists(symbol):
+                    print(f"⚠️ Position already open on {symbol}, skipping new order.")
+                else:
+                    direction = "long" if signal == "BUY" else "short"
+                    print(f"📈 Signal: {signal} - Opening {direction} position")
+                    open_position(symbol, usdc_amount * leverage, direction)
             else:
                 print(f"⏸️ No signal for {symbol}")
 
