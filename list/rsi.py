@@ -3,7 +3,6 @@ import time
 import pandas as pd
 import requests
 from ta.momentum import RSIIndicator
-from private import Client  # Ton wrapper Backpack privé
 from public import get_market
 
 # Clés d'API depuis variables d'environnement
