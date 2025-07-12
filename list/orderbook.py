@@ -24,8 +24,10 @@ async def listen_orderbook(symbol):
                 top_bids = sorted(orderbook["bids"].items(), key=lambda x: float(x[0]), reverse=True)[:5]
                 top_asks = sorted(orderbook["asks"].items(), key=lambda x: float(x[0]))[:5]
 
-                total_bid_volume = sum(float(size) for _, size in top_bids)
-                total_ask_volume = sum(float(size) for _, size in top_asks)
+                total_bid_token = sum(float(size) for _, size in top_bids)
+                total_ask_token = sum(float(size) for _, size in top_asks)
+                total_bid_usdc = sum(float(price)*float(size) for price, size in top_bids)
+                total_ask_usdc = sum(float(price)*float(size) for price, size in top_asks)
 
                 table = []
                 for i in range(5):
@@ -33,10 +35,10 @@ async def listen_orderbook(symbol):
                     ask_price, ask_size = top_asks[i] if i < len(top_asks) else ("", "")
                     table.append([bid_price, bid_size, "", ask_price, ask_size])
 
-                headers = ["Bid Price", "Bid Size", "", "Ask Price", "Ask Size"]
+                headers = ["Bid Price (USDC)", "Bid Size (Token)", "", "Ask Price (USDC)", "Ask Size (Token)"]
                 print(f"\nOrderbook for {symbol} | Depth: 5")
-                print(f"🔵 Total Bid Volume: {total_bid_volume:.2f}")
-                print(f"🔴 Total Ask Volume: {total_ask_volume:.2f}\n")
+                print(f"🔵 Total Bid: {total_bid_token:.4f} Token (~{total_bid_usdc:.2f} USDC)")
+                print(f"🔴 Total Ask: {total_ask_token:.4f} Token (~{total_ask_usdc:.2f} USDC)\n")
                 print(tabulate(table, headers=headers, tablefmt="grid"))
 
                 await asyncio.sleep(3)
