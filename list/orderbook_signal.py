@@ -76,21 +76,7 @@ def update_orderbook(data):
             else:
                 book_side[price] = size
 
-# 🔧 CORRECTION ICI
-async def main():
-    await asyncio.gather(
-        listen_orderbook(symbol),
-        print_stats()
-    )
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-async def analyze_orderbook_signal(symbol: str) -> str:
-    signal = get_orderbook_signal(symbol)
-    return signal
-
-def get_orderbook_signal(symbol: str) -> str:
+def get_orderbook_signal() -> str:
     """
     Basic signal decision based on bid/ask imbalance.
 
@@ -99,11 +85,11 @@ def get_orderbook_signal(symbol: str) -> str:
         - "SELL" if asks > bids by 20%
         - "NEUTRAL" otherwise
     """
-    bids = orderbook.get("bids", [])
-    asks = orderbook.get("asks", [])
+    bids = [(float(p), float(s)) for p, s in orderbook.get("bids", {}).items()]
+    asks = [(float(p), float(s)) for p, s in orderbook.get("asks", {}).items()]
 
-    total_bid_volume = sum(float(b[1]) for b in bids)
-    total_ask_volume = sum(float(a[1]) for a in asks)
+    total_bid_volume = sum(s for _, s in bids)
+    total_ask_volume = sum(s for _, s in asks)
 
     if total_bid_volume > 1.2 * total_ask_volume:
         return "BUY"
@@ -111,3 +97,12 @@ def get_orderbook_signal(symbol: str) -> str:
         return "SELL"
     else:
         return "NEUTRAL"
+
+async def main():
+    await asyncio.gather(
+        listen_orderbook(symbol),
+        print_stats()
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
