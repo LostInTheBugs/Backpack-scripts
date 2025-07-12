@@ -76,8 +76,12 @@ def update_orderbook(data):
             else:
                 book_side[price] = size
 
-if __name__ == "__main__":
-    asyncio.run(asyncio.gather(
+# 🔧 CORRECTION ICI
+async def main():
+    await asyncio.gather(
         listen_orderbook(symbol),
         print_stats()
-    ))
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
