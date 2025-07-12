@@ -2,6 +2,13 @@ import sys
 import os
 import asyncio
 import time
+import json
+import time
+import websockets
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+
 from execute.open_position_usdc import open_position
 from bpx.account import Account
 from bpx.public import Public
