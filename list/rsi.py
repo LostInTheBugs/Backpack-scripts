@@ -3,9 +3,8 @@ import time
 import pandas as pd
 import requests
 from ta.momentum import RSIIndicator
-from public import get_market
+from bpx.public import Public
 
-# Clés d'API depuis variables d'environnement
 API_KEY = os.getenv("bpx_bot_public_key")
 API_SECRET = os.getenv("bpx_bot_secret_key")
 client = Client(api_key=API_KEY, api_secret=API_SECRET)
