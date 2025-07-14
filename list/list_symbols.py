@@ -1,4 +1,5 @@
 import requests
+import json
 
 def get_symbols():
     url = "https://api.backpack.exchange/api/v1/markets"
@@ -6,16 +7,12 @@ def get_symbols():
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
-
-        symbols = [market['name'] for market in data]
-        return symbols
+        print(json.dumps(data, indent=2))  # 🔍 Ajoute cette ligne temporairement
+        return []
 
     except requests.exceptions.RequestException as e:
-        print("Error :", e)
+        print("Erreur lors de la récupération des symboles :", e)
         return []
 
 if __name__ == "__main__":
-    symbols = get_symbols()
-    print(f"🔍 {len(symbols)} symboles :\n")
-    for symbol in symbols:
-        print(symbol)
+    get_symbols()
