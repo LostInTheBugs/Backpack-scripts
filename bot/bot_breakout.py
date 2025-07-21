@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Import de tes fonctions existantes
 from read.opened_positions import get_open_positions
-from execute.open_position_usdc import open_position_usdc
+from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
