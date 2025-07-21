@@ -1,24 +1,26 @@
 import time
 import sys
-import os
 import argparse
 from datetime import datetime
+import os
 
-# Import de tes fonctions existantes
+# 🔧 Corrige les chemins d'import pour que le script fonctionne même lancé seul
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from read.opened_positions import get_open_positions
-from execute.open_position_usdc import open_position
+from execute.open_position_usdc import open_position_usdc
 from execute.close_position_percent import close_position_percent
+from public.public import get_ohlcv  # ← tu dois avoir cette fonction
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Récupération des clés depuis env
+# 🔑 Clés API via variables d'environnement
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
+# 📈 Paramètres du bot
 LOOKBACK = 20
 TIMEFRAME = "1m"
 AMOUNT_USDC = 25
-PROFIT_TARGET = 0.01  # 1%
+PROFIT_TARGET = 0.01  # 1% de bénéfice pour la fermeture automatique
 
 def detect_breakout(data):
     highs = [c["high"] for c in data[:-1]]
@@ -44,10 +46,10 @@ def check_and_close_position(symbol, positions, dry_run):
         if pos.get("symbol") == symbol:
             net_qty = float(pos.get("netQuantity", 0))
             if net_qty == 0:
-                return
+                continue
 
             entry = float(pos.get("entryPrice", 0))
-            current = float(pos.get("markPrice", 0))  # prix actuel, adapte si besoin
+            current = float(pos.get("markPrice", 0))  # adapte si la clé est différente
             side = "long" if net_qty > 0 else "short"
 
             gain = (current - entry) / entry if side == "long" else (entry - current) / entry
@@ -58,13 +60,11 @@ def check_and_close_position(symbol, positions, dry_run):
                     close_position_percent(public_key, secret_key, symbol, 100)
                 else:
                     print("⚠️ [dry-run] Position non fermée.")
-            return  # on gère une seule position à la fois
+            return
 
 def main(symbol: str, dry_run: bool):
     print(f"--- Breakout Bot started for {symbol} ---")
     print(f"Mode : {'dry-run (test)' if dry_run else 'real-run (LIVE)'}")
-
-    from public.public import get_ohlcv  # import ici si public.py a get_ohlcv
 
     while True:
         try:
