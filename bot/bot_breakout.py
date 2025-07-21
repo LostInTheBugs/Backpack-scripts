@@ -1,5 +1,6 @@
 import time
 import sys
+import os
 import argparse
 from datetime import datetime
 
@@ -8,7 +9,7 @@ from read.opened_positions import get_open_positions
 from execute.open_position_usdc import open_position_usdc
 from execute.close_position_percent import close_position_percent
 
-import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Récupération des clés depuis env
 public_key = os.environ.get("bpx_bot_public_key")
