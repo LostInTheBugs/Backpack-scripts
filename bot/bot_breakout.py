@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime
 import os
 
-from list.opened_positions import get_open_positions
+from opened_positions import get_open_positions
 from execute.close_position_percent import close_position_percent
 from execute.open_position_usdc import open_position_usdc
 from public.public import get_ohlcv
