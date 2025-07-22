@@ -10,6 +10,11 @@ if not PG_DSN:
     raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
 INTERVAL_SEC = 1  # durée de la bougie en secondes
+SYMBOLS = ["BTC_USDC_PERP", "ETH_USDC_PERP", "SOL_USDC_PERP", "SUI_USDC_PERP", "USDT_USDC_PERP"]
+
+def table_name_from_symbol(symbol: str) -> str:
+    # Remplace _ par __ pour éviter conflits SQL, tout en minuscule
+    return f"{symbol.lower().replace('_', '__')}"
 
 class OHLCVAggregator:
     def __init__(self, symbol, interval_sec):
@@ -23,7 +28,6 @@ class OHLCVAggregator:
         self.volume = 0.0
 
     def _get_bucket_start(self, timestamp):
-        # Arrondir au multiple inférieur de interval_sec
         return timestamp - (timestamp % self.interval_sec)
 
     async def process_trade(self, price: float, size: float, timestamp_ms: int, pool):
@@ -38,16 +42,12 @@ class OHLCVAggregator:
             self.close = price
             self.volume = size
         elif bucket == self.current_bucket:
-            # Bougie en cours, mettre à jour
             self.high = max(self.high, price)
             self.low = min(self.low, price)
             self.close = price
             self.volume += size
         else:
-            # Nouveau bucket : insérer la bougie précédente
             await self.insert_ohlcv(pool, self.current_bucket)
-
-            # Reset pour nouvelle bougie
             self.current_bucket = bucket
             self.open = price
             self.high = price
@@ -59,23 +59,34 @@ class OHLCVAggregator:
         if bucket_start > 10**12:
             bucket_start = bucket_start // 1000
         dt = datetime.fromtimestamp(bucket_start, tz=timezone.utc)
+
+        table_name = table_name_from_symbol(self.symbol)
         async with pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO ohlcv(symbol, interval_sec, timestamp, open, high, low, close, volume)
-                VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-                ON CONFLICT (symbol, interval_sec, timestamp) DO NOTHING
-            """, self.symbol, self.interval_sec, dt, self.open, self.high, self.low, self.close, self.volume)
+            await conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    timestamp TIMESTAMPTZ PRIMARY KEY,
+                    interval_sec INTEGER NOT NULL,
+                    open DOUBLE PRECISION NOT NULL,
+                    high DOUBLE PRECISION NOT NULL,
+                    low DOUBLE PRECISION NOT NULL,
+                    close DOUBLE PRECISION NOT NULL,
+                    volume DOUBLE PRECISION NOT NULL
+                )
+            """)
+
+            await conn.execute(f"""
+                INSERT INTO {table_name} (timestamp, interval_sec, open, high, low, close, volume)
+                VALUES($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (timestamp) DO NOTHING
+            """, dt, self.interval_sec, self.open, self.high, self.low, self.close, self.volume)
+
             print(f"⏳ Bougie insérée {dt} {self.symbol} O:{self.open} H:{self.high} L:{self.low} C:{self.close} V:{self.volume}")
 
-async def main():
-    symbol = "BTC_USDC_PERP"  # adapte ici ou passe en argument
+async def subscribe_and_aggregate(symbol: str, pool):
     ws_url = "wss://ws.backpack.exchange"
-
     aggregator = OHLCVAggregator(symbol, INTERVAL_SEC)
-    pool = await asyncpg.create_pool(dsn=PG_DSN)
 
     async with websockets.connect(ws_url) as ws:
-        # Subscribe to trades for the symbol
         sub_msg = {
             "method": "SUBSCRIBE",
             "params": [f"trade.{symbol}"],
@@ -91,8 +102,15 @@ async def main():
                 price = float(data["p"])
                 size = float(data["q"])
                 timestamp_ms = int(data["T"])
-
                 await aggregator.process_trade(price, size, timestamp_ms, pool)
 
+async def main():
+    pool = await asyncpg.create_pool(dsn=PG_DSN)
+    tasks = [subscribe_and_aggregate(sym, pool) for sym in SYMBOLS]
+    await asyncio.gather(*tasks)
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 Arrêt demandé, fin du programme.")
