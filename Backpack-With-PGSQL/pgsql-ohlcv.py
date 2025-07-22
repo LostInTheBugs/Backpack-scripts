@@ -10,7 +10,7 @@ if not PG_DSN:
     raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
 INTERVAL_SEC = 1  # durée de la bougie en secondes
-SYMBOLS = ["BTC_USDC_PERP", "ETH_USDC_PERP", "SOL_USDC_PERP", "SUI_USDC_PERP", "USDT_USDC"]
+SYMBOLS = ["BTC_USDC_PERP", "ETH_USDC_PERP", "SOL_USDC_PERP", "SUI_USDC_PERP"]
 
 def table_name_from_symbol(symbol: str) -> str:
     # Remplace _ par __ pour éviter conflits SQL, tout en minuscule
