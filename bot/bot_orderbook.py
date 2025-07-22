@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from execute.open_position_usdc import open_position, 
+from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from bpx.account import Account
 
