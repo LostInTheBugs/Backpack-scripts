@@ -140,8 +140,16 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
                 direction = "long" if signal == "BUY" else "short"
                 print(f"📤 Soumission ordre {signal} de {quantity:.6f} unités (~{usdc_amount*leverage} USDC)")
                 open_position(symbol, usdc_amount * leverage, direction)
-                has_position = True
-                entry_price = price
+                await asyncio.sleep(1)  # Laisse le temps à l'ordre d'être traité
+                if is_position_open(symbol):
+                    has_position = True
+                    entry_price = price
+                    print(f"🔒 Position confirmée à {entry_price:.4f} en {direction}")
+                else:
+                    print("⚠️ ERREUR : Position NON détectée après envoi ordre")
+                    has_position = False
+                    entry_price = None
+                    direction = None
                 print(f"🔒 Position ouverte à {entry_price:.4f} en {direction}")
 
             else:
