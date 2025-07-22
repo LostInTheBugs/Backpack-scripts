@@ -67,15 +67,6 @@ def get_mid_price():
     except:
         return 0
 
-async def wait_for_position(symbol, timeout=1.0, poll_interval=0.2):
-    waited = 0.0
-    while waited < timeout:
-        if is_position_open(symbol):
-            return True
-        await asyncio.sleep(poll_interval)
-        waited += poll_interval
-    return False
-
 async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0):
     global has_position, entry_price, direction
 
@@ -143,7 +134,9 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
                 print(f"📤 Soumission ordre {signal} de {quantity:.6f} unités (~{usdc_amount*leverage} USDC)")
                 open_position(symbol, usdc_amount * leverage, direction)
 
-                if await wait_for_position(symbol):
+                await asyncio.sleep(1)  # délai pour que la position soit enregistrée
+
+                if is_position_open(symbol):
                     has_position = True
                     entry_price = price
                     print(f"🔒 Position confirmée à {entry_price:.4f} en {direction}")
@@ -152,7 +145,8 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
                     has_position = False
                     entry_price = None
                     direction = None
-                    return  # Stoppe la boucle ici
+                    await asyncio.sleep(5)  # Pause avant nouvelle tentative
+                    continue  # Relance la boucle au lieu de stopper
 
             else:
                 print("⏸️ Pas de signal")
