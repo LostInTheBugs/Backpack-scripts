@@ -112,6 +112,12 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
 
             print(f"Signal: {signal}")
 
+            if is_position_open(symbol):
+                print("⏸️ Une position est déjà ouverte pour ce symbole, aucun ordre ne sera passé.")
+                has_position = True
+                await asyncio.sleep(interval)
+                continue
+            
             if signal != "HOLD":
                 price = get_mid_price()
                 if price == 0:
