@@ -1,7 +1,7 @@
 import requests
 from datetime import datetime
 
-def get_ohlcv_coingecko(symbol: str, interval: str = "1m", limit: int = 20):
+def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 20):
     # CoinGecko ne fait pas USDC par défaut, mais USDT est proche
     # symbol = "bitcoin" for BTC, interval en minutes, limit = nb de points
 
