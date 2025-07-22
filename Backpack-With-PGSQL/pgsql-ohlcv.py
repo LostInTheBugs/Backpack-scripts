@@ -56,6 +56,8 @@ class OHLCVAggregator:
             self.volume = size
 
     async def insert_ohlcv(self, pool, bucket_start):
+        if bucket_start > 10**12:
+            bucket_start = bucket_start // 1000
         dt = datetime.fromtimestamp(bucket_start, tz=timezone.utc)
         async with pool.acquire() as conn:
             await conn.execute("""
