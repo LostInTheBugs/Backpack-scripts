@@ -5,7 +5,8 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from execute.open_position_usdc import open_position, close_position
+from execute.open_position_usdc import open_position, 
+from execute.close_position_percent import close_position_percent
 from bpx.account import Account
 
 account = Account(
@@ -94,7 +95,7 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
 
                         if pnl_pct >= tp_pct:
                             print(f"🎯 Take Profit atteint ({pnl_pct:.2f}%), fermeture position...")
-                            close_position(symbol)
+                            close_position_percent(public_key, secret_key, symbol, 100)
                             has_position = False
                             entry_price = None
                             direction = None
