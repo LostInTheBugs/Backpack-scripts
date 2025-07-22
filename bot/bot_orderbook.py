@@ -77,7 +77,7 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
             ask_volume = sum(float(v) for v in orderbook["asks"].values())
             print(f"📊 Bids volume: {bid_volume:.4f} | Asks volume: {ask_volume:.4f}")
 
-            # Vérification périodique si position encore ouverte
+            # Vérification si une position est encore ouverte (via API)
             if has_position:
                 if not is_position_open(symbol):
                     print("✅ Position fermée détectée via API")
@@ -95,14 +95,26 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
 
                         if pnl_pct >= tp_pct:
                             print(f"🎯 Take Profit atteint ({pnl_pct:.2f}%), fermeture position...")
-                            close_position_percent(public_key, secret_key, symbol, 100)
+                            close_position_percent(
+                                os.environ["bpx_bot_public_key"],
+                                os.environ["bpx_bot_secret_key"],
+                                symbol,
+                                100
+                            )
                             has_position = False
                             entry_price = None
                             direction = None
                     await asyncio.sleep(interval)
                     continue
 
-            # Signal basé sur volume asymétrique
+            # Vérifie dynamiquement si une position existe (sécurité)
+            if is_position_open(symbol):
+                print("⏸️ Une position est déjà ouverte pour ce symbole, aucun ordre ne sera passé.")
+                has_position = True
+                await asyncio.sleep(interval)
+                continue
+
+            # Détection de signal
             if bid_volume > ask_volume * 1.1:
                 signal = "BUY"
             elif ask_volume > bid_volume * 1.1:
@@ -112,12 +124,6 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
 
             print(f"Signal: {signal}")
 
-            if is_position_open(symbol):
-                print("⏸️ Une position est déjà ouverte pour ce symbole, aucun ordre ne sera passé.")
-                has_position = True
-                await asyncio.sleep(interval)
-                continue
-            
             if signal != "HOLD":
                 price = get_mid_price()
                 if price == 0:
@@ -157,6 +163,12 @@ async def main():
     interval = int(sys.argv[3]) if len(sys.argv) > 3 else 10
     leverage = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
     tp_pct = float(sys.argv[5]) if len(sys.argv) > 5 else 1.0  # take profit en %
+
+    # Initialisation verrou
+    global has_position
+    has_position = is_position_open(symbol)
+    if has_position:
+        print(f"🔒 Une position est déjà ouverte sur {symbol}, le bot n'en ouvrira pas tant qu'elle n'est pas fermée.")
 
     task_ws = asyncio.create_task(websocket_orderbook(symbol))
     task_bot = asyncio.create_task(analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct))
