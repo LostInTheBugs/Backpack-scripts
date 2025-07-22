@@ -75,7 +75,7 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0)
             # Mise à jour volume
             bid_volume = sum(float(v) for v in orderbook["bids"].values())
             ask_volume = sum(float(v) for v in orderbook["asks"].values())
-            print(f"📊 Bids volume: {bid_volume:.4f} | Asks volume: {ask_volume:.4f}")
+            print(f"📊 Bids volume: {bid_volume:.4f} | Asks volume: {ask_volume:.4f}", end="", flush=True)
 
             # Vérification si une position est encore ouverte (via API)
             if has_position:
