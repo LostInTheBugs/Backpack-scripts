@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from execute.open_position_usdc import open_position
+from execute.open_position_usdc import open_position, close_position
 from bpx.account import Account
 
 account = Account(
@@ -15,6 +15,8 @@ account = Account(
 
 orderbook = {"bids": {}, "asks": {}}
 has_position = False  # verrou local
+entry_price = None    # pour suivre le prix d'entrée
+direction = None      # long ou short
 
 async def websocket_orderbook(symbol):
     global orderbook
@@ -45,34 +47,61 @@ async def websocket_orderbook(symbol):
                 else:
                     orderbook["asks"][price] = size
 
-async def analyze_and_trade(symbol, usdc_amount, interval, leverage):
-    global has_position
-    public_positions_checked = False
+def is_position_open(symbol: str) -> bool:
+    try:
+        positions = account.get_open_positions()
+        return any(
+            p.get("symbol") == symbol and abs(float(p.get("quantity", 0))) > 0
+            for p in positions
+        )
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la vérification de position: {e}")
+        return False
+
+def get_mid_price():
+    try:
+        best_bid = max(float(p) for p in orderbook["bids"]) if orderbook["bids"] else 0
+        best_ask = min(float(p) for p in orderbook["asks"]) if orderbook["asks"] else 0
+        return (best_bid + best_ask) / 2 if best_bid and best_ask else 0
+    except:
+        return 0
+
+async def analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct=1.0):
+    global has_position, entry_price, direction
 
     while True:
         try:
-            # Mise à jour local du volume
+            # Mise à jour volume
             bid_volume = sum(float(v) for v in orderbook["bids"].values())
             ask_volume = sum(float(v) for v in orderbook["asks"].values())
             print(f"📊 Bids volume: {bid_volume:.4f} | Asks volume: {ask_volume:.4f}")
 
-            # Check si position ouverte via API une fois au début et ensuite on verrouille localement
-            if not has_position and not public_positions_checked:
-                positions = account.get_open_positions()
-                for p in positions:
-                    if p.get("symbol") == symbol and abs(float(p.get("quantity", 0))) > 0:
-                        has_position = True
-                        print("⏸️ Position déjà ouverte détectée via API")
-                        break
-                public_positions_checked = True
-
-            # Ne rien faire si position active
+            # Vérification périodique si position encore ouverte
             if has_position:
-                print(f"⏸️ Position active, attente...")
-                await asyncio.sleep(interval)
-                continue
+                if not is_position_open(symbol):
+                    print("✅ Position fermée détectée via API")
+                    has_position = False
+                    entry_price = None
+                    direction = None
+                else:
+                    # Vérifier TP (Take Profit)
+                    current_price = get_mid_price()
+                    if current_price > 0 and entry_price:
+                        pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                        if direction == "short":
+                            pnl_pct *= -1
+                        print(f"📈 PnL % estimée : {pnl_pct:.2f}%")
 
-            # Signal simple selon asymétrie volume (sans seuil)
+                        if pnl_pct >= tp_pct:
+                            print(f"🎯 Take Profit atteint ({pnl_pct:.2f}%), fermeture position...")
+                            close_position(symbol)
+                            has_position = False
+                            entry_price = None
+                            direction = None
+                    await asyncio.sleep(interval)
+                    continue
+
+            # Signal basé sur volume asymétrique
             if bid_volume > ask_volume * 1.1:
                 signal = "BUY"
             elif ask_volume > bid_volume * 1.1:
@@ -83,32 +112,24 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage):
             print(f"Signal: {signal}")
 
             if signal != "HOLD":
-                # Estimer la quantité approximative selon price approx (ex: midpoint)
-                try:
-                    best_bid = max(float(p) for p in orderbook["bids"]) if orderbook["bids"] else 0
-                    best_ask = min(float(p) for p in orderbook["asks"]) if orderbook["asks"] else 0
-                    price = (best_bid + best_ask) / 2 if best_bid and best_ask else 0
-                except Exception:
-                    price = 0
-
+                price = get_mid_price()
                 if price == 0:
                     print("⚠️ Prix non disponible, ordre ignoré")
                     await asyncio.sleep(interval)
                     continue
 
                 quantity = usdc_amount * leverage / price
-
                 if quantity < 0.0001:
                     print(f"⚠️ Quantité trop faible ({quantity:.6f}), ordre ignoré")
                     await asyncio.sleep(interval)
                     continue
 
-                print(f"📤 Soumission ordre {signal} de {quantity:.6f} unités (~{usdc_amount*leverage} USDC)")
-
-                # Conversion signal BUY/SELL en long/short
                 direction = "long" if signal == "BUY" else "short"
+                print(f"📤 Soumission ordre {signal} de {quantity:.6f} unités (~{usdc_amount*leverage} USDC)")
                 open_position(symbol, usdc_amount * leverage, direction)
-                has_position = True  # verrou local activé
+                has_position = True
+                entry_price = price
+                print(f"🔒 Position ouverte à {entry_price:.4f} en {direction}")
 
             else:
                 print("⏸️ Pas de signal")
@@ -121,16 +142,17 @@ async def analyze_and_trade(symbol, usdc_amount, interval, leverage):
 
 async def main():
     if len(sys.argv) < 3:
-        print("Usage: python3 bot_orderbook.py <SYMBOL> <USDC_AMOUNT> [INTERVAL] [LEVERAGE]")
+        print("Usage: python3 bot_orderbook.py <SYMBOL> <USDC_AMOUNT> [INTERVAL] [LEVERAGE] [TP_PCT]")
         sys.exit(1)
 
     symbol = sys.argv[1]
     usdc_amount = float(sys.argv[2])
     interval = int(sys.argv[3]) if len(sys.argv) > 3 else 10
     leverage = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
+    tp_pct = float(sys.argv[5]) if len(sys.argv) > 5 else 1.0  # take profit en %
 
     task_ws = asyncio.create_task(websocket_orderbook(symbol))
-    task_bot = asyncio.create_task(analyze_and_trade(symbol, usdc_amount, interval, leverage))
+    task_bot = asyncio.create_task(analyze_and_trade(symbol, usdc_amount, interval, leverage, tp_pct))
 
     await asyncio.gather(task_ws, task_bot)
 
