@@ -4,7 +4,7 @@ from datetime import datetime
 
 from read.breakout_signal import breakout_signal
 from read.open_position_utils import has_open_position, get_position_pnl
-from execute.open_position_usdc import open_position_usdc
+from execute.open_position_usdc import open_position
 from execute.close_position import close_position
 
 SYMBOL = None
@@ -31,7 +31,7 @@ def main(symbol: str, real_run: bool):
                 else:
                     log(f"📈 Signal détecté : {signal}. Ouverture d'une position.")
                     if real_run:
-                        open_position_usdc(symbol, signal.lower(), POSITION_AMOUNT_USDC)
+                        open_position(symbol, signal.lower(), POSITION_AMOUNT_USDC)
                     else:
                         log(f"[Dry-run] Ouverture de position {signal.lower()} ignorée.")
             else:
