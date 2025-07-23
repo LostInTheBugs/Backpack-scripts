@@ -50,7 +50,7 @@ def combined_signal(df):
         return None
 
 def get_perp_symbols():
-    url = "https://api.backpack.exchange/v1/markets"
+    url = "https://api.backpack.exchange/api/v1/markets"
     try:
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
