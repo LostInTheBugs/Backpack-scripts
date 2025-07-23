@@ -2,7 +2,7 @@ import argparse
 import time
 from backpack_public.public import get_ohlcv
 from read.opened_positions import has_open_position
-from execute.open_position_usdc import open_position_usdc
+from execute.open_position_usdc import open_position
 from execute.close_position_usdc import close_position_usdc  # optionnel
 
 BREAKOUT_LOOKBACK = 20
