@@ -88,9 +88,7 @@ def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
     for sym, vol, volm in selected:
         log(f"• {sym} - Volatilité: {vol:.4f}, Volume moyen: {volm:.0f}")
 
-    selected_symbols = [x[0] for x in selected]
-    log(f"🔁 Liste finale des symbols sélectionnés : {', '.join(selected_symbols)}")
-    return selected_symbols
+    return [x[0] for x in selected]
 
 def handle_symbol(symbol: str, real_run: bool):
     try:
@@ -129,6 +127,42 @@ def handle_symbol(symbol: str, real_run: bool):
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur : {e}")
 
+def duration_to_minutes(duration: str) -> int:
+    if duration.endswith("m"):
+        return int(duration[:-1])
+    elif duration.endswith("h"):
+        return int(duration[:-1]) * 60
+    elif duration.endswith("d"):
+        return int(duration[:-1]) * 60 * 24
+    elif duration.endswith("w"):
+        return int(duration[:-1]) * 60 * 24 * 7
+    else:
+        raise ValueError("Durée non reconnue. Utilise 1h, 1d, 1w ou 1m.")
+
+def backtest_symbol(symbol: str, duration: str):
+    try:
+        minutes = duration_to_minutes(duration)
+        limit = min(minutes, 1000)
+        ohlcv = get_ohlcv(symbol, interval="1m", limit=limit)
+        df = prepare_ohlcv_df(ohlcv)
+        df = calculate_macd_rsi(df)
+
+        buy_signals = 0
+        sell_signals = 0
+
+        for i in range(30, len(df)):
+            df_slice = df.iloc[:i+1]
+            signal = combined_signal(df_slice)
+            if signal == "BUY":
+                buy_signals += 1
+            elif signal == "SELL":
+                sell_signals += 1
+
+        log(f"[{symbol}] 📊 Backtest {duration} — BUY: {buy_signals}, SELL: {sell_signals}")
+
+    except Exception as e:
+        log(f"[{symbol}] ❌ Erreur backtest : {e}")
+
 def main(symbols: list, real_run: bool, auto_select=False):
     last_selection_time = 0
 
@@ -148,11 +182,20 @@ if __name__ == "__main__":
     parser.add_argument("symbols", nargs='?', default="", help="Liste des symboles séparés par des virgules (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
     parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
     parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symbols par volatilité")
+    parser.add_argument("--backtest", type=str, help="Backtest sur une période: 1h, 1d, 1w, 1m")
     args = parser.parse_args()
 
-    if args.auto_select:
-        symbols = []
+    if args.backtest:
+        duration = args.backtest
+        if args.auto_select:
+            symbols = select_symbols_by_volatility()
+        else:
+            symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        for symbol in symbols:
+            backtest_symbol(symbol, duration)
     else:
-        symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
-
-    main(symbols, real_run=args.real_run, auto_select=args.auto_select)
+        if args.auto_select:
+            symbols = []
+        else:
+            symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        main(symbols, real_run=args.real_run, auto_select=args.auto_select)
