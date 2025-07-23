@@ -2,7 +2,6 @@ import time
 import argparse
 import os
 from datetime import datetime
-
 import pandas as pd
 import pandas_ta as ta
 
@@ -16,117 +15,87 @@ public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
 POSITION_AMOUNT_USDC = 20  # à adapter selon ta stratégie
-STOP_LOSS_PERCENT = 0.01  # stop loss suiveur à 1% par exemple
+PNL_THRESHOLD_CLOSE = 0.002  # 0.2%
 
 def log(msg):
     print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
-def compute_indicators(ohlcv):
-    df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["rsi"] = ta.rsi(df["close"], length=14)
-    macd = ta.macd(df["close"])
-    df["macd_hist"] = macd["MACDh_12_26_9"]
+def prepare_ohlcv_df(ohlcv):
+    df = pd.DataFrame(ohlcv)
+    # Convertir les colonnes nécessaires en float (prévient les erreurs de type)
+    for col in ['open', 'high', 'low', 'close', 'volume']:
+        df[col] = df[col].astype(float)
     return df
 
-def indicators_ok(df, signal):
-    rsi = df["rsi"].iloc[-1]
-    macd_hist = df["macd_hist"].iloc[-1]
-    if signal == "BUY":
-        return macd_hist > 0 and rsi < 70
-    elif signal == "SELL":
-        return macd_hist < 0 and rsi > 30
-    return False
+def calculate_macd_rsi(df):
+    # MACD : fast=12, slow=26, signal=9 (valeurs par défaut)
+    macd = ta.macd(df['close'])
+    df = pd.concat([df, macd], axis=1)
+    # RSI période 14
+    df['rsi'] = ta.rsi(df['close'], length=14)
+    return df
 
-# Dictionnaire pour stocker le prix d'entrée et stop loss actuel par symbole
-positions_info = {}
+def combined_signal(df):
+    # Signal breakout simple basé sur close vs high/low précédent
+    breakout = breakout_signal(df.to_dict('records'))
+
+    # MACD crossover (macd > macd_signal = bullish)
+    macd_hist = df['MACDh_12_26_9'].iloc[-1]
+    macd_signal = df['MACDs_12_26_9'].iloc[-1]
+
+    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
+    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
+
+    # RSI : Surachat < 70, Survente > 30 (classique)
+    rsi = df['rsi'].iloc[-1]
+
+    # Conditions combinées pour signal
+    if breakout == "BUY" and macd_signal_bull and rsi < 70:
+        return "BUY"
+    elif breakout == "SELL" and macd_signal_bear and rsi > 30:
+        return "SELL"
+    else:
+        return None
 
 def handle_symbol(symbol: str, real_run: bool):
-    global positions_info
     try:
         ohlcv = get_ohlcv(symbol, interval="1m", limit=100)
-        signal = breakout_signal(ohlcv)
-        log(f"[{symbol}] Signal brut retourné: {signal} ({type(signal)})")
+        df = prepare_ohlcv_df(ohlcv)
+        df = calculate_macd_rsi(df)
+
+        signal = combined_signal(df)
+        log(f"[{symbol}] Signal combiné retourné: {signal} ({type(signal)})")
 
         if signal in ["BUY", "SELL"]:
-            df = compute_indicators(ohlcv)
-            if not indicators_ok(df, signal):
-                log(f"[{symbol}] Signal {signal} rejeté par MACD/RSI")
-                return
-
             if has_open_position(symbol):
                 log(f"[{symbol}] 🔄 Une position est déjà ouverte.")
             else:
-                log(f"[{symbol}] 📈 Signal validé : {signal}. Ouverture d'une position.")
+                log(f"[{symbol}] 📈 Signal détecté : {signal}. Ouverture d'une position.")
                 if real_run:
                     direction = "long" if signal.lower() == "buy" else "short"
                     open_position(symbol, POSITION_AMOUNT_USDC, direction)
-                    # Initialiser stop loss au prix d'entrée estimé (dernier close)
-                    entry_price = ohlcv[-1][4]  # close price dernière bougie
-                    positions_info[symbol] = {
-                        "direction": direction,
-                        "entry_price": entry_price,
-                        "stop_loss": entry_price * (1 - STOP_LOSS_PERCENT) if direction == "long" else entry_price * (1 + STOP_LOSS_PERCENT)
-                    }
                 else:
                     log(f"[{symbol}] [Dry-run] Ouverture de position {signal.lower()} ignorée.")
         else:
-            log(f"[{symbol}] 🕵️ Aucun signal breakout détecté.")
+            log(f"[{symbol}] 🕵️ Aucun signal breakout + MACD/RSI détecté.")
 
-        # Gestion du stop loss suiveur
         if has_open_position(symbol):
-            # Récupérer infos position
-            info = positions_info.get(symbol)
-            if not info:
-                log(f"[{symbol}] ⚠️ Position ouverte mais infos stop loss manquantes, initialisation.")
-                # On tente d'initialiser avec prix close actuel (risqué)
-                entry_price = ohlcv[-1][4]
-                direction = "long"  # hypothèse par défaut
-                positions_info[symbol] = {
-                    "direction": direction,
-                    "entry_price": entry_price,
-                    "stop_loss": entry_price * (1 - STOP_LOSS_PERCENT)
-                }
-                info = positions_info[symbol]
-
-            direction = info["direction"]
-            entry_price = info["entry_price"]
-            stop_loss = info["stop_loss"]
-            current_price = ohlcv[-1][4]
-
-            if direction == "long":
-                # Met à jour stop loss si le prix monte
-                new_stop_loss = max(stop_loss, current_price * (1 - STOP_LOSS_PERCENT))
-                if new_stop_loss != stop_loss:
-                    log(f"[{symbol}] 📈 Stop loss mis à jour de {stop_loss:.6f} à {new_stop_loss:.6f}")
-                    positions_info[symbol]["stop_loss"] = new_stop_loss
-                # Si prix passe sous stop loss => fermeture position
-                if current_price <= stop_loss:
-                    log(f"[{symbol}] 🚨 Stop loss déclenché à {stop_loss:.6f} (prix actuel {current_price:.6f}), fermeture position.")
-                    if real_run:
-                        close_position_percent(public_key, secret_key, symbol, 100)
-                        positions_info.pop(symbol, None)
-                    else:
-                        log(f"[{symbol}] [Dry-run] Fermeture position stop loss ignorée.")
-            else:  # short
-                # Met à jour stop loss si le prix descend
-                new_stop_loss = min(stop_loss, current_price * (1 + STOP_LOSS_PERCENT))
-                if new_stop_loss != stop_loss:
-                    log(f"[{symbol}] 📉 Stop loss mis à jour de {stop_loss:.6f} à {new_stop_loss:.6f}")
-                    positions_info[symbol]["stop_loss"] = new_stop_loss
-                # Si prix passe au-dessus du stop loss => fermeture position
-                if current_price >= stop_loss:
-                    log(f"[{symbol}] 🚨 Stop loss déclenché à {stop_loss:.6f} (prix actuel {current_price:.6f}), fermeture position.")
-                    if real_run:
-                        close_position_percent(public_key, secret_key, symbol, 100)
-                        positions_info.pop(symbol, None)
-                    else:
-                        log(f"[{symbol}] [Dry-run] Fermeture position stop loss ignorée.")
+            pnl = get_position_pnl(symbol)
+            pnl_percent = pnl / POSITION_AMOUNT_USDC
+            if pnl_percent >= PNL_THRESHOLD_CLOSE:
+                log(f"[{symbol}] 🎯 PnL {pnl:.2f} USDC atteint ({pnl_percent*100:.2f}%). Fermeture de position.")
+                if real_run:
+                    close_position_percent(public_key, secret_key, symbol, 100)
+                else:
+                    log(f"[{symbol}] [Dry-run] Fermeture de position ignorée.")
+            else:
+                log(f"[{symbol}] 📊 PnL actuel : {pnl:.4f} USDC ({pnl_percent*100:.2f}%)")
 
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur : {e}")
 
 def main(symbols: list, real_run: bool):
-    log(f"--- Breakout Bot started for symbols: {', '.join(symbols)} ---")
+    log(f"--- Breakout MACD RSI Bot started for symbols: {', '.join(symbols)} ---")
     log(f"Mode : {'real-run' if real_run else 'dry-run'}")
 
     while True:
@@ -135,7 +104,7 @@ def main(symbols: list, real_run: bool):
         time.sleep(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Breakout bot for Backpack Exchange")
+    parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
     parser.add_argument("symbols", type=str, help="Liste des symboles séparés par des virgules (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
     parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
     args = parser.parse_args()

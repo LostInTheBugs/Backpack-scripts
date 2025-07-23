@@ -1,21 +1,17 @@
-# strategies/breakout_signal.py
-
 def breakout_signal(ohlcv):
-    """
-    Analyse des chandelles pour détecter un breakout.
-    Renvoie : "BUY", "SELL" ou None
-    """
     if len(ohlcv) < 2:
         return None
 
     last = ohlcv[-1]
     prev = ohlcv[-2]
 
-    # Exemple : breakout haussier si close dépasse high précédent
-    if last['close'] > prev['high']:
-        return "BUY"
-    # Exemple : breakout baissier si close passe sous low précédent
-    elif last['close'] < prev['low']:
-        return "SELL"
+    # Convertir les valeurs en float si ce ne sont pas déjà des float
+    last_close = float(last['close'])
+    prev_high = float(prev['high'])
+    prev_low = float(prev['low'])
 
+    if last_close > prev_high:
+        return "BUY"
+    elif last_close < prev_low:
+        return "SELL"
     return None
