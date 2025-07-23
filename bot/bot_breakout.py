@@ -1,6 +1,6 @@
 import time
 import argparse
-from list.breakout_signal import breakout_signal
+from strategies.breakout_signal import breakout_signal
 from execute.open_position_usdc import open_position
 from execute.close_position import close_position
 from backpack_public.public import get_open_position, get_mark_price
