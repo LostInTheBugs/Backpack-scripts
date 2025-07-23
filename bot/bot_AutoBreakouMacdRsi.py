@@ -1,4 +1,4 @@
-import time
+import time 
 import argparse
 import os
 from datetime import datetime
@@ -17,8 +17,11 @@ public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
 POSITION_AMOUNT_USDC = 20
-PNL_THRESHOLD_CLOSE = 0.002
+# PNL_THRESHOLD_CLOSE = 0.002  # supprimé car on ne ferme plus à seuil fixe
+
 RESELECT_INTERVAL_SEC = 300  # 5 minutes
+
+TRAILING_STOP_PCT = 0.005  # 0.5% stop suiveur (modifiable)
 
 def log(msg):
     print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
@@ -99,30 +102,72 @@ def handle_symbol(symbol: str, real_run: bool):
         signal = combined_signal(df)
         log(f"[{symbol}] Signal combiné: {signal}")
 
-        if signal in ["BUY", "SELL"]:
-            if has_open_position(symbol):
-                log(f"[{symbol}] ⚠️ Déjà en position.")
-            else:
-                log(f"[{symbol}] 📈 Signal {signal}. Ouverture.")
-                if real_run:
-                    direction = "long" if signal.lower() == "buy" else "short"
-                    open_position(symbol, POSITION_AMOUNT_USDC, direction)
-                else:
-                    log(f"[{symbol}] [Dry-run] Ouverture ignorée.")
-        else:
-            log(f"[{symbol}] 🕵️ Aucun signal exploitable.")
+        # Variables pour stop suiveur, on les stocke dans un dict en mémoire (temporaire)
+        if not hasattr(handle_symbol, "trailing_stop_state"):
+            handle_symbol.trailing_stop_state = {}
+        state = handle_symbol.trailing_stop_state.setdefault(symbol, {
+            "position": None,
+            "entry_price": 0.0,
+            "max_price": 0.0,  # max price atteint depuis l'ouverture (long)
+            "min_price": float('inf')  # min price atteint depuis l'ouverture (short)
+        })
 
-        if has_open_position(symbol):
-            pnl = get_position_pnl(symbol)
-            pnl_percent = pnl / POSITION_AMOUNT_USDC
-            if pnl_percent >= PNL_THRESHOLD_CLOSE:
-                log(f"[{symbol}] 🎯 PnL {pnl:.2f} USDC atteint ({pnl_percent*100:.2f}%). Fermeture.")
+        # Gestion ouverture position
+        if signal in ["BUY", "SELL"]:
+            if state["position"] is None:
+                # ouvrir position
+                state["position"] = "long" if signal == "BUY" else "short"
+                state["entry_price"] = df['close'].iloc[-1]
+                state["max_price"] = state["entry_price"]
+                state["min_price"] = state["entry_price"]
+                log(f"[{symbol}] 📈 Ouverture position {state['position']} à {state['entry_price']:.4f}")
                 if real_run:
-                    close_position_percent(public_key, secret_key, symbol, 100)
-                else:
-                    log(f"[{symbol}] [Dry-run] Fermeture ignorée.")
+                    direction = "long" if state["position"] == "long" else "short"
+                    open_position(symbol, POSITION_AMOUNT_USDC, direction)
             else:
-                log(f"[{symbol}] 🔍 PnL : {pnl:.4f} USDC ({pnl_percent*100:.2f}%)")
+                log(f"[{symbol}] ⚠️ Déjà en position {state['position']}")
+
+        else:
+            log(f"[{symbol}] 🕵️ Aucun signal d'ouverture.")
+
+        # Si position ouverte, mise à jour stop suiveur
+        if state["position"] is not None:
+            current_price = df['close'].iloc[-1]
+            if state["position"] == "long":
+                if current_price > state["max_price"]:
+                    state["max_price"] = current_price
+                    log(f"[{symbol}] 🔝 Nouveau max prix {state['max_price']:.4f}")
+                # Check stop suiveur : on ferme si baisse > trailing_stop_pct
+                if current_price < state["max_price"] * (1 - TRAILING_STOP_PCT):
+                    pnl = (current_price - state["entry_price"]) / state["entry_price"]
+                    log(f"[{symbol}] 🚪 Stop suiveur déclenché LONG à {current_price:.4f}, PnL: {pnl:.4%}")
+                    if real_run:
+                        close_position_percent(public_key, secret_key, symbol, 100)
+                    else:
+                        log(f"[{symbol}] [Dry-run] Fermeture LONG ignorée.")
+                    # Reset state
+                    state["position"] = None
+                    state["entry_price"] = 0.0
+                    state["max_price"] = 0.0
+                    state["min_price"] = float('inf')
+
+            elif state["position"] == "short":
+                if current_price < state["min_price"]:
+                    state["min_price"] = current_price
+                    log(f"[{symbol}] 🔝 Nouveau min prix {state['min_price']:.4f}")
+                # Check stop suiveur : on ferme si hausse > trailing_stop_pct
+                if current_price > state["min_price"] * (1 + TRAILING_STOP_PCT):
+                    pnl = (state["entry_price"] - current_price) / state["entry_price"]
+                    log(f"[{symbol}] 🚪 Stop suiveur déclenché SHORT à {current_price:.4f}, PnL: {pnl:.4%}")
+                    if real_run:
+                        close_position_percent(public_key, secret_key, symbol, 100)
+                    else:
+                        log(f"[{symbol}] [Dry-run] Fermeture SHORT ignorée.")
+                    # Reset state
+                    state["position"] = None
+                    state["entry_price"] = 0.0
+                    state["max_price"] = 0.0
+                    state["min_price"] = float('inf')
 
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur : {e}")
@@ -150,6 +195,8 @@ def backtest_symbol(symbol: str, duration: str):
         trades = []  # liste des trades simulés: dict avec type, entry_price, exit_price
         position = None  # None, "long" ou "short"
         entry_price = 0.0
+        max_price = 0.0
+        min_price = float('inf')
 
         for i in range(30, len(df)):
             df_slice = df.iloc[:i+1]
@@ -161,30 +208,86 @@ def backtest_symbol(symbol: str, duration: str):
                 if signal == "BUY":
                     position = "long"
                     entry_price = close_price
+                    max_price = entry_price
+                    min_price = entry_price
                 elif signal == "SELL":
                     position = "short"
                     entry_price = close_price
+                    max_price = entry_price
+                    min_price = entry_price
             else:
-                # Si position ouverte, on ferme si signal inverse ou pas de signal
-                if (position == "long" and signal == "SELL") or (position == "short" and signal == "BUY") or signal is None:
-                    exit_price = close_price
+                # Mise à jour stop suiveur
+                if position == "long":
+                    if close_price > max_price:
+                        max_price = close_price
+                    # Check stop suiveur
+                    if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                        pnl = (close_price - entry_price) / entry_price
+                        trades.append({
+                            "type": position,
+                            "entry": entry_price,
+                            "exit": close_price,
+                            "pnl": pnl
+                        })
+                        position = None
+                        entry_price = 0.0
+                        max_price = 0.0
+                        min_price = float('inf')
+                        continue
+                elif position == "short":
+                    if close_price < min_price:
+                        min_price = close_price
+                    # Check stop suiveur
+                    if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                        pnl = (entry_price - close_price) / entry_price
+                        trades.append({
+                            "type": position,
+                            "entry": entry_price,
+                            "exit": close_price,
+                            "pnl": pnl
+                        })
+                        position = None
+                        entry_price = 0.0
+                        max_price = 0.0
+                        min_price = float('inf')
+                        continue
+
+                # Sinon on ferme si signal inverse ou pas de signal
+                if position == "long" and signal == "SELL":
+                    pnl = (close_price - entry_price) / entry_price
                     trades.append({
                         "type": position,
                         "entry": entry_price,
-                        "exit": exit_price,
-                        "pnl": (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+                        "exit": close_price,
+                        "pnl": pnl
                     })
                     position = None
                     entry_price = 0.0
+                    max_price = 0.0
+                    min_price = float('inf')
+
+                elif position == "short" and signal == "BUY":
+                    pnl = (entry_price - close_price) / entry_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": close_price,
+                        "pnl": pnl
+                    })
+                    position = None
+                    entry_price = 0.0
+                    max_price = 0.0
+                    min_price = float('inf')
 
         # Si position ouverte en fin de données, on la ferme à la dernière clôture
         if position is not None:
             exit_price = df['close'].iloc[-1]
+            pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
             trades.append({
                 "type": position,
                 "entry": entry_price,
                 "exit": exit_price,
-                "pnl": (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+                "pnl": pnl
             })
 
         total_trades = len(trades)
