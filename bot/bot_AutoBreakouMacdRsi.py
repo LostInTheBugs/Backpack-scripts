@@ -88,7 +88,9 @@ def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
     for sym, vol, volm in selected:
         log(f"• {sym} - Volatilité: {vol:.4f}, Volume moyen: {volm:.0f}")
 
-    return [x[0] for x in selected]
+    selected_symbols = [x[0] for x in selected]
+    log(f"🔁 Liste finale des symbols sélectionnés : {', '.join(selected_symbols)}")
+    return selected_symbols
 
 def handle_symbol(symbol: str, real_run: bool):
     try:
