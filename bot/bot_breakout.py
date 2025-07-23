@@ -24,7 +24,7 @@ def main(symbol: str, real_run: bool):
     while True:
         try:
             signal = breakout_signal(symbol)
-
+            log(f"[DEBUG] Signal brut retourné: {signal} ({type(signal)})")
             if signal in ["BUY", "SELL"]:
                 if has_open_position(symbol):
                     log(f"🔄 Une position est déjà ouverte sur {symbol}.")
