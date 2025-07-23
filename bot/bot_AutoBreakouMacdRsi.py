@@ -16,8 +16,9 @@ from backpack_public.public import get_ohlcv
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
-POSITION_AMOUNT_USDC = 20  # à adapter selon ta stratégie
-PNL_THRESHOLD_CLOSE = 0.002  # 0.2%
+POSITION_AMOUNT_USDC = 20
+PNL_THRESHOLD_CLOSE = 0.002
+RESELECT_INTERVAL_SEC = 300  # 5 minutes
 
 def log(msg):
     print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
@@ -55,8 +56,7 @@ def get_perp_symbols():
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         markets = resp.json()
-        perp_symbols = [m['symbol'] for m in markets if 'PERP' in m['symbol']]
-        return perp_symbols
+        return [m['symbol'] for m in markets if 'PERP' in m['symbol']]
     except Exception as e:
         log(f"Erreur récupération symbols PERP: {e}")
         return []
@@ -64,7 +64,7 @@ def get_perp_symbols():
 def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
     perp_symbols = get_perp_symbols()
     vol_list = []
-    log(f"Calcul des volatilités pour {len(perp_symbols)} symbols PERP...")
+    log(f"🔎 Calcul des volatilités pour {len(perp_symbols)} symbols PERP...")
 
     for symbol in perp_symbols:
         try:
@@ -79,14 +79,14 @@ def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
                 continue
             vol_list.append((symbol, volatility, avg_volume))
         except Exception as e:
-            log(f"Erreur sur {symbol}: {e}")
+            log(f"⚠️ Erreur sur {symbol}: {e}")
 
     vol_list.sort(key=lambda x: x[1], reverse=True)
     selected = vol_list[:top_n]
 
-    log(f"Symbols sélectionnés (top {top_n} par volatilité et volume > {min_volume}):")
+    log(f"✅ Symbols sélectionnés (top {top_n} par volatilité et volume > {min_volume}):")
     for sym, vol, volm in selected:
-        log(f"{sym} - Volatilité: {vol:.4f}, Volume moyen: {volm:.0f}")
+        log(f"• {sym} - Volatilité: {vol:.4f}, Volume moyen: {volm:.0f}")
 
     return [x[0] for x in selected]
 
@@ -97,46 +97,48 @@ def handle_symbol(symbol: str, real_run: bool):
         df = calculate_macd_rsi(df)
 
         signal = combined_signal(df)
-        log(f"[{symbol}] Signal combiné retourné: {signal} ({type(signal)})")
+        log(f"[{symbol}] Signal combiné: {signal}")
 
         if signal in ["BUY", "SELL"]:
             if has_open_position(symbol):
-                log(f"[{symbol}] 🔄 Une position est déjà ouverte.")
+                log(f"[{symbol}] ⚠️ Déjà en position.")
             else:
-                log(f"[{symbol}] 📈 Signal détecté : {signal}. Ouverture d'une position.")
+                log(f"[{symbol}] 📈 Signal {signal}. Ouverture.")
                 if real_run:
                     direction = "long" if signal.lower() == "buy" else "short"
                     open_position(symbol, POSITION_AMOUNT_USDC, direction)
                 else:
-                    log(f"[{symbol}] [Dry-run] Ouverture de position {signal.lower()} ignorée.")
+                    log(f"[{symbol}] [Dry-run] Ouverture ignorée.")
         else:
-            log(f"[{symbol}] 🕵️ Aucun signal breakout + MACD/RSI détecté.")
+            log(f"[{symbol}] 🕵️ Aucun signal exploitable.")
 
         if has_open_position(symbol):
             pnl = get_position_pnl(symbol)
             pnl_percent = pnl / POSITION_AMOUNT_USDC
             if pnl_percent >= PNL_THRESHOLD_CLOSE:
-                log(f"[{symbol}] 🎯 PnL {pnl:.2f} USDC atteint ({pnl_percent*100:.2f}%). Fermeture de position.")
+                log(f"[{symbol}] 🎯 PnL {pnl:.2f} USDC atteint ({pnl_percent*100:.2f}%). Fermeture.")
                 if real_run:
                     close_position_percent(public_key, secret_key, symbol, 100)
                 else:
-                    log(f"[{symbol}] [Dry-run] Fermeture de position ignorée.")
+                    log(f"[{symbol}] [Dry-run] Fermeture ignorée.")
             else:
-                log(f"[{symbol}] 📊 PnL actuel : {pnl:.4f} USDC ({pnl_percent*100:.2f}%)")
+                log(f"[{symbol}] 🔍 PnL : {pnl:.4f} USDC ({pnl_percent*100:.2f}%)")
 
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur : {e}")
 
 def main(symbols: list, real_run: bool, auto_select=False):
-    if auto_select:
-        symbols = select_symbols_by_volatility()
-
-    log(f"--- Breakout MACD RSI Bot started for symbols: {', '.join(symbols)} ---")
-    log(f"Mode : {'real-run' if real_run else 'dry-run'}")
+    last_selection_time = 0
 
     while True:
+        if auto_select and (time.time() - last_selection_time > RESELECT_INTERVAL_SEC):
+            symbols = select_symbols_by_volatility()
+            last_selection_time = time.time()
+            log(f"🔄 Nouvelle sélection automatique de symbols : {', '.join(symbols)}")
+
         for symbol in symbols:
             handle_symbol(symbol, real_run)
+
         time.sleep(1)
 
 if __name__ == "__main__":
