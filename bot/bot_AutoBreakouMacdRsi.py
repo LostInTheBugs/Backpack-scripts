@@ -5,12 +5,13 @@ from datetime import datetime
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
+import requests
 
 from read.breakout_signal import breakout_signal
 from read.open_position_utils import has_open_position, get_position_pnl
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
-from backpack_public.public import Public, get_ohlcv
+from backpack_public.public import get_ohlcv
 
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
@@ -48,11 +49,20 @@ def combined_signal(df):
     else:
         return None
 
-def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
-    public = Public()
-    markets = public.get_markets()
-    perp_symbols = [m['symbol'] for m in markets if 'PERP' in m['symbol']]
+def get_perp_symbols():
+    url = "https://api.backpack.exchange/v1/markets"
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        markets = resp.json()
+        perp_symbols = [m['symbol'] for m in markets if 'PERP' in m['symbol']]
+        return perp_symbols
+    except Exception as e:
+        log(f"Erreur récupération symbols PERP: {e}")
+        return []
 
+def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
+    perp_symbols = get_perp_symbols()
     vol_list = []
     log(f"Calcul des volatilités pour {len(perp_symbols)} symbols PERP...")
 
@@ -63,7 +73,7 @@ def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
                 continue
             df = prepare_ohlcv_df(ohlcv)
             df['log_return'] = np.log(df['close'] / df['close'].shift(1))
-            volatility = df['log_return'].std() * np.sqrt(24 * 365)  # annualisée pour hourly candles
+            volatility = df['log_return'].std() * np.sqrt(24 * 365)
             avg_volume = df['volume'].mean()
             if avg_volume < min_volume:
                 continue
