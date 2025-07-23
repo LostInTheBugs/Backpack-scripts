@@ -147,21 +147,60 @@ def backtest_symbol(symbol: str, duration: str):
         df = prepare_ohlcv_df(ohlcv)
         df = calculate_macd_rsi(df)
 
-        buy_signals = 0
-        sell_signals = 0
+        trades = []  # liste des trades simulés: dict avec type, entry_price, exit_price
+        position = None  # None, "long" ou "short"
+        entry_price = 0.0
 
         for i in range(30, len(df)):
             df_slice = df.iloc[:i+1]
             signal = combined_signal(df_slice)
-            if signal == "BUY":
-                buy_signals += 1
-            elif signal == "SELL":
-                sell_signals += 1
+            close_price = df_slice['close'].iloc[-1]
 
-        log(f"[{symbol}] 📊 Backtest {duration} — BUY: {buy_signals}, SELL: {sell_signals}")
+            if position is None:
+                # On ouvre une position si signal BUY ou SELL
+                if signal == "BUY":
+                    position = "long"
+                    entry_price = close_price
+                elif signal == "SELL":
+                    position = "short"
+                    entry_price = close_price
+            else:
+                # Si position ouverte, on ferme si signal inverse ou pas de signal
+                if (position == "long" and signal == "SELL") or (position == "short" and signal == "BUY") or signal is None:
+                    exit_price = close_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": exit_price,
+                        "pnl": (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+                    })
+                    position = None
+                    entry_price = 0.0
+
+        # Si position ouverte en fin de données, on la ferme à la dernière clôture
+        if position is not None:
+            exit_price = df['close'].iloc[-1]
+            trades.append({
+                "type": position,
+                "entry": entry_price,
+                "exit": exit_price,
+                "pnl": (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+            })
+
+        total_trades = len(trades)
+        wins = [t for t in trades if t['pnl'] > 0]
+        losses = [t for t in trades if t['pnl'] <= 0]
+        win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0
+        avg_win = np.mean([t['pnl'] for t in wins]) if wins else 0
+        avg_loss = np.mean([t['pnl'] for t in losses]) if losses else 0
+        total_pnl = sum([t['pnl'] for t in trades])
+
+        log(f"[{symbol}] 📊 Backtest {duration} : {total_trades} trades, {len(wins)} gagnants, {len(losses)} perdants, "
+            f"Win rate: {win_rate:.2f}%, Gain moyen: {avg_win:.4f}, Perte moyenne: {avg_loss:.4f}, PnL total: {total_pnl:.4f}")
 
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur backtest : {e}")
+
 
 def main(symbols: list, real_run: bool, auto_select=False):
     last_selection_time = 0
