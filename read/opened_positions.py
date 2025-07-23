@@ -69,6 +69,14 @@ def display_open_positions(positions: list):
     print("[Opened positions]")
     print(tabulate(table, headers=headers, tablefmt="grid"))
 
+
+def has_open_position(symbol: str) -> bool:
+    positions = get_open_positions(public_key, secret_key)
+    for p in positions:
+        if p.get("symbol") == symbol and float(p.get("netQuantity", 0)) != 0:
+            return True
+    return False
+
 def main():
     try:
         positions = get_open_positions(public_key, secret_key)
