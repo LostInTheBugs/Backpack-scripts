@@ -1,13 +1,16 @@
 import time
 import argparse
+import os
 from datetime import datetime
 
 from read.breakout_signal import breakout_signal
 from read.open_position_utils import has_open_position, get_position_pnl
 from execute.open_position_usdc import open_position
-from execute.close_position import close_position
+from execute.close_position_percent import close_position_percent
 from backpack_public.public import get_ohlcv
 
+public_key = os.environ.get("bpx_bot_public_key")
+secret_key = os.environ.get("bpx_bot_secret_key")
 POSITION_AMOUNT_USDC = 20  # à adapter selon ta stratégie
 PNL_THRESHOLD_CLOSE = 0.002  # 0.2%
 
@@ -39,7 +42,7 @@ def handle_symbol(symbol: str, real_run: bool):
             if pnl_percent >= PNL_THRESHOLD_CLOSE:
                 log(f"[{symbol}] 🎯 PnL {pnl:.2f} USDC atteint ({pnl_percent*100:.2f}%). Fermeture de position.")
                 if real_run:
-                    close_position(symbol)
+                    close_position_percent(public_key, secret_key, symbol, 100)
                 else:
                     log(f"[{symbol}] [Dry-run] Fermeture de position ignorée.")
             else:
