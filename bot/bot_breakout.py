@@ -1,120 +1,95 @@
-import time
-import sys
 import argparse
-from datetime import datetime
-import os
+import time
+from public.public import get_ohlcv
+from read.opened_positions import has_open_position
+from execute.open_position_usdc import open_position_usdc
+from execute.close_position_usdc import close_position_usdc  # si dispo
 
-# 🔧 Corrige les chemins d'import pour que le script fonctionne même lancé seul
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Paramètres du breakout
+BREAKOUT_LOOKBACK = 20  # bougies précédentes à analyser
+PROFIT_TARGET = 0.01    # 1% de profit
 
-from read.opened_positions import get_open_positions
-from execute.open_position_usdc import open_position
-from execute.close_position_percent import close_position_percent
-from backpack_public.public import get_ohlcv
+def check_breakout(candles):
+    """
+    Détermine s'il y a un signal de breakout.
+    Retourne 'BUY', 'SELL' ou None.
+    """
+    if len(candles) < BREAKOUT_LOOKBACK + 1:
+        return None
 
-# 🔑 Clés API via variables d'environnement
-public_key = os.environ.get("bpx_bot_public_key")
-secret_key = os.environ.get("bpx_bot_secret_key")
+    prev_candles = candles[-(BREAKOUT_LOOKBACK+1):-1]
+    last = candles[-1]
 
-# 📈 Paramètres du bot
-LOOKBACK = 20
-TIMEFRAME = "1m"
-AMOUNT_USDC = 25
-PROFIT_TARGET = 0.01  # 1% de bénéfice pour la fermeture automatique
+    highs = [c["high"] for c in prev_candles]
+    lows = [c["low"] for c in prev_candles]
 
-def detect_breakout(data):
-    highs = [c["high"] for c in data[:-1]]
-    lows = [c["low"] for c in data[:-1]]
-    close = data[-1]["close"]
+    max_high = max(highs)
+    min_low = min(lows)
 
-    if close > max(highs):
+    if last["close"] > max_high:
         return "BUY"
-    elif close < min(lows):
+    elif last["close"] < min_low:
         return "SELL"
-    return "HOLD"
+    else:
+        return None
 
-def already_has_position(symbol, positions):
-    for pos in positions:
-        if pos.get("symbol") == symbol:
-            net_qty = float(pos.get("netQuantity", 0))
-            if net_qty != 0:
-                return True
-    return False
+def main(symbol, dry_run=False):
+    print(f"\n--- Breakout Bot started for {symbol} ---")
+    print(f"Mode : {'dry-run (test)' if dry_run else 'real-run'}")
 
-def check_and_close_position(symbol, positions, dry_run):
-    for pos in positions:
-        if pos.get("symbol") == symbol:
-            net_qty = float(pos.get("netQuantity", 0))
-            if net_qty == 0:
+    candles = get_ohlcv(symbol, interval="1m", limit=BREAKOUT_LOOKBACK + 1)
+    if not candles:
+        print("[ERROR] Pas de données OHLCV reçues.")
+        return
+
+    signal = check_breakout(candles)
+    if not signal:
+        print("[INFO] Aucun signal breakout détecté.")
+        return
+
+    if has_open_position(symbol):
+        print("[INFO] Position déjà ouverte, on ne fait rien.")
+        return
+
+    # Exemple : position de 10 USDC
+    usdc_amount = 10
+
+    print(f"[SIGNAL] {signal} détecté sur {symbol}")
+    if dry_run:
+        print(f"[DRY RUN] → {signal} {symbol} pour {usdc_amount} USDC (non exécuté)")
+    else:
+        print(f"[REAL RUN] → {signal} {symbol} pour {usdc_amount} USDC")
+        open_position_usdc(symbol, usdc_amount, signal.lower())
+
+        # Attente passive et fermeture à 1 % de gain (à améliorer)
+        entry_price = candles[-1]["close"]
+        target_price = entry_price * (1 + PROFIT_TARGET) if signal == "BUY" else entry_price * (1 - PROFIT_TARGET)
+        
+        print(f"[INFO] Target de sortie : {target_price:.2f}")
+
+        while True:
+            time.sleep(15)
+            latest = get_ohlcv(symbol, "1m", 1)
+            if not latest:
                 continue
+            current_price = latest[-1]["close"]
+            print(f"[CHECK] Prix actuel : {current_price:.2f}")
 
-            entry = float(pos.get("entryPrice", 0))
-            current = float(pos.get("markPrice", 0))  # adapte si la clé est différente
-            side = "long" if net_qty > 0 else "short"
-
-            gain = (current - entry) / entry if side == "long" else (entry - current) / entry
-
-            if gain >= PROFIT_TARGET:
-                print(f"[{datetime.utcnow()}] 🎯 Fermeture de position {side} sur {symbol} (+1%)")
+            if (signal == "BUY" and current_price >= target_price) or \
+               (signal == "SELL" and current_price <= target_price):
+                print(f"[EXIT] Fermeture de position : gain de 1 % atteint.")
                 if not dry_run:
-                    close_position_percent(public_key, secret_key, symbol, 100)
-                else:
-                    print("⚠️ [dry-run] Position non fermée.")
-            return
-
-def main(symbol: str, dry_run: bool):
-    print(f"--- Breakout Bot started for {symbol} ---")
-    print(f"Mode : {'dry-run (test)' if dry_run else 'real-run (LIVE)'}")
-
-    while True:
-        try:
-            ohlcv = get_ohlcv(symbol, TIMEFRAME, limit=LOOKBACK)
-            if not ohlcv or len(ohlcv) < LOOKBACK:
-                print("Pas assez de données OHLCV.")
-                time.sleep(10)
-                continue
-
-            positions = get_open_positions(public_key, secret_key)
-
-            # Vérifier la fermeture automatique
-            check_and_close_position(symbol, positions, dry_run)
-
-            # Ignorer si position déjà ouverte
-            if already_has_position(symbol, positions):
-                print(f"[{datetime.utcnow()}] Une position existe déjà pour {symbol}")
-                time.sleep(60)
-                continue
-
-            # Détection breakout
-            signal = detect_breakout(ohlcv)
-            print(f"[{datetime.utcnow()}] Signal : {signal}")
-
-            if signal == "BUY":
-                if dry_run:
-                    print(f"[dry-run] → OUVERTURE LONG {symbol} pour {AMOUNT_USDC} USDC")
-                else:
-                    open_position_usdc(symbol, "long", AMOUNT_USDC)
-            elif signal == "SELL":
-                if dry_run:
-                    print(f"[dry-run] → OUVERTURE SHORT {symbol} pour {AMOUNT_USDC} USDC")
-                else:
-                    open_position_usdc(symbol, "short", AMOUNT_USDC)
-
-        except Exception as e:
-            print(f"Erreur : {e}")
-
-        time.sleep(60)
+                    close_position_usdc(symbol)
+                break
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("symbol", help="Ex: BTC-USDC")
-    parser.add_argument("--dry-run", action="store_true", help="Mode test (aucun ordre réel)")
-    parser.add_argument("--real-run", action="store_true", help="Mode réel (ordres exécutés)")
-
+    parser.add_argument("symbol", help="ex: BTC-USDC")
+    parser.add_argument("--dry-run", action="store_true", help="Exécute en mode test (sans trader)")
+    parser.add_argument("--real-run", action="store_true", help="Exécute en mode réel (trading actif)")
     args = parser.parse_args()
 
     if not args.dry_run and not args.real_run:
-        print("❌ Spécifie --dry-run ou --real-run pour lancer le bot.")
-        sys.exit(1)
-
-    main(args.symbol, dry_run=args.dry_run)
+        print("❌ Veuillez préciser --dry-run ou --real-run")
+    else:
+        main(args.symbol, dry_run=args.dry_run)

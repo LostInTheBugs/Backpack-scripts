@@ -1,29 +1,41 @@
 import requests
 from datetime import datetime
 
-def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 20):
-    # CoinGecko ne fait pas USDC par défaut, mais USDT est proche
-    # symbol = "bitcoin" for BTC, interval en minutes, limit = nb de points
+def get_ohlcv(symbol="BTC-USDC", interval="1m", limit=100):
+    """
+    Récupère les chandeliers (OHLCV) depuis l'API publique Backpack Exchange.
 
-    coin_id = "bitcoin" if "BTC" in symbol else "ethereum"  # simplification
-    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc"
+    :param symbol: str, ex: 'BTC-USDC'
+    :param interval: str, ex: '1m', '5m', '1h', '1d'
+    :param limit: int, nombre de bougies à récupérer (max: 1000 si dispo)
+    :return: liste de dictionnaires avec timestamp, open, high, low, close, volume
+    """
+    url = "https://api.backpack.exchange/api/v1/klines"
     params = {
-        "vs_currency": "usd",
-        "days": 1,
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit
     }
-    resp = requests.get(url, params=params)
-    resp.raise_for_status()
-    data = resp.json()  # liste de [timestamp, open, high, low, close]
 
-    # Convertir timestamp ms en dict standardisé et limiter la taille
-    candles = []
-    for c in data[-limit:]:
-        candles.append({
-            "timestamp": int(c[0]),
-            "open": float(c[1]),
-            "high": float(c[2]),
-            "low": float(c[3]),
-            "close": float(c[4]),
-            "volume": 0,  # CoinGecko ne fournit pas volume ici
-        })
-    return candles
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        klines = resp.json()
+        
+        parsed = []
+        for k in klines:
+            parsed.append({
+                "timestamp": datetime.utcfromtimestamp(k["t"] / 1000),
+                "open": float(k["o"]),
+                "high": float(k["h"]),
+                "low": float(k["l"]),
+                "close": float(k["c"]),
+                "volume": float(k["v"]),
+                "trades": k.get("n", None)  # nombre de trades si dispo
+            })
+
+        return parsed
+
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] get_ohlcv(): {e}")
+        return []
