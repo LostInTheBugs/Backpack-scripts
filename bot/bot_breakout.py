@@ -3,17 +3,12 @@ import time
 from backpack_public.public import get_ohlcv
 from read.opened_positions import has_open_position
 from execute.open_position_usdc import open_position_usdc
-from execute.close_position_usdc import close_position_usdc  # si dispo
+from execute.close_position_usdc import close_position_usdc  # optionnel
 
-# Paramètres du breakout
-BREAKOUT_LOOKBACK = 20  # bougies précédentes à analyser
-PROFIT_TARGET = 0.01    # 1% de profit
+BREAKOUT_LOOKBACK = 20
+PROFIT_TARGET = 0.01
 
 def check_breakout(candles):
-    """
-    Détermine s'il y a un signal de breakout.
-    Retourne 'BUY', 'SELL' ou None.
-    """
     if len(candles) < BREAKOUT_LOOKBACK + 1:
         return None
 
@@ -48,24 +43,21 @@ def main(symbol, dry_run=False):
         return
 
     if has_open_position(symbol):
-        print("[INFO] Position déjà ouverte, on ne fait rien.")
+        print("[INFO] Une position est déjà ouverte sur ce symbole.")
         return
 
-    # Exemple : position de 10 USDC
     usdc_amount = 10
 
     print(f"[SIGNAL] {signal} détecté sur {symbol}")
     if dry_run:
-        print(f"[DRY RUN] → {signal} {symbol} pour {usdc_amount} USDC (non exécuté)")
+        print(f"[DRY RUN] → {signal} {symbol} pour {usdc_amount} USDC")
     else:
         print(f"[REAL RUN] → {signal} {symbol} pour {usdc_amount} USDC")
         open_position_usdc(symbol, usdc_amount, signal.lower())
 
-        # Attente passive et fermeture à 1 % de gain (à améliorer)
         entry_price = candles[-1]["close"]
         target_price = entry_price * (1 + PROFIT_TARGET) if signal == "BUY" else entry_price * (1 - PROFIT_TARGET)
-        
-        print(f"[INFO] Target de sortie : {target_price:.2f}")
+        print(f"[INFO] Objectif de clôture : {target_price:.4f}")
 
         while True:
             time.sleep(15)
@@ -73,11 +65,11 @@ def main(symbol, dry_run=False):
             if not latest:
                 continue
             current_price = latest[-1]["close"]
-            print(f"[CHECK] Prix actuel : {current_price:.2f}")
+            print(f"[CHECK] Prix actuel : {current_price:.4f}")
 
             if (signal == "BUY" and current_price >= target_price) or \
                (signal == "SELL" and current_price <= target_price):
-                print(f"[EXIT] Fermeture de position : gain de 1 % atteint.")
+                print(f"[EXIT] Fermeture de position : objectif atteint.")
                 if not dry_run:
                     close_position_usdc(symbol)
                 break
