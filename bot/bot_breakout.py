@@ -27,13 +27,15 @@ def main(symbol: str, real_run: bool):
             ohlcv = get_ohlcv(symbol, interval="1m", limit=100)
             signal = breakout_signal(ohlcv)
             log(f"[DEBUG] Signal brut retourné: {signal} ({type(signal)})")
+
             if signal in ["BUY", "SELL"]:
                 if has_open_position(symbol):
                     log(f"🔄 Une position est déjà ouverte sur {symbol}.")
                 else:
                     log(f"📈 Signal détecté : {signal}. Ouverture d'une position.")
                     if real_run:
-                        open_position(symbol, signal.lower(), POSITION_AMOUNT_USDC)
+                        direction = "long" if signal.lower() == "buy" else "short"
+                        open_position(symbol, POSITION_AMOUNT_USDC, direction)
                     else:
                         log(f"[Dry-run] Ouverture de position {signal.lower()} ignorée.")
             else:
