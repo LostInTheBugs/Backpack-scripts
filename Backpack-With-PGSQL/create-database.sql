@@ -1,7 +1,3 @@
-CREATE DATABASE backpack_ohlcv;
-
-USE backpack_ohlcv;
- 
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE TABLE ohlcv_btc__usdc__perp (
