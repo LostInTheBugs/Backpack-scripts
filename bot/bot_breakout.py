@@ -24,7 +24,7 @@ def main(symbol: str, real_run: bool):
 
     while True:
         try:
-            ohlcv = get_ohlcv(symbol, interval_sec=60, limit=100)
+            ohlcv = get_ohlcv(symbol, interval_sec="1m", limit=100)
             signal = breakout_signal(symbol)
             log(f"[DEBUG] Signal brut retourné: {signal} ({type(signal)})")
             if signal in ["BUY", "SELL"]:
