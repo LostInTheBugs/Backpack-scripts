@@ -6,6 +6,7 @@ from read.breakout_signal import breakout_signal
 from read.open_position_utils import has_open_position, get_position_pnl
 from execute.open_position_usdc import open_position
 from execute.close_position import close_position
+from backpack_public.public import get_ohlcv
 
 SYMBOL = None
 POSITION_AMOUNT_USDC = 20  # à adapter selon ta stratégie
