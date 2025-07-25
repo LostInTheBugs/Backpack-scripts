@@ -39,47 +39,37 @@ def calculate_macd_rsi(df):
     return df
 
 def combined_signal(df):
-    df = df.copy()
-
     df['ema50'] = ta.ema(df['close'], length=50)
-    
-    # ⚠️ Nettoyage : enlever les lignes incomplètes (None dans MACD ou ema)
-    df = df.dropna(subset=['MACDh_12_26_9', 'MACDs_12_26_9', 'ema50', 'rsi'])
+    df['macd'] = ta.macd(df['close']).iloc[:, 0]  # MACD line
+    df['macd_signal'] = ta.macd(df['close']).iloc[:, 1]  # Signal line
+    df['rsi'] = ta.rsi(df['close'], length=14)
 
-    if len(df) < 1:
-        return None
+    signal = None
 
-    breakout = breakout_signal(df.to_dict('records'))
-    macd_hist = df['MACDh_12_26_9'].iloc[-1]
-    macd_signal = df['MACDs_12_26_9'].iloc[-1]
-    rsi = df['rsi'].iloc[-1]
-    close = df['close'].iloc[-1]
-    ema50 = df['ema50'].iloc[-1]
-
-    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
-    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
-
-    if breakout == "BUY":
-        if not macd_signal_bull:
-            log("❌ Signal BUY rejeté : MACD haussier absent")
-        elif rsi >= 70:
-            log("❌ Signal BUY rejeté : RSI trop élevé")
-        elif close <= ema50:
-            log(f"❌ Signal BUY rejeté : close ({close:.4f}) <= ema50 ({ema50:.4f})")
+    if df['high'].iloc[-1] > df['high'].iloc[-2] and df['close'].iloc[-1] > df['high'].iloc[-2]:
+        # Tentative de breakout vers le haut
+        if df['close'].iloc[-1] < df['ema50'].iloc[-1]:
+            print(f"❌ Signal BUY rejeté : close ({df['close'].iloc[-1]:.4f}) < ema50 ({df['ema50'].iloc[-1]:.4f})")
+        elif df['macd'].iloc[-1] <= df['macd_signal'].iloc[-1]:
+            print("❌ Signal BUY rejeté : MACD haussier absent")
+        elif df['rsi'].iloc[-1] > 70:
+            print("❌ Signal BUY rejeté : RSI trop élevé")
         else:
-            return "BUY"
+            signal = 'BUY'
 
-    elif breakout == "SELL":
-        if not macd_signal_bear:
-            log("❌ Signal SELL rejeté : MACD baissier absent")
-        elif rsi <= 30:
-            log("❌ Signal SELL rejeté : RSI trop bas")
-        elif close >= ema50:
-            log(f"❌ Signal SELL rejeté : close ({close:.4f}) >= ema50 ({ema50:.4f})")
+    elif df['low'].iloc[-1] < df['low'].iloc[-2] and df['close'].iloc[-1] < df['low'].iloc[-2]:
+        # Tentative de breakout vers le bas
+        if df['close'].iloc[-1] >= df['ema50'].iloc[-1]:
+            print(f"❌ Signal SELL rejeté : close ({df['close'].iloc[-1]:.4f}) >= ema50 ({df['ema50'].iloc[-1]:.4f})")
+        elif df['macd'].iloc[-1] >= df['macd_signal'].iloc[-1]:
+            print("❌ Signal SELL rejeté : MACD baissier absent")
+        elif df['rsi'].iloc[-1] < 30:
+            print("❌ Signal SELL rejeté : RSI trop bas")
         else:
-            return "SELL"
+            signal = 'SELL'
 
-    return None
+    return signal
+
 
 
 def get_perp_symbols():
