@@ -1,40 +1,46 @@
 import requests
+import sys
 
-SYMBOLS_FILE = "symbol.lst"
-N = 10  # nombre de symboles à garder dans le fichier
+API_URL = "https://api.backpack.exchange/api/v1/tickers"
+OUTPUT_FILE = "symbol.lst"
 
-def fetch_top_symbols(n):
-    url = "https://api.backpack.exchange/api/v1/tickers"
+def main(n):
     try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        print(f"Erreur récupération données API : {e}")
-        return []
+        n = int(n)
+        if n <= 0:
+            raise ValueError()
+    except:
+        print("Usage: python3 update_symbols_by_volume.py N")
+        print("N = nombre de symboles à garder selon volume 24h")
+        sys.exit(1)
 
-    # data attendue : liste d'objets avec 'symbol' et 'volume_24h' (ou similaire)
-    # Adapter selon la vraie réponse API Backpack
-    # Exemple d'objet : {'symbol': 'BTC_USDC_PERP', 'volume_24h': 123456.78, ...}
+    resp = requests.get(API_URL)
+    if resp.status_code != 200:
+        print(f"Erreur HTTP {resp.status_code}")
+        sys.exit(1)
 
-    # Filtrer uniquement les symboles perpétuels (si besoin)
-    filtered = [item for item in data if item.get('symbol', '').endswith('_PERP')]
+    data = resp.json()
+    # data est une liste d'objets, ex: {"symbol":"BTC_USDC_PERP", "volume": "12345.67", ...}
 
-    # Trier par volume 24h décroissant
-    sorted_syms = sorted(filtered, key=lambda x: float(x.get('volume_24h', 0)), reverse=True)
+    # Convertir volume en float, trier par volume décroissant
+    sorted_tickers = sorted(
+        data,
+        key=lambda x: float(x.get("volume", "0")),
+        reverse=True
+    )
 
-    top_symbols = [item['symbol'] for item in sorted_syms[:n]]
-    return top_symbols
+    top_symbols = [t["symbol"] for t in sorted_tickers[:n]]
 
-def save_symbols(symbols):
-    with open(SYMBOLS_FILE, 'w') as f:
-        for sym in symbols:
+    with open(OUTPUT_FILE, "w") as f:
+        for sym in top_symbols:
             f.write(sym + "\n")
-    print(f"✅ {len(symbols)} symboles écrits dans {SYMBOLS_FILE}")
+
+    print(f"✅ Mis à jour {OUTPUT_FILE} avec les {n} symboles les plus volumineux :")
+    print("\n".join(top_symbols))
+
 
 if __name__ == "__main__":
-    top_syms = fetch_top_symbols(N)
-    if top_syms:
-        save_symbols(top_syms)
-    else:
-        print("⚠️ Pas de symboles récupérés")
+    if len(sys.argv) != 2:
+        print("Usage: python3 update_symbols_by_volume.py N")
+        sys.exit(1)
+    main(sys.argv[1])
