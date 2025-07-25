@@ -73,12 +73,19 @@ def combined_signal(df):
 
     return signal
 
+def read_symbols_from_file(filepath="symbol.lst"):
+    try:
+        with open(filepath, "r") as f:
+            symbols = [line.strip() for line in f if line.strip()]
+        if not symbols:
+            log(f"⚠️ Le fichier {filepath} est vide.")
+        return symbols
+    except FileNotFoundError:
+        log(f"❌ Fichier {filepath} non trouvé.")
+        return []
+
 async def fetch_ohlcv_from_pg(pool, symbol, minutes):
-    """
-    Lit les bougies 1m de la table TimescaleDB correspondante pour le backtest.
-    """
     table_name = "ohlcv_" + symbol.lower().replace("_", "__")
-    # Calcul du timestamp minimal à récupérer
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
     query = f"""
@@ -101,10 +108,6 @@ async def fetch_ohlcv_from_pg(pool, symbol, minutes):
     return data
 
 def duration_to_minutes(duration: str) -> int:
-    """
-    Convertit un string duration en minutes.
-    Exemples : 15m, 1h, 1d, 2d, 1w
-    """
     duration = duration.lower()
     if duration.endswith("m"):
         return int(duration[:-1])
@@ -113,7 +116,7 @@ def duration_to_minutes(duration: str) -> int:
     elif duration.endswith("d"):
         val = int(duration[:-1])
         if val > 90:
-            val = 90  # max 90 jours conservés
+            val = 90
         return val * 60 * 24
     elif duration.endswith("w"):
         val = int(duration[:-1])
@@ -122,8 +125,7 @@ def duration_to_minutes(duration: str) -> int:
         raise ValueError("Durée non reconnue. Utilisez un format comme 15m, 1h, 1d, 1w.")
 
 def handle_live_symbol(symbol: str, real_run: bool):
-    # Reste inchangé, ton code actuel
-    # ...
+    # Ton code actuel de trading live ici
     pass
 
 async def backtest_symbol(pool, symbol: str, duration: str):
@@ -200,18 +202,20 @@ async def backtest_symbol(pool, symbol: str, duration: str):
             pnl = (entry_price - exit_price) / entry_price
         trades.append({"type": position, "entry": entry_price, "exit": exit_price, "pnl": pnl})
 
-    # Résumé backtest
     total_pnl = sum(t['pnl'] for t in trades)
     log(f"[{symbol}] Backtest sur {duration} : {len(trades)} trades, PnL total: {total_pnl*100:.2f}%")
     for i, t in enumerate(trades):
         log(f"  Trade {i+1}: {t['type']} entry={t['entry']:.4f} exit={t['exit']:.4f} pnl={t['pnl']*100:.2f}%")
+
+def select_symbols_by_volatility():
+    # Ta fonction existante, inchangée ou à ajouter ici
+    return []
 
 def main_loop(symbols: list, real_run: bool, auto_select=False):
     last_selection_time = 0
 
     while True:
         if auto_select and (time.time() - last_selection_time > RESELECT_INTERVAL_SEC):
-            # Ici tu peux garder ta fonction select_symbols_by_volatility
             symbols = select_symbols_by_volatility()
             last_selection_time = time.time()
             log(f"🔄 Nouvelle sélection automatique de symbols : {', '.join(symbols)}")
@@ -231,13 +235,17 @@ if __name__ == "__main__":
     parser.add_argument("--backtest", type=str, help="Backtest sur une période: 1m, 15m, 1h, 1d, 1w")
     args = parser.parse_args()
 
-    if args.backtest:
-        symbols = []
+    def get_symbols():
         if args.auto_select:
-            symbols = select_symbols_by_volatility()
+            return select_symbols_by_volatility()
+        elif args.symbols:
+            return [s.strip() for s in args.symbols.split(",") if s.strip()]
         else:
-            symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+            return read_symbols_from_file()
 
+    symbols = get_symbols()
+
+    if args.backtest:
         async def run_backtests():
             pool = await asyncpg.create_pool(dsn=PG_DSN)
             for sym in symbols:
@@ -246,8 +254,4 @@ if __name__ == "__main__":
 
         asyncio.run(run_backtests())
     else:
-        if args.auto_select:
-            symbols = select_symbols_by_volatility()
-        else:
-            symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
         main_loop(symbols, real_run=args.real_run, auto_select=args.auto_select)
