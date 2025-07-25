@@ -310,7 +310,8 @@ def backtest_symbol(symbol: str, duration: str):
         # Clôturer position ouverte à la fin du backtest
         if position is not None and entry_price is not None and not pd.isna(entry_price):
             exit_price = df['close'].iloc[-1]
-            if exit_price is not None and not pd.isna(exit_price):
+            # FIX: check exit_price and entry_price are not None or NaN
+            if exit_price is not None and not pd.isna(exit_price) and entry_price is not None and not pd.isna(entry_price):
                 if position == "long":
                     pnl = (exit_price - entry_price) / entry_price
                 else:
