@@ -23,7 +23,7 @@ RESELECT_INTERVAL_SEC = 300  # 5 minutes
 
 TRAILING_STOP_PCT = 0.005  # 0.5% stop suiveur (modifiable)
 
-DEBUG_INDICATORS = True    # Active les logs détaillés des indicateurs
+DEBUG_INDICATORS = False    # Active les logs détaillés des indicateurs
 
 
 def log(msg):
