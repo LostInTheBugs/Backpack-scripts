@@ -199,6 +199,7 @@ def backtest_symbol(symbol: str, duration: str):
         ohlcv = get_ohlcv(symbol, interval="1m", limit=limit)
         df = prepare_ohlcv_df(ohlcv)
         df = calculate_macd_rsi(df)
+        df['ema50'] = ta.ema(df['close'], length=50)  # <-- Ajout EMA50 global
 
         trades = []
         position = None
@@ -207,16 +208,16 @@ def backtest_symbol(symbol: str, duration: str):
         min_price = None
 
         for i in range(30, len(df)):
-            try:
-                df_slice = df.iloc[:i+1]
-                last_row = df_slice.iloc[-1]
+            df_slice = df.iloc[:i+1].copy()
+            df_slice['ema50'] = ta.ema(df_slice['close'], length=50)  # <-- Ajout EMA50 local
 
-                # Ignore si valeurs clés manquantes
-                if any(pd.isna(last_row[col]) for col in ['close', 'ema50', 'macd', 'macd_signal', 'rsi']):
-                    continue
+            # Vérification NaN
+            last_row = df_slice.iloc[-1]
+            if any(pd.isna(last_row[col]) for col in ['close', 'ema50', 'macd', 'macd_signal', 'rsi']):
+                continue
 
-                signal = combined_signal(df_slice)
-                close_price = last_row['close']
+            signal = combined_signal(df_slice)
+            close_price = last_row['close']
 
                 if close_price is None or pd.isna(close_price):
                     continue
