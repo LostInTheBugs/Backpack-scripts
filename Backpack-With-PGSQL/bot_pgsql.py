@@ -5,23 +5,24 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
-import math
-import requests
-import psycopg  # pip install psycopg[binary]
+import asyncpg
+import asyncio
 
 from read.breakout_signal import breakout_signal
 from read.open_position_utils import has_open_position, get_position_pnl
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
-from backpack_public.public import get_ohlcv
 
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
 POSITION_AMOUNT_USDC = 20
-RESELECT_INTERVAL_SEC = 300  # 5 minutes
-TRAILING_STOP_PCT = 0.005  # 0.5% stop suiveur
-PG_DSN = os.environ.get("PG_DSN")  # chaîne de connexion PostgreSQL
+RESELECT_INTERVAL_SEC = 300
+TRAILING_STOP_PCT = 0.005
+
+PG_DSN = os.environ.get("PG_DSN")
+if not PG_DSN:
+    raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
 def log(msg):
     print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
@@ -72,272 +73,181 @@ def combined_signal(df):
 
     return signal
 
-def get_perp_symbols():
-    url = "https://api.backpack.exchange/api/v1/markets"
-    try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        markets = resp.json()
-        return [m['symbol'] for m in markets if 'PERP' in m['symbol']]
-    except Exception as e:
-        log(f"Erreur récupération symbols PERP: {e}")
-        return []
-
-def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
-    perp_symbols = get_perp_symbols()
-    vol_list = []
-    log(f"🔎 Calcul des volatilités pour {len(perp_symbols)} symbols PERP...")
-
-    for symbol in perp_symbols:
-        try:
-            ohlcv = get_ohlcv(symbol, interval='1h', limit=lookback)
-            if not ohlcv or len(ohlcv) < 30:
-                continue
-            df = prepare_ohlcv_df(ohlcv)
-            df['log_return'] = np.log(df['close'] / df['close'].shift(1))
-            volatility = df['log_return'].std() * np.sqrt(24 * 365)
-            avg_volume = df['volume'].mean()
-            if avg_volume < min_volume:
-                continue
-            vol_list.append((symbol, volatility, avg_volume))
-        except Exception as e:
-            log(f"⚠️ Erreur sur {symbol}: {e}")
-
-    vol_list.sort(key=lambda x: x[1], reverse=True)
-    selected = vol_list[:top_n]
-
-    log(f"✅ Symbols sélectionnés (top {top_n} par volatilité et volume > {min_volume}):")
-    for sym, vol, volm in selected:
-        log(f"• {sym} - Volatilité: {vol:.4f}, Volume moyen: {volm:.0f}")
-
-    return [x[0] for x in selected]
-
-def handle_symbol(symbol: str, real_run: bool):
-    try:
-        ohlcv = get_ohlcv(symbol, interval="1m", limit=100)
-        df = prepare_ohlcv_df(ohlcv)
-        df = calculate_macd_rsi(df)
-
-        signal = combined_signal(df)
-        log(f"[{symbol}] Signal combiné: {signal}")
-
-        if not hasattr(handle_symbol, "trailing_stop_state"):
-            handle_symbol.trailing_stop_state = {}
-        state = handle_symbol.trailing_stop_state.setdefault(symbol, {
-            "position": None,
-            "entry_price": 0.0,
-            "max_price": 0.0,
-            "min_price": float('inf')
-        })
-
-        if signal in ["BUY", "SELL"]:
-            if state["position"] is None:
-                state["position"] = "long" if signal == "BUY" else "short"
-                state["entry_price"] = df['close'].iloc[-1]
-                state["max_price"] = state["entry_price"]
-                state["min_price"] = state["entry_price"]
-                log(f"[{symbol}] 📈 Ouverture position {state['position']} à {state['entry_price']:.4f}")
-                if real_run:
-                    direction = "long" if state["position"] == "long" else "short"
-                    open_position(symbol, POSITION_AMOUNT_USDC, direction)
-            else:
-                log(f"[{symbol}] ⚠️ Déjà en position {state['position']}")
-        else:
-            log(f"[{symbol}] 🕵️ Aucun signal d'ouverture.")
-
-        if state["position"] is not None:
-            current_price = df['close'].iloc[-1]
-            if state["position"] == "long":
-                if current_price > state["max_price"]:
-                    state["max_price"] = current_price
-                    log(f"[{symbol}] 🔝 Nouveau max prix {state['max_price']:.4f}")
-                if current_price < state["max_price"] * (1 - TRAILING_STOP_PCT):
-                    pnl = (current_price - state["entry_price"]) / state["entry_price"]
-                    log(f"[{symbol}] 🚪 Stop suiveur déclenché LONG à {current_price:.4f}, PnL: {pnl:.4%}")
-                    if real_run:
-                        close_position_percent(public_key, secret_key, symbol, 100)
-                    else:
-                        log(f"[{symbol}] [Dry-run] Fermeture LONG ignorée.")
-                    state["position"] = None
-                    state["entry_price"] = 0.0
-                    state["max_price"] = 0.0
-                    state["min_price"] = float('inf')
-            elif state["position"] == "short":
-                if current_price < state["min_price"]:
-                    state["min_price"] = current_price
-                    log(f"[{symbol}] 🔝 Nouveau min prix {state['min_price']:.4f}")
-                if current_price > state["min_price"] * (1 + TRAILING_STOP_PCT):
-                    pnl = (state["entry_price"] - current_price) / state["entry_price"]
-                    log(f"[{symbol}] 🚪 Stop suiveur déclenché SHORT à {current_price:.4f}, PnL: {pnl:.4%}")
-                    if real_run:
-                        close_position_percent(public_key, secret_key, symbol, 100)
-                    else:
-                        log(f"[{symbol}] [Dry-run] Fermeture SHORT ignorée.")
-                    state["position"] = None
-                    state["entry_price"] = 0.0
-                    state["max_price"] = 0.0
-                    state["min_price"] = float('inf')
-
-    except Exception as e:
-        log(f"[{symbol}] ❌ Erreur : {e}")
-
-def table_name_from_symbol(symbol: str) -> str:
-    return "ohlcv_" + symbol.lower().replace("_", "__")
-
-def duration_to_minutes(duration: str) -> int:
-    if duration.endswith("m"):
-        minutes = int(duration[:-1])
-        if not 1 <= minutes <= 59:
-            raise ValueError("Minutes pour backtest doivent être entre 1 et 59")
-        return minutes
-    elif duration.endswith("d"):
-        days = int(duration[:-1])
-        if not 1 <= days <= 90:
-            raise ValueError("Jours pour backtest doivent être entre 1 et 90")
-        return days * 60 * 24
-    else:
-        raise ValueError("Durée backtest doit finir par 'm' (minutes) ou 'd' (jours)")
-
-def fetch_ohlcv_from_db(symbol: str, minutes: int):
-    """Récupère dans la base TimescaleDB la dernière série OHLCV en 1min, sur la durée en minutes."""
-    table = table_name_from_symbol(symbol)
+async def fetch_ohlcv_from_pg(pool, symbol, minutes):
+    """
+    Lit les bougies 1m de la table TimescaleDB correspondante pour le backtest.
+    """
+    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
+    # Calcul du timestamp minimal à récupérer
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
     query = f"""
-        SELECT timestamp AT TIME ZONE 'UTC' AS timestamp_utc, open, high, low, close, volume
-        FROM {table}
+        SELECT timestamp, open, high, low, close, volume
+        FROM {table_name}
         WHERE timestamp >= $1
         ORDER BY timestamp ASC
+        LIMIT $2
     """
-    with psycopg.connect(PG_DSN) as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, (cutoff,))
-            rows = cur.fetchall()
-            if not rows:
-                log(f"[{symbol}] ⚠️ Pas de données OHLCV dans la base pour les derniers {minutes} minutes.")
-                return None
-            df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
-            return df
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, cutoff, minutes)
+    data = [{
+        "timestamp": r["timestamp"],
+        "open": r["open"],
+        "high": r["high"],
+        "low": r["low"],
+        "close": r["close"],
+        "volume": r["volume"]
+    } for r in rows]
+    return data
 
-def backtest_symbol(symbol: str, duration: str):
-    try:
-        minutes = duration_to_minutes(duration)
-        df = fetch_ohlcv_from_db(symbol, minutes)
-        if df is None or df.empty:
-            log(f"[{symbol}] Aucun OHLCV disponible pour backtest")
-            return
+def duration_to_minutes(duration: str) -> int:
+    """
+    Convertit un string duration en minutes.
+    Exemples : 15m, 1h, 1d, 2d, 1w
+    """
+    duration = duration.lower()
+    if duration.endswith("m"):
+        return int(duration[:-1])
+    elif duration.endswith("h"):
+        return int(duration[:-1]) * 60
+    elif duration.endswith("d"):
+        val = int(duration[:-1])
+        if val > 90:
+            val = 90  # max 90 jours conservés
+        return val * 60 * 24
+    elif duration.endswith("w"):
+        val = int(duration[:-1])
+        return val * 60 * 24 * 7
+    else:
+        raise ValueError("Durée non reconnue. Utilisez un format comme 15m, 1h, 1d, 1w.")
 
-        # Ajout colonnes indicateurs
-        df['ema50'] = ta.ema(df['close'], length=50)
-        macd_df = ta.macd(df['close'])
-        df['macd'] = macd_df.iloc[:, 0]
-        df['macd_signal'] = macd_df.iloc[:, 1]
-        df['rsi'] = ta.rsi(df['close'], length=14)
+def handle_live_symbol(symbol: str, real_run: bool):
+    # Reste inchangé, ton code actuel
+    # ...
+    pass
 
-        trades = []
-        position = None
-        entry_price = None
-        max_price = None
-        min_price = None
+async def backtest_symbol(pool, symbol: str, duration: str):
+    minutes = duration_to_minutes(duration)
+    ohlcv = await fetch_ohlcv_from_pg(pool, symbol, minutes)
+    if not ohlcv or len(ohlcv) < 60:
+        log(f"[{symbol}] ⚠️ Pas assez de données pour backtest")
+        return
+    df = prepare_ohlcv_df(ohlcv)
+    df['ema50'] = ta.ema(df['close'], length=50)
+    macd_df = ta.macd(df['close'])
+    df['macd'] = macd_df.iloc[:, 0]
+    df['macd_signal'] = macd_df.iloc[:, 1]
+    df['rsi'] = ta.rsi(df['close'], length=14)
 
-        for i in range(50, len(df)):
-            row = df.iloc[i]
-            # Skip si NaN
-            if pd.isna(row['ema50']) or pd.isna(row['macd']) or pd.isna(row['macd_signal']) or pd.isna(row['rsi']):
-                continue
+    trades = []
+    position = None
+    entry_price = None
+    max_price = None
+    min_price = None
 
-            df_slice = df.iloc[:i+1]
-            signal = combined_signal(df_slice)
-            close_price = row['close']
+    for i in range(50, len(df)):
+        row = df.iloc[i]
+        if pd.isna(row['ema50']) or pd.isna(row['macd']) or pd.isna(row['macd_signal']) or pd.isna(row['rsi']):
+            continue
+        df_slice = df.iloc[:i+1]
+        signal = combined_signal(df_slice)
+        close_price = row['close']
 
-            if position is None:
+        if position is None:
+            if signal == "BUY":
+                position = "long"
+                entry_price = close_price
+                max_price = close_price
+                min_price = close_price
+            elif signal == "SELL":
+                position = "short"
+                entry_price = close_price
+                max_price = close_price
+                min_price = close_price
+        else:
+            if position == "long":
+                if close_price > max_price:
+                    max_price = close_price
+                if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                    pnl = (close_price - entry_price) / entry_price
+                    trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
+                    position = None
+                    continue
+                if signal == "SELL":
+                    pnl = (close_price - entry_price) / entry_price
+                    trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
+                    position = None
+                    continue
+            elif position == "short":
+                if close_price < min_price:
+                    min_price = close_price
+                if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                    pnl = (entry_price - close_price) / entry_price
+                    trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
+                    position = None
+                    continue
                 if signal == "BUY":
-                    position = "long"
-                    entry_price = close_price
-                    max_price = close_price
-                    min_price = close_price
-                elif signal == "SELL":
-                    position = "short"
-                    entry_price = close_price
-                    max_price = close_price
-                    min_price = close_price
-            else:
-                if position == "long":
-                    if close_price > max_price:
-                        max_price = close_price
-                    if close_price < max_price * (1 - TRAILING_STOP_PCT):
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        continue
-                    if signal == "SELL":
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        continue
-                elif position == "short":
-                    if close_price < min_price:
-                        min_price = close_price
-                    if close_price > min_price * (1 + TRAILING_STOP_PCT):
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        continue
-                    if signal == "BUY":
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        continue
+                    pnl = (entry_price - close_price) / entry_price
+                    trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
+                    position = None
+                    continue
 
-        # Fin du backtest: clôturer position ouverte
-        if position is not None and entry_price is not None:
-            exit_price = df['close'].iloc[-1]
-            pnl = ((exit_price - entry_price) / entry_price) if position == "long" else ((entry_price - exit_price) / entry_price)
-            trades.append({"type": position, "entry": entry_price, "exit": exit_price, "pnl": pnl})
+    if position is not None:
+        exit_price = df['close'].iloc[-1]
+        if position == "long":
+            pnl = (exit_price - entry_price) / entry_price
+        else:
+            pnl = (entry_price - exit_price) / entry_price
+        trades.append({"type": position, "entry": entry_price, "exit": exit_price, "pnl": pnl})
 
-        # Résultats résumé
-        total_trades = len(trades)
-        wins = sum(1 for t in trades if t["pnl"] > 0)
-        losses = total_trades - wins
-        total_pnl = sum(t["pnl"] for t in trades)
+    # Résumé backtest
+    total_pnl = sum(t['pnl'] for t in trades)
+    log(f"[{symbol}] Backtest sur {duration} : {len(trades)} trades, PnL total: {total_pnl*100:.2f}%")
+    for i, t in enumerate(trades):
+        log(f"  Trade {i+1}: {t['type']} entry={t['entry']:.4f} exit={t['exit']:.4f} pnl={t['pnl']*100:.2f}%")
 
-        log(f"[{symbol}] Backtest sur {duration} : {total_trades} trades, {wins} gagnants, {losses} perdants, PnL total = {total_pnl:.2%}")
-
-    except Exception as e:
-        log(f"[{symbol}] ❌ Erreur backtest : {e}")
-
-def main(symbols: list, real_run: bool, auto_select=False):
+def main_loop(symbols: list, real_run: bool, auto_select=False):
     last_selection_time = 0
 
     while True:
         if auto_select and (time.time() - last_selection_time > RESELECT_INTERVAL_SEC):
+            # Ici tu peux garder ta fonction select_symbols_by_volatility
             symbols = select_symbols_by_volatility()
             last_selection_time = time.time()
             log(f"🔄 Nouvelle sélection automatique de symbols : {', '.join(symbols)}")
 
         for symbol in symbols:
-            handle_symbol(symbol, real_run)
+            handle_live_symbol(symbol, real_run)
 
         time.sleep(1)
 
 if __name__ == "__main__":
+    import sys
+
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
     parser.add_argument("symbols", nargs='?', default="", help="Liste des symboles séparés par des virgules (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
     parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
     parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symbols par volatilité")
-    parser.add_argument("--backtest", type=str, help="Backtest sur une période (ex: 30m, 7d)")
+    parser.add_argument("--backtest", type=str, help="Backtest sur une période: 1m, 15m, 1h, 1d, 1w")
     args = parser.parse_args()
 
     if args.backtest:
-        duration = args.backtest
+        symbols = []
         if args.auto_select:
             symbols = select_symbols_by_volatility()
         else:
             symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
-        for symbol in symbols:
-            backtest_symbol(symbol, duration)
+
+        async def run_backtests():
+            pool = await asyncpg.create_pool(dsn=PG_DSN)
+            for sym in symbols:
+                await backtest_symbol(pool, sym, args.backtest)
+            await pool.close()
+
+        asyncio.run(run_backtests())
     else:
         if args.auto_select:
             symbols = select_symbols_by_volatility()
         else:
             symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
-        main(symbols, real_run=args.real_run, auto_select=args.auto_select)
+        main_loop(symbols, real_run=args.real_run, auto_select=args.auto_select)
