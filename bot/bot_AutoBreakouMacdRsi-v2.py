@@ -216,7 +216,7 @@ def backtest_symbol(symbol: str, duration: str):
         df = prepare_ohlcv_df(ohlcv)
         df = calculate_macd_rsi(df)
 
-        trades = []  # liste des trades simulés: dict avec type, entry_price, exit_price
+        trades = []  # liste des trades simulés: dict avec type, entry_price, exit_price, pnl
         position = None  # None, "long" ou "short"
         entry_price = 0.0
         max_price = 0.0
@@ -258,6 +258,20 @@ def backtest_symbol(symbol: str, duration: str):
                         max_price = 0.0
                         min_price = float('inf')
                         continue
+                    # Fermeture position si signal inverse (avec vérif signal non None)
+                    if signal is not None and signal == "SELL":
+                        pnl = (close_price - entry_price) / entry_price
+                        trades.append({
+                            "type": position,
+                            "entry": entry_price,
+                            "exit": close_price,
+                            "pnl": pnl
+                        })
+                        position = None
+                        entry_price = 0.0
+                        max_price = 0.0
+                        min_price = float('inf')
+
                 elif position == "short":
                     if close_price < min_price:
                         min_price = close_price
@@ -275,33 +289,19 @@ def backtest_symbol(symbol: str, duration: str):
                         max_price = 0.0
                         min_price = float('inf')
                         continue
-
-                # Sinon on ferme si signal inverse ou pas de signal
-                if position == "long" and signal == "SELL":
-                    pnl = (close_price - entry_price) / entry_price
-                    trades.append({
-                        "type": position,
-                        "entry": entry_price,
-                        "exit": close_price,
-                        "pnl": pnl
-                    })
-                    position = None
-                    entry_price = 0.0
-                    max_price = 0.0
-                    min_price = float('inf')
-
-                elif position == "short" and signal == "BUY":
-                    pnl = (entry_price - close_price) / entry_price
-                    trades.append({
-                        "type": position,
-                        "entry": entry_price,
-                        "exit": close_price,
-                        "pnl": pnl
-                    })
-                    position = None
-                    entry_price = 0.0
-                    max_price = 0.0
-                    min_price = float('inf')
+                    # Fermeture position si signal inverse (avec vérif signal non None)
+                    if signal is not None and signal == "BUY":
+                        pnl = (entry_price - close_price) / entry_price
+                        trades.append({
+                            "type": position,
+                            "entry": entry_price,
+                            "exit": close_price,
+                            "pnl": pnl
+                        })
+                        position = None
+                        entry_price = 0.0
+                        max_price = 0.0
+                        min_price = float('inf')
 
         # Si position ouverte en fin de données, on la ferme à la dernière clôture
         if position is not None:
@@ -327,6 +327,7 @@ def backtest_symbol(symbol: str, duration: str):
 
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur backtest : {e}")
+
 
 
 def main(symbols: list, real_run: bool, auto_select=False):
