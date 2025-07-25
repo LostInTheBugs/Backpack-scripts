@@ -17,13 +17,14 @@ public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
 POSITION_AMOUNT_USDC = 20
+# PNL_THRESHOLD_CLOSE = 0.002  # supprimé car on ne ferme plus à seuil fixe
+
 RESELECT_INTERVAL_SEC = 300  # 5 minutes
-TRAILING_STOP_PCT = 0.003  # Stop suiveur un peu plus serré
-DEBUG_INDICATORS = True    # Active les logs détaillés des indicateurs
+
+TRAILING_STOP_PCT = 0.005  # 0.5% stop suiveur (modifiable)
 
 def log(msg):
     print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
-
 
 def prepare_ohlcv_df(ohlcv):
     df = pd.DataFrame(ohlcv)
@@ -31,34 +32,26 @@ def prepare_ohlcv_df(ohlcv):
         df[col] = df[col].astype(float)
     return df
 
-
 def calculate_macd_rsi(df):
     macd = ta.macd(df['close'])
     df = pd.concat([df, macd], axis=1)
     df['rsi'] = ta.rsi(df['close'], length=14)
     return df
 
-
 def combined_signal(df):
     breakout = breakout_signal(df.to_dict('records'))
     macd_hist = df['MACDh_12_26_9'].iloc[-1]
+    macd_signal = df['MACDs_12_26_9'].iloc[-1]
+    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
+    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
     rsi = df['rsi'].iloc[-1]
 
-    if DEBUG_INDICATORS:
-        print(f"📉 Indicateurs: RSI={rsi:.2f}, MACDh={macd_hist:.5f}, Breakout={breakout}")
-
-    # Allègement des conditions
-    macd_bull = macd_hist > 0
-    macd_bear = macd_hist < 0
-
-    if breakout == "BUY" and macd_bull and rsi < 60:
+    if breakout == "BUY" and macd_signal_bull and rsi < 70:
         return "BUY"
-    elif breakout == "SELL" and macd_bear and rsi > 40:
+    elif breakout == "SELL" and macd_signal_bear and rsi > 30:
         return "SELL"
     else:
         return None
-
-
 
 def get_perp_symbols():
     url = "https://api.backpack.exchange/api/v1/markets"
@@ -70,7 +63,6 @@ def get_perp_symbols():
     except Exception as e:
         log(f"Erreur récupération symbols PERP: {e}")
         return []
-
 
 def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
     perp_symbols = get_perp_symbols()
@@ -100,3 +92,252 @@ def select_symbols_by_volatility(min_volume=1000, top_n=15, lookback=500):
         log(f"• {sym} - Volatilité: {vol:.4f}, Volume moyen: {volm:.0f}")
 
     return [x[0] for x in selected]
+
+def handle_symbol(symbol: str, real_run: bool):
+    try:
+        ohlcv = get_ohlcv(symbol, interval="1m", limit=100)
+        df = prepare_ohlcv_df(ohlcv)
+        df = calculate_macd_rsi(df)
+
+        signal = combined_signal(df)
+        log(f"[{symbol}] Signal combiné: {signal}")
+
+        # Variables pour stop suiveur, on les stocke dans un dict en mémoire (temporaire)
+        if not hasattr(handle_symbol, "trailing_stop_state"):
+            handle_symbol.trailing_stop_state = {}
+        state = handle_symbol.trailing_stop_state.setdefault(symbol, {
+            "position": None,
+            "entry_price": 0.0,
+            "max_price": 0.0,  # max price atteint depuis l'ouverture (long)
+            "min_price": float('inf')  # min price atteint depuis l'ouverture (short)
+        })
+
+        # Gestion ouverture position
+        if signal in ["BUY", "SELL"]:
+            if state["position"] is None:
+                # ouvrir position
+                state["position"] = "long" if signal == "BUY" else "short"
+                state["entry_price"] = df['close'].iloc[-1]
+                state["max_price"] = state["entry_price"]
+                state["min_price"] = state["entry_price"]
+                log(f"[{symbol}] 📈 Ouverture position {state['position']} à {state['entry_price']:.4f}")
+                if real_run:
+                    direction = "long" if state["position"] == "long" else "short"
+                    open_position(symbol, POSITION_AMOUNT_USDC, direction)
+            else:
+                log(f"[{symbol}] ⚠️ Déjà en position {state['position']}")
+
+        else:
+            log(f"[{symbol}] 🕵️ Aucun signal d'ouverture.")
+
+        # Si position ouverte, mise à jour stop suiveur
+        if state["position"] is not None:
+            current_price = df['close'].iloc[-1]
+            if state["position"] == "long":
+                if current_price > state["max_price"]:
+                    state["max_price"] = current_price
+                    log(f"[{symbol}] 🔝 Nouveau max prix {state['max_price']:.4f}")
+                # Check stop suiveur : on ferme si baisse > trailing_stop_pct
+                if current_price < state["max_price"] * (1 - TRAILING_STOP_PCT):
+                    pnl = (current_price - state["entry_price"]) / state["entry_price"]
+                    log(f"[{symbol}] 🚪 Stop suiveur déclenché LONG à {current_price:.4f}, PnL: {pnl:.4%}")
+                    if real_run:
+                        close_position_percent(public_key, secret_key, symbol, 100)
+                    else:
+                        log(f"[{symbol}] [Dry-run] Fermeture LONG ignorée.")
+                    # Reset state
+                    state["position"] = None
+                    state["entry_price"] = 0.0
+                    state["max_price"] = 0.0
+                    state["min_price"] = float('inf')
+
+            elif state["position"] == "short":
+                if current_price < state["min_price"]:
+                    state["min_price"] = current_price
+                    log(f"[{symbol}] 🔝 Nouveau min prix {state['min_price']:.4f}")
+                # Check stop suiveur : on ferme si hausse > trailing_stop_pct
+                if current_price > state["min_price"] * (1 + TRAILING_STOP_PCT):
+                    pnl = (state["entry_price"] - current_price) / state["entry_price"]
+                    log(f"[{symbol}] 🚪 Stop suiveur déclenché SHORT à {current_price:.4f}, PnL: {pnl:.4%}")
+                    if real_run:
+                        close_position_percent(public_key, secret_key, symbol, 100)
+                    else:
+                        log(f"[{symbol}] [Dry-run] Fermeture SHORT ignorée.")
+                    # Reset state
+                    state["position"] = None
+                    state["entry_price"] = 0.0
+                    state["max_price"] = 0.0
+                    state["min_price"] = float('inf')
+
+    except Exception as e:
+        log(f"[{symbol}] ❌ Erreur : {e}")
+
+def duration_to_minutes(duration: str) -> int:
+    if duration.endswith("m"):
+        return int(duration[:-1])
+    elif duration.endswith("h"):
+        return int(duration[:-1]) * 60
+    elif duration.endswith("d"):
+        return int(duration[:-1]) * 60 * 24
+    elif duration.endswith("w"):
+        return int(duration[:-1]) * 60 * 24 * 7
+    else:
+        raise ValueError("Durée non reconnue. Utilise 1h, 1d, 1w ou 1m.")
+
+def backtest_symbol(symbol: str, duration: str):
+    try:
+        minutes = duration_to_minutes(duration)
+        limit = min(minutes, 1000)
+        ohlcv = get_ohlcv(symbol, interval="1m", limit=limit)
+        df = prepare_ohlcv_df(ohlcv)
+        df = calculate_macd_rsi(df)
+
+        trades = []  # liste des trades simulés: dict avec type, entry_price, exit_price
+        position = None  # None, "long" ou "short"
+        entry_price = 0.0
+        max_price = 0.0
+        min_price = float('inf')
+
+        for i in range(30, len(df)):
+            df_slice = df.iloc[:i+1]
+            signal = combined_signal(df_slice)
+            close_price = df_slice['close'].iloc[-1]
+
+            if position is None:
+                # On ouvre une position si signal BUY ou SELL
+                if signal == "BUY":
+                    position = "long"
+                    entry_price = close_price
+                    max_price = entry_price
+                    min_price = entry_price
+                elif signal == "SELL":
+                    position = "short"
+                    entry_price = close_price
+                    max_price = entry_price
+                    min_price = entry_price
+            else:
+                # Mise à jour stop suiveur
+                if position == "long":
+                    if close_price > max_price:
+                        max_price = close_price
+                    # Check stop suiveur
+                    if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                        pnl = (close_price - entry_price) / entry_price
+                        trades.append({
+                            "type": position,
+                            "entry": entry_price,
+                            "exit": close_price,
+                            "pnl": pnl
+                        })
+                        position = None
+                        entry_price = 0.0
+                        max_price = 0.0
+                        min_price = float('inf')
+                        continue
+                elif position == "short":
+                    if close_price < min_price:
+                        min_price = close_price
+                    # Check stop suiveur
+                    if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                        pnl = (entry_price - close_price) / entry_price
+                        trades.append({
+                            "type": position,
+                            "entry": entry_price,
+                            "exit": close_price,
+                            "pnl": pnl
+                        })
+                        position = None
+                        entry_price = 0.0
+                        max_price = 0.0
+                        min_price = float('inf')
+                        continue
+
+                # Sinon on ferme si signal inverse ou pas de signal
+                if position == "long" and signal == "SELL":
+                    pnl = (close_price - entry_price) / entry_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": close_price,
+                        "pnl": pnl
+                    })
+                    position = None
+                    entry_price = 0.0
+                    max_price = 0.0
+                    min_price = float('inf')
+
+                elif position == "short" and signal == "BUY":
+                    pnl = (entry_price - close_price) / entry_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": close_price,
+                        "pnl": pnl
+                    })
+                    position = None
+                    entry_price = 0.0
+                    max_price = 0.0
+                    min_price = float('inf')
+
+        # Si position ouverte en fin de données, on la ferme à la dernière clôture
+        if position is not None:
+            exit_price = df['close'].iloc[-1]
+            pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+            trades.append({
+                "type": position,
+                "entry": entry_price,
+                "exit": exit_price,
+                "pnl": pnl
+            })
+
+        total_trades = len(trades)
+        wins = [t for t in trades if t['pnl'] > 0]
+        losses = [t for t in trades if t['pnl'] <= 0]
+        win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0
+        avg_win = np.mean([t['pnl'] for t in wins]) if wins else 0
+        avg_loss = np.mean([t['pnl'] for t in losses]) if losses else 0
+        total_pnl = sum([t['pnl'] for t in trades])
+
+        log(f"[{symbol}] 📊 Backtest {duration} : {total_trades} trades, {len(wins)} gagnants, {len(losses)} perdants, "
+            f"Win rate: {win_rate:.2f}%, Gain moyen: {avg_win:.4f}, Perte moyenne: {avg_loss:.4f}, PnL total: {total_pnl:.4f}")
+
+    except Exception as e:
+        log(f"[{symbol}] ❌ Erreur backtest : {e}")
+
+
+def main(symbols: list, real_run: bool, auto_select=False):
+    last_selection_time = 0
+
+    while True:
+        if auto_select and (time.time() - last_selection_time > RESELECT_INTERVAL_SEC):
+            symbols = select_symbols_by_volatility()
+            last_selection_time = time.time()
+            log(f"🔄 Nouvelle sélection automatique de symbols : {', '.join(symbols)}")
+
+        for symbol in symbols:
+            handle_symbol(symbol, real_run)
+
+        time.sleep(1)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
+    parser.add_argument("symbols", nargs='?', default="", help="Liste des symboles séparés par des virgules (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
+    parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
+    parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symbols par volatilité")
+    parser.add_argument("--backtest", type=str, help="Backtest sur une période: 1h, 1d, 1w, 1m")
+    args = parser.parse_args()
+
+    if args.backtest:
+        duration = args.backtest
+        if args.auto_select:
+            symbols = select_symbols_by_volatility()
+        else:
+            symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        for symbol in symbols:
+            backtest_symbol(symbol, duration)
+    else:
+        if args.auto_select:
+            symbols = []
+        else:
+            symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        main(symbols, real_run=args.real_run, auto_select=args.auto_select)
