@@ -39,18 +39,22 @@ def calculate_macd_rsi(df):
     return df
 
 def combined_signal(df):
-    df = df.copy()  # ✅ Corrige le SettingWithCopyWarning
+    df = df.copy()
 
     df['ema50'] = ta.ema(df['close'], length=50)
-    
+
+    if df[['MACDh_12_26_9', 'MACDs_12_26_9', 'rsi', 'ema50']].isnull().any().any():
+        return None  # ⛔ Données manquantes, on ignore
+
     breakout = breakout_signal(df.to_dict('records'))
     macd_hist = df['MACDh_12_26_9'].iloc[-1]
     macd_signal = df['MACDs_12_26_9'].iloc[-1]
-    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
-    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
     rsi = df['rsi'].iloc[-1]
     close = df['close'].iloc[-1]
     ema50 = df['ema50'].iloc[-1]
+
+    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
+    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
 
     if breakout == "BUY" and macd_signal_bull and rsi < 70 and close > ema50:
         return "BUY"
@@ -58,6 +62,7 @@ def combined_signal(df):
         return "SELL"
     else:
         return None
+
 
 
 
