@@ -4,7 +4,7 @@ SYMBOLS_FILE = "symbol.lst"
 N = 10  # nombre de symboles à garder dans le fichier
 
 def fetch_top_symbols(n):
-    url = "https://api.backpack.exchange/api/v1/market/tickers"
+    url = "https://api.backpack.exchange/api/v1/tickers"
     try:
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
