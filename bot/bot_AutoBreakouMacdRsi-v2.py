@@ -23,6 +23,9 @@ RESELECT_INTERVAL_SEC = 300  # 5 minutes
 
 TRAILING_STOP_PCT = 0.005  # 0.5% stop suiveur (modifiable)
 
+DEBUG_INDICATORS = True    # Active les logs détaillés des indicateurs
+
+
 def log(msg):
     print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
@@ -41,14 +44,18 @@ def calculate_macd_rsi(df):
 def combined_signal(df):
     breakout = breakout_signal(df.to_dict('records'))
     macd_hist = df['MACDh_12_26_9'].iloc[-1]
-    macd_signal = df['MACDs_12_26_9'].iloc[-1]
-    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
-    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
     rsi = df['rsi'].iloc[-1]
 
-    if breakout == "BUY" and macd_signal_bull and rsi < 70:
+    if DEBUG_INDICATORS:
+        print(f"📉 Indicateurs: RSI={rsi:.2f}, MACDh={macd_hist:.5f}, Breakout={breakout}")
+
+    # Allègement des conditions
+    macd_bull = macd_hist > 0
+    macd_bear = macd_hist < 0
+
+    if breakout == "BUY" and macd_bull and rsi < 60:
         return "BUY"
-    elif breakout == "SELL" and macd_signal_bear and rsi > 30:
+    elif breakout == "SELL" and macd_bear and rsi > 40:
         return "SELL"
     else:
         return None
