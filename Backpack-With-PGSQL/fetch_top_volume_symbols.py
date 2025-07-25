@@ -1,32 +1,36 @@
 import requests
-import json
+import sys
 
-# Paramètres
-BASE_URL = "https://api.backpack.exchange/api/v1/tickers"
-SYMBOLS_FILE = "symbol.lst"
-TOP_N = 10  # Nombre de symboles à récupérer
+API_URL = "https://api.backpack.exchange/v1/market/tickers"
+OUTPUT_FILE = "symbol.lst"
 
-def fetch_top_symbols(n=TOP_N):
-    """Récupère les n symboles avec le plus grand volume sur 24h."""
-    response = requests.get(BASE_URL)
-    if response.status_code != 200:
-        print(f"Erreur lors de la récupération des données : {response.status_code}")
-        return []
+def fetch_top_n_perp(n):
+    resp = requests.get(API_URL)
+    resp.raise_for_status()
+    data = resp.json()
 
-    tickers = response.json()
-    # Trie les tickers par volume décroissant
-    sorted_tickers = sorted(tickers, key=lambda x: float(x['quoteVolume']), reverse=True)
-    top_symbols = [ticker['symbol'] for ticker in sorted_tickers[:n]]
-    return top_symbols
+    # data attendue : liste de dict, chaque dict a 'symbol' et 'quoteVolume' (string)
+    perp_tickers = [t for t in data if "_PERP" in t.get("symbol", "")]
 
-def save_symbols(symbols):
-    """Sauvegarde les symboles dans le fichier symbol.lst."""
-    with open(SYMBOLS_FILE, 'w') as f:
-        for symbol in symbols:
-            f.write(f"{symbol}\n")
-    print(f"✅ {len(symbols)} symboles sauvegardés dans {SYMBOLS_FILE}")
+    # tri par quoteVolume float décroissant
+    perp_tickers.sort(key=lambda x: float(x.get("quoteVolume", 0)), reverse=True)
+
+    top_n = perp_tickers[:n]
+
+    with open(OUTPUT_FILE, "w") as f:
+        for t in top_n:
+            f.write(t["symbol"] + "\n")
+
+    print(f"✅ Écrit {len(top_n)} symboles PERP dans {OUTPUT_FILE}")
 
 if __name__ == "__main__":
-    top_symbols = fetch_top_symbols()
-    if top_symbols:
-        save_symbols(top_symbols)
+    if len(sys.argv) != 2:
+        print(f"Usage: python3 {sys.argv[0]} N")
+        sys.exit(1)
+    try:
+        n = int(sys.argv[1])
+    except ValueError:
+        print("N doit être un entier")
+        sys.exit(1)
+
+    fetch_top_n_perp(n)
