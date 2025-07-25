@@ -39,6 +39,8 @@ def calculate_macd_rsi(df):
     return df
 
 def combined_signal(df):
+    df = df.copy()  # ✅ Corrige le SettingWithCopyWarning
+
     df['ema50'] = ta.ema(df['close'], length=50)
     
     breakout = breakout_signal(df.to_dict('records'))
@@ -56,6 +58,7 @@ def combined_signal(df):
         return "SELL"
     else:
         return None
+
 
 
 def get_perp_symbols():
