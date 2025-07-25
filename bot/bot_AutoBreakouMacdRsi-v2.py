@@ -83,131 +83,91 @@ def duration_to_minutes(duration: str) -> int:
     else:
         raise ValueError("Durée non reconnue. Utilise 1h, 1d, 1w ou 1m.")
 
-def backtest_symbol(symbol: str, duration: str):
-    try:
-        minutes = duration_to_minutes(duration)
-        limit = min(minutes, 1000)
-        ohlcv = get_ohlcv(symbol, interval="1m", limit=limit)
-        df = prepare_ohlcv_df(ohlcv)
-        df = calculate_macd_rsi(df)
+for i in range(30, len(df)):
+    df_slice = df.iloc[:i+1]
+    signal = combined_signal(df_slice)
+    close_price = df_slice['close'].iloc[-1]
 
-        trades = []
-        position = None
-        entry_price = None
-        max_price = None
-        min_price = None
+    if position is None:
+        if signal == "BUY":
+            position = "long"
+            entry_price = close_price
+            max_price = entry_price
+            min_price = entry_price
+        elif signal == "SELL":
+            position = "short"
+            entry_price = close_price
+            max_price = entry_price
+            min_price = entry_price
+    else:
+        if position == "long":
+            if close_price is not None and (max_price is None or close_price > max_price):
+                max_price = close_price
+            if (close_price is not None and max_price is not None
+                and not math.isnan(close_price) and not math.isnan(max_price)
+                and entry_price is not None and not math.isnan(entry_price)):
 
-        for i in range(30, len(df)):
-            df_slice = df.iloc[:i+1]
-            signal = combined_signal(df_slice)
-            close_price = df_slice['close'].iloc[-1]
+                if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                    pnl = (close_price - entry_price) / entry_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": close_price,
+                        "pnl": pnl
+                    })
+                    position = None
+                    entry_price = None
+                    max_price = None
+                    min_price = None
+                    continue
 
-            # Debug log
-            # print(f"[DEBUG {symbol}] i={i}, pos={position}, close={close_price}, entry={entry_price}, max={max_price}, min={min_price}, signal={signal}")
+                if signal is not None and signal == "SELL":
+                    pnl = (close_price - entry_price) / entry_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": close_price,
+                        "pnl": pnl
+                    })
+                    position = None
+                    entry_price = None
+                    max_price = None
+                    min_price = None
 
-            if position is None:
-                if signal == "BUY":
-                    position = "long"
-                    entry_price = close_price
-                    max_price = entry_price
-                    min_price = entry_price
-                elif signal == "SELL":
-                    position = "short"
-                    entry_price = close_price
-                    max_price = entry_price
-                    min_price = entry_price
-            else:
-                if position == "long":
-                    if close_price > max_price:
-                        max_price = close_price
-                    if entry_price is None or close_price is None:
-                        continue
-                    if math.isnan(entry_price) or math.isnan(close_price):
-                        continue
-                    if close_price < max_price * (1 - TRAILING_STOP_PCT):
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
-                        continue
-                    if signal is not None and signal == "SELL":
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
-                elif position == "short":
-                    if close_price < min_price:
-                        min_price = close_price
-                    if entry_price is None or close_price is None:
-                        continue
-                    if math.isnan(entry_price) or math.isnan(close_price):
-                        continue
-                    if close_price > min_price * (1 + TRAILING_STOP_PCT):
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
-                        continue
-                    if signal is not None and signal == "BUY":
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
+        elif position == "short":
+            if close_price is not None and (min_price is None or close_price < min_price):
+                min_price = close_price
+            if (close_price is not None and min_price is not None
+                and not math.isnan(close_price) and not math.isnan(min_price)
+                and entry_price is not None and not math.isnan(entry_price)):
 
-        if position is not None and entry_price is not None:
-            exit_price = df['close'].iloc[-1]
-            if exit_price is not None and not math.isnan(exit_price):
-                pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
-                trades.append({
-                    "type": position,
-                    "entry": entry_price,
-                    "exit": exit_price,
-                    "pnl": pnl
-                })
+                if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                    pnl = (entry_price - close_price) / entry_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": close_price,
+                        "pnl": pnl
+                    })
+                    position = None
+                    entry_price = None
+                    max_price = None
+                    min_price = None
+                    continue
 
-        total_trades = len(trades)
-        wins = [t for t in trades if t['pnl'] > 0]
-        losses = [t for t in trades if t['pnl'] <= 0]
-        win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0
-        avg_win = np.mean([t['pnl'] for t in wins]) if wins else 0
-        avg_loss = np.mean([t['pnl'] for t in losses]) if losses else 0
-        total_pnl = sum([t['pnl'] for t in trades])
+                if signal is not None and signal == "BUY":
+                    pnl = (entry_price - close_price) / entry_price
+                    trades.append({
+                        "type": position,
+                        "entry": entry_price,
+                        "exit": close_price,
+                        "pnl": pnl
+                    })
+                    position = None
+                    entry_price = None
+                    max_price = None
+                    min_price = None
 
-        log(f"[{symbol}] 📊 Backtest {duration} : {total_trades} trades, {len(wins)} gagnants, {len(losses)} perdants, "
-            f"Win rate: {win_rate:.2f}%, Gain moyen: {avg_win:.4f}, Perte moyenne: {avg_loss:.4f}, PnL total: {total_pnl:.4f}")
-
-    except Exception as e:
-        log(f"[{symbol}] ❌ Erreur backtest : {e}")
-
-# --- Le reste de ton script (handle_symbol, main, etc.) reste inchangé ---
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
