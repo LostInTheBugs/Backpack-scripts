@@ -227,12 +227,12 @@ def backtest_symbol(symbol: str, duration: str):
                 continue
 
             if position is None:
-                if signal == "BUY":
+                if signal == "BUY" and close_price is not None and not pd.isna(close_price):
                     position = "long"
                     entry_price = close_price
                     max_price = entry_price
                     min_price = entry_price
-                elif signal == "SELL":
+                elif signal == "SELL" and close_price is not None and not pd.isna(close_price):
                     position = "short"
                     entry_price = close_price
                     max_price = entry_price
