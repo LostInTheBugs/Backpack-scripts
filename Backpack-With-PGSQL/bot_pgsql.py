@@ -9,7 +9,7 @@ from signals.macd_rsi_breakout import get_combined_signal
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from backpack_public.get_market import get_market
-from backpack_utils.position_utils import position_already_open
+from utils.position_utils import position_already_open
 from public.get_ohlcv import get_ohlcv
 from utils.auto_symbol_selector import get_top_n_symbols_by_volatility
 
