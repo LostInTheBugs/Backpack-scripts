@@ -241,7 +241,7 @@ def backtest_symbol(symbol: str, duration: str):
                 if position == "long":
                     if close_price > max_price:
                         max_price = close_price
-                    if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                    if max_price is not None and close_price < max_price * (1 - TRAILING_STOP_PCT):
                         if entry_price is not None and close_price is not None and not pd.isna(entry_price) and not pd.isna(close_price):
                             pnl = (close_price - entry_price) / entry_price
                             trades.append({
@@ -271,7 +271,7 @@ def backtest_symbol(symbol: str, duration: str):
                 elif position == "short":
                     if close_price < min_price:
                         min_price = close_price
-                    if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                    if min_price is not None and close_price > min_price * (1 + TRAILING_STOP_PCT):
                         if entry_price is not None and close_price is not None and not pd.isna(entry_price) and not pd.isna(close_price):
                             pnl = (entry_price - close_price) / entry_price
                             trades.append({
