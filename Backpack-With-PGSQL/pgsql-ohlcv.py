@@ -2,19 +2,46 @@ import asyncio
 import json
 import websockets
 import asyncpg
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 
 PG_DSN = os.environ.get("PG_DSN")
 if not PG_DSN:
     raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
-INTERVAL_SEC = 1  # durée de la bougie en secondes
-SYMBOLS = ["BTC_USDC_PERP", "ETH_USDC_PERP", "SOL_USDC_PERP", "SUI_USDC_PERP"]
+INTERVAL_SEC = 1  # Durée des bougies en secondes
+SYMBOLS_FILE = "symbol.lst"  # Fichier contenant les symboles (un par ligne)
+RETENTION_DAYS = 90  # Durée de conservation des données (3 mois)
 
 def table_name_from_symbol(symbol: str) -> str:
-    # Remplace _ par __ pour éviter conflits SQL, tout en minuscule
-    return f"{symbol.lower().replace('_', '__')}"
+    # Exemple : BTC_USDC_PERP -> ohlcv_btc__usdc__perp
+    return "ohlcv_" + symbol.lower().replace("_", "__")
+
+async def create_table_if_not_exists(conn, symbol):
+    table_name = table_name_from_symbol(symbol)
+    await conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS {table_name} (
+            symbol TEXT NOT NULL,
+            interval_sec INTEGER NOT NULL,
+            timestamp TIMESTAMPTZ NOT NULL,
+            open NUMERIC,
+            high NUMERIC,
+            low NUMERIC,
+            close NUMERIC,
+            volume NUMERIC,
+            PRIMARY KEY (symbol, interval_sec, timestamp)
+        );
+    """)
+    try:
+        await conn.execute(f"SELECT create_hypertable('{table_name}', 'timestamp', if_not_exists => TRUE);")
+    except Exception as e:
+        print(f"⚠️ Erreur création hypertable pour {table_name}: {e}")
+
+async def delete_old_data(conn, symbol, retention_days=RETENTION_DAYS):
+    table_name = table_name_from_symbol(symbol)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    result = await conn.execute(f"DELETE FROM {table_name} WHERE timestamp < $1;", cutoff)
+    print(f"🗑️ Suppression données > {retention_days} jours dans {table_name} : {result}")
 
 class OHLCVAggregator:
     def __init__(self, symbol, interval_sec):
@@ -63,22 +90,10 @@ class OHLCVAggregator:
         table_name = table_name_from_symbol(self.symbol)
         async with pool.acquire() as conn:
             await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {table_name} (
-                    timestamp TIMESTAMPTZ PRIMARY KEY,
-                    interval_sec INTEGER NOT NULL,
-                    open DOUBLE PRECISION NOT NULL,
-                    high DOUBLE PRECISION NOT NULL,
-                    low DOUBLE PRECISION NOT NULL,
-                    close DOUBLE PRECISION NOT NULL,
-                    volume DOUBLE PRECISION NOT NULL
-                )
-            """)
-
-            await conn.execute(f"""
-                INSERT INTO {table_name} (timestamp, interval_sec, open, high, low, close, volume)
-                VALUES($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (timestamp) DO NOTHING
-            """, dt, self.interval_sec, self.open, self.high, self.low, self.close, self.volume)
+                INSERT INTO {table_name} (symbol, timestamp, interval_sec, open, high, low, close, volume)
+                VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (symbol, interval_sec, timestamp) DO NOTHING
+            """, self.symbol, dt, self.interval_sec, self.open, self.high, self.low, self.close, self.volume)
 
             print(f"⏳ Bougie insérée {dt} {self.symbol} O:{self.open} H:{self.high} L:{self.low} C:{self.close} V:{self.volume}")
 
@@ -104,9 +119,28 @@ async def subscribe_and_aggregate(symbol: str, pool):
                 timestamp_ms = int(data["T"])
                 await aggregator.process_trade(price, size, timestamp_ms, pool)
 
+async def periodic_cleanup(pool, symbols, retention_days=RETENTION_DAYS):
+    while True:
+        async with pool.acquire() as conn:
+            for symbol in symbols:
+                await delete_old_data(conn, symbol, retention_days)
+        await asyncio.sleep(24 * 3600)  # toutes les 24h
+
 async def main():
+    if not os.path.exists(SYMBOLS_FILE):
+        raise RuntimeError(f"Le fichier {SYMBOLS_FILE} n'existe pas")
+
+    with open(SYMBOLS_FILE, "r") as f:
+        symbols = [line.strip() for line in f if line.strip()]
+
     pool = await asyncpg.create_pool(dsn=PG_DSN)
-    tasks = [subscribe_and_aggregate(sym, pool) for sym in SYMBOLS]
+
+    async with pool.acquire() as conn:
+        for symbol in symbols:
+            await create_table_if_not_exists(conn, symbol)
+
+    tasks = [subscribe_and_aggregate(sym, pool) for sym in symbols]
+    tasks.append(periodic_cleanup(pool, symbols))
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
