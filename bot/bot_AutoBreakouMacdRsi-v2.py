@@ -244,7 +244,10 @@ def backtest_symbol(symbol: str, duration: str):
                     if close_price > max_price:
                         max_price = close_price
                     if max_price is not None and close_price < max_price * (1 - TRAILING_STOP_PCT):
-                        if entry_price is not None and close_price is not None and not pd.isna(entry_price) and not pd.isna(close_price):
+                        if (
+                            entry_price is not None and not pd.isna(entry_price)
+                            and close_price is not None and not pd.isna(close_price)
+                        ):
                             pnl = (close_price - entry_price) / entry_price
                             trades.append({
                                 "type": position,
@@ -256,7 +259,7 @@ def backtest_symbol(symbol: str, duration: str):
                         entry_price = None
                         max_price = None
                         min_price = None
-                        continue  # <--- ensures no further logic runs after closing
+                        continue
                     if signal == "SELL":
                         if entry_price is not None and close_price is not None and not pd.isna(entry_price) and not pd.isna(close_price):
                             pnl = (close_price - entry_price) / entry_price
@@ -270,7 +273,7 @@ def backtest_symbol(symbol: str, duration: str):
                         entry_price = None
                         max_price = None
                         min_price = None
-                        continue  # <--- ensures no further logic runs after closing
+                        continue
                 elif position == "short":
                     if min_price is None:
                         min_price = close_price
@@ -289,7 +292,7 @@ def backtest_symbol(symbol: str, duration: str):
                         entry_price = None
                         max_price = None
                         min_price = None
-                        continue  # <--- ensures no further logic runs after closing
+                        continue
                     if signal == "BUY":
                         if entry_price is not None and close_price is not None and not pd.isna(entry_price) and not pd.isna(close_price):
                             pnl = (entry_price - close_price) / entry_price
@@ -303,13 +306,16 @@ def backtest_symbol(symbol: str, duration: str):
                         entry_price = None
                         max_price = None
                         min_price = None
-                        continue  # <--- ensures no further logic runs after closing
+                        continue
 
         # Clôturer position ouverte à la fin du backtest
-        if position is not None and entry_price is not None and not pd.isna(entry_price):
+        if position is not None:
             exit_price = df['close'].iloc[-1]
             # FIX: check exit_price and entry_price are not None or NaN
-            if exit_price is not None and not pd.isna(exit_price) and entry_price is not None and not pd.isna(entry_price):
+            if (
+                exit_price is not None and not pd.isna(exit_price)
+                and entry_price is not None and not pd.isna(entry_price)
+            ):
                 if position == "long":
                     pnl = (exit_price - entry_price) / entry_price
                 else:
