@@ -323,6 +323,14 @@ def backtest_symbol(symbol: str, duration: str):
                     "pnl": pnl
                 })
 
+        # Remove trades with None or NaN values
+        trades = [
+            t for t in trades
+            if t["entry"] is not None and not pd.isna(t["entry"])
+            and t["exit"] is not None and not pd.isna(t["exit"])
+            and t["pnl"] is not None and not pd.isna(t["pnl"])
+        ]
+
         total_trades = len(trades)
         wins = [t for t in trades if t['pnl'] > 0]
         losses = [t for t in trades if t['pnl'] <= 0]
