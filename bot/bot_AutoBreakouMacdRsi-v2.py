@@ -359,7 +359,7 @@ if __name__ == "__main__":
             backtest_symbol(symbol, duration)
     else:
         if args.auto_select:
-            symbols = []
+            symbols = select_symbols_by_volatility()  # FIX: initialize symbols for auto-select
         else:
             symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
         main(symbols, real_run=args.real_run, auto_select=args.auto_select)
