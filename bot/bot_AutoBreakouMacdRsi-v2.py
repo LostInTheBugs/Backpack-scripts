@@ -208,6 +208,8 @@ def duration_to_minutes(duration: str) -> int:
     else:
         raise ValueError("Durée non reconnue. Utilise 1h, 1d, 1w ou 1m.")
 
+import math
+
 def backtest_symbol(symbol: str, duration: str):
     try:
         minutes = duration_to_minutes(duration)
@@ -227,6 +229,9 @@ def backtest_symbol(symbol: str, duration: str):
             signal = combined_signal(df_slice)
             close_price = df_slice['close'].iloc[-1]
 
+            # DEBUG : log des valeurs importantes
+            print(f"[DEBUG {symbol}] i={i}, position={position}, close_price={close_price}, entry_price={entry_price}, max_price={max_price}, min_price={min_price}, signal={signal}")
+
             if position is None:
                 # On ouvre une position si signal BUY ou SELL
                 if signal == "BUY":
@@ -234,85 +239,116 @@ def backtest_symbol(symbol: str, duration: str):
                     entry_price = close_price
                     max_price = entry_price
                     min_price = entry_price
+                    print(f"[{symbol}] Ouverture LONG à {entry_price}")
                 elif signal == "SELL":
                     position = "short"
                     entry_price = close_price
                     max_price = entry_price
                     min_price = entry_price
+                    print(f"[{symbol}] Ouverture SHORT à {entry_price}")
             else:
                 # Mise à jour stop suiveur
                 if position == "long":
                     if close_price > max_price:
                         max_price = close_price
+                        print(f"[{symbol}] Nouveau max prix LONG {max_price}")
+
                     # Check stop suiveur
-                    if close_price < max_price * (1 - TRAILING_STOP_PCT):
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = 0.0
-                        max_price = 0.0
-                        min_price = float('inf')
-                        continue
+                    if (entry_price is not None and close_price is not None and
+                        not math.isnan(entry_price) and not math.isnan(close_price)):
+                        if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                            pnl = (close_price - entry_price) / entry_price
+                            trades.append({
+                                "type": position,
+                                "entry": entry_price,
+                                "exit": close_price,
+                                "pnl": pnl
+                            })
+                            print(f"[{symbol}] Stop suiveur LONG déclenché à {close_price}, PnL={pnl:.4%}")
+                            position = None
+                            entry_price = 0.0
+                            max_price = 0.0
+                            min_price = float('inf')
+                            continue
+                    else:
+                        print(f"[{symbol}] Valeurs invalides pour stop suiveur LONG")
+
                     # Fermeture position si signal inverse (avec vérif signal non None)
                     if signal is not None and signal == "SELL":
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = 0.0
-                        max_price = 0.0
-                        min_price = float('inf')
+                        if (entry_price is not None and close_price is not None and
+                            not math.isnan(entry_price) and not math.isnan(close_price)):
+                            pnl = (close_price - entry_price) / entry_price
+                            trades.append({
+                                "type": position,
+                                "entry": entry_price,
+                                "exit": close_price,
+                                "pnl": pnl
+                            })
+                            print(f"[{symbol}] Fermeture LONG par signal SELL à {close_price}, PnL={pnl:.4%}")
+                            position = None
+                            entry_price = 0.0
+                            max_price = 0.0
+                            min_price = float('inf')
+                        else:
+                            print(f"[{symbol}] Valeurs invalides pour fermeture LONG par SELL")
 
                 elif position == "short":
                     if close_price < min_price:
                         min_price = close_price
+                        print(f"[{symbol}] Nouveau min prix SHORT {min_price}")
+
                     # Check stop suiveur
-                    if close_price > min_price * (1 + TRAILING_STOP_PCT):
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = 0.0
-                        max_price = 0.0
-                        min_price = float('inf')
-                        continue
+                    if (entry_price is not None and close_price is not None and
+                        not math.isnan(entry_price) and not math.isnan(close_price)):
+                        if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                            pnl = (entry_price - close_price) / entry_price
+                            trades.append({
+                                "type": position,
+                                "entry": entry_price,
+                                "exit": close_price,
+                                "pnl": pnl
+                            })
+                            print(f"[{symbol}] Stop suiveur SHORT déclenché à {close_price}, PnL={pnl:.4%}")
+                            position = None
+                            entry_price = 0.0
+                            max_price = 0.0
+                            min_price = float('inf')
+                            continue
+                    else:
+                        print(f"[{symbol}] Valeurs invalides pour stop suiveur SHORT")
+
                     # Fermeture position si signal inverse (avec vérif signal non None)
                     if signal is not None and signal == "BUY":
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({
-                            "type": position,
-                            "entry": entry_price,
-                            "exit": close_price,
-                            "pnl": pnl
-                        })
-                        position = None
-                        entry_price = 0.0
-                        max_price = 0.0
-                        min_price = float('inf')
+                        if (entry_price is not None and close_price is not None and
+                            not math.isnan(entry_price) and not math.isnan(close_price)):
+                            pnl = (entry_price - close_price) / entry_price
+                            trades.append({
+                                "type": position,
+                                "entry": entry_price,
+                                "exit": close_price,
+                                "pnl": pnl
+                            })
+                            print(f"[{symbol}] Fermeture SHORT par signal BUY à {close_price}, PnL={pnl:.4%}")
+                            position = None
+                            entry_price = 0.0
+                            max_price = 0.0
+                            min_price = float('inf')
+                        else:
+                            print(f"[{symbol}] Valeurs invalides pour fermeture SHORT par BUY")
 
         # Si position ouverte en fin de données, on la ferme à la dernière clôture
         if position is not None:
             exit_price = df['close'].iloc[-1]
-            pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
-            trades.append({
-                "type": position,
-                "entry": entry_price,
-                "exit": exit_price,
-                "pnl": pnl
-            })
+            if (entry_price is not None and exit_price is not None and
+                not math.isnan(entry_price) and not math.isnan(exit_price)):
+                pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+                trades.append({
+                    "type": position,
+                    "entry": entry_price,
+                    "exit": exit_price,
+                    "pnl": pnl
+                })
+                print(f"[{symbol}] Fermeture finale {position} à {exit_price}, PnL={pnl:.4%}")
 
         total_trades = len(trades)
         wins = [t for t in trades if t['pnl'] > 0]
