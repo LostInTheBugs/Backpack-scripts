@@ -1,7 +1,7 @@
 import requests
 import sys
 
-API_URL = "https://api.backpack.exchange/v1/market/tickers"
+API_URL = "https://api.backpack.exchange/v1/tickers"
 OUTPUT_FILE = "symbol.lst"
 
 def fetch_top_n_perp(n):
