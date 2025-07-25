@@ -43,25 +43,37 @@ def combined_signal(df):
 
     df['ema50'] = ta.ema(df['close'], length=50)
 
-    if df[['MACDh_12_26_9', 'MACDs_12_26_9', 'rsi', 'ema50']].isnull().any().any():
-        return None  # ⛔ Données manquantes, on ignore
-
     breakout = breakout_signal(df.to_dict('records'))
     macd_hist = df['MACDh_12_26_9'].iloc[-1]
     macd_signal = df['MACDs_12_26_9'].iloc[-1]
+    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
+    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
     rsi = df['rsi'].iloc[-1]
     close = df['close'].iloc[-1]
     ema50 = df['ema50'].iloc[-1]
 
-    macd_signal_bull = macd_hist > 0 and macd_hist > macd_signal
-    macd_signal_bear = macd_hist < 0 and macd_hist < macd_signal
+    if breakout == "BUY":
+        if not macd_signal_bull:
+            log("❌ Signal BUY rejeté : MACD haussier absent")
+        elif rsi >= 70:
+            log("❌ Signal BUY rejeté : RSI trop élevé")
+        elif close <= ema50:
+            log(f"❌ Signal BUY rejeté : close ({close:.4f}) <= ema50 ({ema50:.4f})")
+        else:
+            return "BUY"
 
-    if breakout == "BUY" and macd_signal_bull and rsi < 70 and close > ema50:
-        return "BUY"
-    elif breakout == "SELL" and macd_signal_bear and rsi > 30 and close < ema50:
-        return "SELL"
-    else:
-        return None
+    elif breakout == "SELL":
+        if not macd_signal_bear:
+            log("❌ Signal SELL rejeté : MACD baissier absent")
+        elif rsi <= 30:
+            log("❌ Signal SELL rejeté : RSI trop bas")
+        elif close >= ema50:
+            log(f"❌ Signal SELL rejeté : close ({close:.4f}) >= ema50 ({ema50:.4f})")
+        else:
+            return "SELL"
+
+    return None
+
 
 
 
