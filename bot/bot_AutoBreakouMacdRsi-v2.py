@@ -196,26 +196,23 @@ def backtest_symbol(symbol: str, duration: str):
     try:
         minutes = duration_to_minutes(duration)
         limit = min(minutes, 1000)
+
+        # Récupérer les données OHLCV
         ohlcv = get_ohlcv(symbol, interval="1m", limit=limit)
         df = prepare_ohlcv_df(ohlcv)
-        df = calculate_macd_rsi(df)
 
-        # Calculer EMA50 si absent
+        # Calculer les indicateurs si manquants
         if 'ema50' not in df.columns:
             df['ema50'] = ta.ema(df['close'], length=50)
-
-        # Calcul MACD et signal si absent
         if 'macd' not in df.columns or 'macd_signal' not in df.columns:
             macd_df = ta.macd(df['close'])
             df['macd'] = macd_df.iloc[:, 0]
             df['macd_signal'] = macd_df.iloc[:, 1]
-
-        # Calcul RSI si absent
         if 'rsi' not in df.columns:
             df['rsi'] = ta.rsi(df['close'], length=14)
 
-        # On enlève toutes les lignes avec NaN dans ces colonnes essentielles
-        df = df.dropna(subset=['close', 'ema50', 'macd', 'macd_signal', 'rsi'])
+        # Supprimer toutes les lignes où les indicateurs critiques sont NaN
+        df = df.dropna(subset=['close', 'ema50', 'macd', 'macd_signal', 'rsi']).reset_index(drop=True)
 
         trades = []
         position = None
@@ -225,12 +222,17 @@ def backtest_symbol(symbol: str, duration: str):
 
         for i in range(30, len(df)):
             df_slice = df.iloc[:i+1]
-            signal = combined_signal(df_slice)
-            close_price = df_slice['close'].iloc[-1]
 
-            # Sécurité : ignorer si close_price None ou NaN
+            # Protection: vérifier que la dernière ligne a bien des valeurs valides
+            last_row = df_slice.iloc[-1]
+            if any(pd.isna(last_row[col]) for col in ['close', 'ema50', 'macd', 'macd_signal', 'rsi']):
+                continue  # skip si NaN
+
+            signal = combined_signal(df_slice)
+            close_price = last_row['close']
+
             if close_price is None or pd.isna(close_price):
-                continue
+                continue  # skip si close non valide
 
             if position is None:
                 if signal == "BUY":
@@ -247,14 +249,16 @@ def backtest_symbol(symbol: str, duration: str):
                 if position == "long":
                     if close_price > max_price:
                         max_price = close_price
-                    if close_price < max_price * (1 - TRAILING_STOP_PCT):
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
-                        continue
+                    # Protection avant calculs
+                    if max_price is not None and entry_price is not None:
+                        if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                            pnl = (close_price - entry_price) / entry_price
+                            trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
+                            position = None
+                            entry_price = None
+                            max_price = None
+                            min_price = None
+                            continue
                     if signal == "SELL":
                         pnl = (close_price - entry_price) / entry_price
                         trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
@@ -265,14 +269,16 @@ def backtest_symbol(symbol: str, duration: str):
                 elif position == "short":
                     if close_price < min_price:
                         min_price = close_price
-                    if close_price > min_price * (1 + TRAILING_STOP_PCT):
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
-                        continue
+                    # Protection avant calculs
+                    if min_price is not None and entry_price is not None:
+                        if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                            pnl = (entry_price - close_price) / entry_price
+                            trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
+                            position = None
+                            entry_price = None
+                            max_price = None
+                            min_price = None
+                            continue
                     if signal == "BUY":
                         pnl = (entry_price - close_price) / entry_price
                         trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
@@ -281,11 +287,12 @@ def backtest_symbol(symbol: str, duration: str):
                         max_price = None
                         min_price = None
 
-        # Clôture position ouverte en fin de backtest
+        # Clôturer la position à la fin du backtest si ouverte
         if position is not None and entry_price is not None:
             exit_price = df['close'].iloc[-1]
-            pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
-            trades.append({"type": position, "entry": entry_price, "exit": exit_price, "pnl": pnl})
+            if exit_price is not None and not pd.isna(exit_price):
+                pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+                trades.append({"type": position, "entry": entry_price, "exit": exit_price, "pnl": pnl})
 
         total_trades = len(trades)
         wins = [t for t in trades if t['pnl'] > 0]
@@ -300,6 +307,7 @@ def backtest_symbol(symbol: str, duration: str):
 
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur backtest : {e}")
+
 
 
 def main(symbols: list, real_run: bool, auto_select=False):
