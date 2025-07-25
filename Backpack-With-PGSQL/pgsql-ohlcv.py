@@ -9,12 +9,11 @@ PG_DSN = os.environ.get("PG_DSN")
 if not PG_DSN:
     raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
-INTERVAL_SEC = 1  # Durée des bougies en secondes
-SYMBOLS_FILE = "symbol.lst"  # Fichier contenant les symboles (un par ligne)
-RETENTION_DAYS = 90  # Durée de conservation des données (3 mois)
+INTERVAL_SEC = 1
+SYMBOLS_FILE = "symbol.lst"
+RETENTION_DAYS = 90
 
 def table_name_from_symbol(symbol: str) -> str:
-    # Exemple : BTC_USDC_PERP -> ohlcv_btc__usdc__perp
     return "ohlcv_" + symbol.lower().replace("_", "__")
 
 async def create_table_if_not_exists(conn, symbol):
@@ -97,51 +96,95 @@ class OHLCVAggregator:
 
             print(f"⏳ Bougie insérée {dt} {self.symbol} O:{self.open} H:{self.high} L:{self.low} C:{self.close} V:{self.volume}")
 
-async def subscribe_and_aggregate(symbol: str, pool):
+async def subscribe_and_aggregate(symbol: str, pool, stop_event: asyncio.Event):
     ws_url = "wss://ws.backpack.exchange"
     aggregator = OHLCVAggregator(symbol, INTERVAL_SEC)
+    try:
+        async with websockets.connect(ws_url) as ws:
+            sub_msg = {
+                "method": "SUBSCRIBE",
+                "params": [f"trade.{symbol}"],
+                "id": 1,
+            }
+            await ws.send(json.dumps(sub_msg))
+            print(f"✅ Subscribed to trade.{symbol}")
 
-    async with websockets.connect(ws_url) as ws:
-        sub_msg = {
-            "method": "SUBSCRIBE",
-            "params": [f"trade.{symbol}"],
-            "id": 1,
-        }
-        await ws.send(json.dumps(sub_msg))
-        print(f"✅ Subscribed to trade.{symbol}")
+            while not stop_event.is_set():
+                try:
+                    message = await asyncio.wait_for(ws.recv(), timeout=10)
+                except asyncio.TimeoutError:
+                    # Ping or reconnect could be done ici si besoin
+                    continue
+                msg = json.loads(message)
+                data = msg.get("data")
+                if data and "p" in data and "q" in data and "T" in data:
+                    price = float(data["p"])
+                    size = float(data["q"])
+                    timestamp_ms = int(data["T"])
+                    await aggregator.process_trade(price, size, timestamp_ms, pool)
+    except (websockets.ConnectionClosed, asyncio.CancelledError):
+        print(f"🔴 WebSocket closed for {symbol}")
+    except Exception as e:
+        print(f"❌ Erreur websocket {symbol}: {e}")
 
-        async for message in ws:
-            msg = json.loads(message)
-            data = msg.get("data")
-            if data and "p" in data and "q" in data and "T" in data:
-                price = float(data["p"])
-                size = float(data["q"])
-                timestamp_ms = int(data["T"])
-                await aggregator.process_trade(price, size, timestamp_ms, pool)
-
-async def periodic_cleanup(pool, symbols, retention_days=RETENTION_DAYS):
+async def periodic_cleanup(pool, get_symbols_func, retention_days=RETENTION_DAYS):
     while True:
+        symbols = await get_symbols_func()
         async with pool.acquire() as conn:
             for symbol in symbols:
                 await delete_old_data(conn, symbol, retention_days)
-        await asyncio.sleep(24 * 3600)  # toutes les 24h
+        await asyncio.sleep(24 * 3600)  # 24h
 
-async def main():
+async def read_symbols_file() -> list[str]:
     if not os.path.exists(SYMBOLS_FILE):
-        raise RuntimeError(f"Le fichier {SYMBOLS_FILE} n'existe pas")
-
+        print(f"⚠️ Fichier {SYMBOLS_FILE} introuvable")
+        return []
     with open(SYMBOLS_FILE, "r") as f:
         symbols = [line.strip() for line in f if line.strip()]
+    return symbols
 
+async def monitor_symbols(pool):
+    current_tasks = {}
+    current_symbols = set()
+
+    while True:
+        new_symbols = set(await read_symbols_file())
+
+        # Stop subscriptions for removed symbols
+        removed = current_symbols - new_symbols
+        for sym in removed:
+            print(f"🛑 Arrêt abonnement {sym}")
+            task, stop_event = current_tasks.pop(sym)
+            stop_event.set()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        # Add subscriptions for new symbols
+        added = new_symbols - current_symbols
+        async with pool.acquire() as conn:
+            for sym in added:
+                await create_table_if_not_exists(conn, sym)
+        for sym in added:
+            print(f"▶️ Démarrage abonnement {sym}")
+            stop_event = asyncio.Event()
+            task = asyncio.create_task(subscribe_and_aggregate(sym, pool, stop_event))
+            current_tasks[sym] = (task, stop_event)
+
+        current_symbols = new_symbols
+
+        await asyncio.sleep(60)  # vérifier toutes les minutes
+
+async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
 
-    async with pool.acquire() as conn:
-        for symbol in symbols:
-            await create_table_if_not_exists(conn, symbol)
+    # Lance la surveillance du fichier et la purge
+    cleanup_task = asyncio.create_task(periodic_cleanup(pool, read_symbols_file))
+    monitor_task = asyncio.create_task(monitor_symbols(pool))
 
-    tasks = [subscribe_and_aggregate(sym, pool) for sym in symbols]
-    tasks.append(periodic_cleanup(pool, symbols))
-    await asyncio.gather(*tasks)
+    await asyncio.gather(cleanup_task, monitor_task)
 
 if __name__ == "__main__":
     try:
