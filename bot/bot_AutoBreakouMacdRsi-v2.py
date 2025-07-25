@@ -39,15 +39,20 @@ def calculate_macd_rsi(df):
     return df
 
 def combined_signal(df):
+    df = df.copy()  # évite le SettingWithCopyWarning
     df['ema50'] = ta.ema(df['close'], length=50)
-    df['macd'] = ta.macd(df['close']).iloc[:, 0]  # MACD line
-    df['macd_signal'] = ta.macd(df['close']).iloc[:, 1]  # Signal line
+    macd_df = ta.macd(df['close'])
+    df['macd'] = macd_df.iloc[:, 0]
+    df['macd_signal'] = macd_df.iloc[:, 1]
     df['rsi'] = ta.rsi(df['close'], length=14)
+
+    # Sécurité : s'assurer qu'on a toutes les valeurs techniques nécessaires
+    if df[['ema50', 'macd', 'macd_signal', 'rsi']].iloc[-1].isnull().any():
+        return None
 
     signal = None
 
     if df['high'].iloc[-1] > df['high'].iloc[-2] and df['close'].iloc[-1] > df['high'].iloc[-2]:
-        # Tentative de breakout vers le haut
         if df['close'].iloc[-1] < df['ema50'].iloc[-1]:
             print(f"❌ Signal BUY rejeté : close ({df['close'].iloc[-1]:.4f}) < ema50 ({df['ema50'].iloc[-1]:.4f})")
         elif df['macd'].iloc[-1] <= df['macd_signal'].iloc[-1]:
@@ -58,7 +63,6 @@ def combined_signal(df):
             signal = 'BUY'
 
     elif df['low'].iloc[-1] < df['low'].iloc[-2] and df['close'].iloc[-1] < df['low'].iloc[-2]:
-        # Tentative de breakout vers le bas
         if df['close'].iloc[-1] >= df['ema50'].iloc[-1]:
             print(f"❌ Signal SELL rejeté : close ({df['close'].iloc[-1]:.4f}) >= ema50 ({df['ema50'].iloc[-1]:.4f})")
         elif df['macd'].iloc[-1] >= df['macd_signal'].iloc[-1]:
@@ -69,6 +73,7 @@ def combined_signal(df):
             signal = 'SELL'
 
     return signal
+
 
 
 
