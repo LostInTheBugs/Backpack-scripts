@@ -196,23 +196,9 @@ def backtest_symbol(symbol: str, duration: str):
     try:
         minutes = duration_to_minutes(duration)
         limit = min(minutes, 1000)
-
-        # Récupérer les données OHLCV
         ohlcv = get_ohlcv(symbol, interval="1m", limit=limit)
         df = prepare_ohlcv_df(ohlcv)
-
-        # Calculer les indicateurs si manquants
-        if 'ema50' not in df.columns:
-            df['ema50'] = ta.ema(df['close'], length=50)
-        if 'macd' not in df.columns or 'macd_signal' not in df.columns:
-            macd_df = ta.macd(df['close'])
-            df['macd'] = macd_df.iloc[:, 0]
-            df['macd_signal'] = macd_df.iloc[:, 1]
-        if 'rsi' not in df.columns:
-            df['rsi'] = ta.rsi(df['close'], length=14)
-
-        # Supprimer toutes les lignes où les indicateurs critiques sont NaN
-        df = df.dropna(subset=['close', 'ema50', 'macd', 'macd_signal', 'rsi']).reset_index(drop=True)
+        df = calculate_macd_rsi(df)
 
         trades = []
         position = None
@@ -221,78 +207,108 @@ def backtest_symbol(symbol: str, duration: str):
         min_price = None
 
         for i in range(30, len(df)):
-            df_slice = df.iloc[:i+1]
+            try:
+                df_slice = df.iloc[:i+1]
+                last_row = df_slice.iloc[-1]
 
-            # Protection: vérifier que la dernière ligne a bien des valeurs valides
-            last_row = df_slice.iloc[-1]
-            if any(pd.isna(last_row[col]) for col in ['close', 'ema50', 'macd', 'macd_signal', 'rsi']):
-                continue  # skip si NaN
+                # Ignore si valeurs clés manquantes
+                if any(pd.isna(last_row[col]) for col in ['close', 'ema50', 'macd', 'macd_signal', 'rsi']):
+                    continue
 
-            signal = combined_signal(df_slice)
-            close_price = last_row['close']
+                signal = combined_signal(df_slice)
+                close_price = last_row['close']
 
-            if close_price is None or pd.isna(close_price):
-                continue  # skip si close non valide
+                if close_price is None or pd.isna(close_price):
+                    continue
 
-            if position is None:
-                if signal == "BUY":
-                    position = "long"
-                    entry_price = close_price
-                    max_price = entry_price
-                    min_price = entry_price
-                elif signal == "SELL":
-                    position = "short"
-                    entry_price = close_price
-                    max_price = entry_price
-                    min_price = entry_price
-            else:
-                if position == "long":
-                    if close_price > max_price:
-                        max_price = close_price
-                    # Protection avant calculs
-                    if max_price is not None and entry_price is not None:
-                        if close_price < max_price * (1 - TRAILING_STOP_PCT):
-                            pnl = (close_price - entry_price) / entry_price
-                            trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                            position = None
-                            entry_price = None
-                            max_price = None
-                            min_price = None
-                            continue
-                    if signal == "SELL":
-                        pnl = (close_price - entry_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
-                elif position == "short":
-                    if close_price < min_price:
-                        min_price = close_price
-                    # Protection avant calculs
-                    if min_price is not None and entry_price is not None:
-                        if close_price > min_price * (1 + TRAILING_STOP_PCT):
-                            pnl = (entry_price - close_price) / entry_price
-                            trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                            position = None
-                            entry_price = None
-                            max_price = None
-                            min_price = None
-                            continue
+                if position is None:
                     if signal == "BUY":
-                        pnl = (entry_price - close_price) / entry_price
-                        trades.append({"type": position, "entry": entry_price, "exit": close_price, "pnl": pnl})
-                        position = None
-                        entry_price = None
-                        max_price = None
-                        min_price = None
+                        position = "long"
+                        entry_price = close_price
+                        max_price = entry_price
+                        min_price = entry_price
+                    elif signal == "SELL":
+                        position = "short"
+                        entry_price = close_price
+                        max_price = entry_price
+                        min_price = entry_price
+                else:
+                    if position == "long":
+                        if close_price is not None and (max_price is None or close_price > max_price):
+                            max_price = close_price
+                        # Check None avant calcul
+                        if None not in (close_price, max_price, entry_price):
+                            if close_price < max_price * (1 - TRAILING_STOP_PCT):
+                                pnl = (close_price - entry_price) / entry_price
+                                trades.append({
+                                    "type": position,
+                                    "entry": entry_price,
+                                    "exit": close_price,
+                                    "pnl": pnl
+                                })
+                                position = None
+                                entry_price = None
+                                max_price = None
+                                min_price = None
+                                continue
+                            if signal == "SELL":
+                                pnl = (close_price - entry_price) / entry_price
+                                trades.append({
+                                    "type": position,
+                                    "entry": entry_price,
+                                    "exit": close_price,
+                                    "pnl": pnl
+                                })
+                                position = None
+                                entry_price = None
+                                max_price = None
+                                min_price = None
+                    elif position == "short":
+                        if close_price is not None and (min_price is None or close_price < min_price):
+                            min_price = close_price
+                        if None not in (close_price, min_price, entry_price):
+                            if close_price > min_price * (1 + TRAILING_STOP_PCT):
+                                pnl = (entry_price - close_price) / entry_price
+                                trades.append({
+                                    "type": position,
+                                    "entry": entry_price,
+                                    "exit": close_price,
+                                    "pnl": pnl
+                                })
+                                position = None
+                                entry_price = None
+                                max_price = None
+                                min_price = None
+                                continue
+                            if signal == "BUY":
+                                pnl = (entry_price - close_price) / entry_price
+                                trades.append({
+                                    "type": position,
+                                    "entry": entry_price,
+                                    "exit": close_price,
+                                    "pnl": pnl
+                                })
+                                position = None
+                                entry_price = None
+                                max_price = None
+                                min_price = None
 
-        # Clôturer la position à la fin du backtest si ouverte
-        if position is not None and entry_price is not None:
+            except Exception as e:
+                print(f"Erreur à l'index {i} sur {symbol}: {e}")
+                print(f"close_price={close_price}, entry_price={entry_price}, max_price={max_price}, min_price={min_price}")
+                print(f"last_row:\n{last_row}")
+                break
+
+        # Fermer position ouverte en fin de backtest
+        if position is not None and entry_price is not None and not math.isnan(entry_price):
             exit_price = df['close'].iloc[-1]
-            if exit_price is not None and not pd.isna(exit_price):
-                pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
-                trades.append({"type": position, "entry": entry_price, "exit": exit_price, "pnl": pnl})
+            pnl = (exit_price - entry_price) / entry_price if position == "long" else (entry_price - exit_price) / entry_price
+            trades.append({
+                "type": position,
+                "entry": entry_price,
+                "exit": exit_price,
+                "pnl": pnl
+            })
 
         total_trades = len(trades)
         wins = [t for t in trades if t['pnl'] > 0]
@@ -307,6 +323,7 @@ def backtest_symbol(symbol: str, duration: str):
 
     except Exception as e:
         log(f"[{symbol}] ❌ Erreur backtest : {e}")
+
 
 
 
