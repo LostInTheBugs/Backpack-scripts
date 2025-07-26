@@ -11,7 +11,7 @@ def get_combined_signal(df):
     if not isinstance(df.index, pd.DatetimeIndex):
         try:
             # Essayer avec unit='us' (microsecondes), tu peux adapter si besoin
-            df.index = pd.to_datetime(df.index, unit='us')
+            df.index = pd.to_datetime(df.index, unit='s')
         except Exception as e:
             print(f"DEBUG Impossible de convertir l'index en datetime: {e}")
             return "HOLD"
