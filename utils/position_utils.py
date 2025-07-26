@@ -1,37 +1,23 @@
-import requests
 import os
-import time
-import hmac
-import hashlib
+from bpx.account import Account
 
-def position_already_open(symbol):
-    api_key = os.getenv("bpx_bot_public_key")
-    api_secret = os.getenv("bpx_bot_secret_key")
+public_key = os.getenv("bpx_bot_public_key")
+secret_key = os.getenv("bpx_bot_secret_key")
 
-    url_path = "/api/v1/positions"
-    url = f"https://api.backpack.exchange{url_path}"
-    method = "GET"
-    nonce = str(int(time.time() * 1000))
-    body = ""
+# Initialisation de l'objet Account (gère signature, nonce, etc.)
+account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
 
-    prehash_string = f"{nonce}{method}{url_path}{body}"
-    signature = hmac.new(
-        api_secret.encode(), prehash_string.encode(), hashlib.sha256
-    ).hexdigest()
-
-    headers = {
-        "X-API-KEY": api_key,
-        "X-API-NONCE": nonce,
-        "X-API-SIGNATURE": signature,
-    }
-
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    positions = response.json()
-
-    for pos in positions:
-        if pos["symbol"] == symbol:
-            size = float(pos.get("size", 0))
-            return abs(size) > 0
-
-    return False
+def position_already_open(symbol: str) -> bool:
+    """
+    Vérifie si une position ouverte existe pour le symbole donné.
+    Retourne True si une position non nulle est ouverte, sinon False.
+    """
+    try:
+        positions = account.get_open_positions()
+        for p in positions:
+            if p.get("symbol") == symbol and float(p.get("netQuantity", 0)) != 0:
+                return True
+        return False
+    except Exception as e:
+        print(f"Erreur vérif position ouverte : {e}")
+        return False
