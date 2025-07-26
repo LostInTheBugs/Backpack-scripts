@@ -39,55 +39,51 @@ async def fetch_ohlcv_from_db(pool, symbol, interval):
             return pd.DataFrame()
 
 async def run_backtest_async(symbol: str, interval: str, dsn: str):
+    interval_map = {
+        '1s': '1S',
+        '1m': '1T',
+        '1h': '1H',
+        '1d': '1D',
+        '1w': '1W'
+    }
+
+    pandas_interval = interval_map.get(interval)
+    if not pandas_interval:
+        print(f"[{symbol}] Intervalle non supporté pour backtest: {interval}")
+        return
+
     pool = await asyncpg.create_pool(dsn=dsn)
     async with pool.acquire() as conn:
         table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
-        
-        interval_sec_map = {
-            "1s": 1,
-            "1m": 60,
-            "1h": 3600,
-            "1d": 86400,
-            "1w": 604800,
-        }
-        
-        if interval not in interval_sec_map:
-            print(f"[{symbol}] ❌ Intervalle inconnu : {interval}")
-            await pool.close()
-            return
-        
-        interval_sec = interval_sec_map[interval]
-        
-        query = f"""
+        # Toujours récupérer les données 1s
+        rows = await conn.fetch(f"""
             SELECT timestamp, open, high, low, close, volume
             FROM {table_name}
-            WHERE interval_sec = $1
+            WHERE interval_sec = 1
             ORDER BY timestamp
-        """
-        
-        rows = await conn.fetch(query, interval_sec)
-        
+        """)
         if not rows:
-            print(f"[{symbol}] ❌ Pas de données OHLCV pour le backtest")
-            await pool.close()
+            print(f"[{symbol}] Pas de données OHLCV 1s pour backtest")
             return
-        
+
         df = pd.DataFrame(rows)
-        if df.empty:
-            print(f"[{symbol}] ❌ DataFrame vide après conversion")
-            await pool.close()
-            return
-        
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_convert('UTC')
         df.set_index('timestamp', inplace=True)
-        
-        print(f"DEBUG avant appel get_combined_signal - index type: {type(df.index)}")
-        
+
+        if interval != '1s':
+            df = df.resample(pandas_interval).agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            }).dropna()
+
+        # Ensuite tu appelles ta fonction de signal sur df agrégé
         from signals.macd_rsi_breakout import get_combined_signal
         signal = get_combined_signal(df)
-        
         print(f"[{symbol}] Backtest signal final: {signal}")
-    
+
     await pool.close()
 
 async def backtest_symbol(symbol: str, interval: str):
