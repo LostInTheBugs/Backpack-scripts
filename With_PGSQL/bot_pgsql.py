@@ -17,21 +17,25 @@ from fetch_top_volume_symbols import fetch_top_n_perp
 from backpack_public.public import get_ohlcv
 
 POSITION_AMOUNT_USDC = 25
-INTERVAL = "1m"
+INTERVAL = "1s"
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
 def handle_live_symbol(symbol: str, real_run: bool, dry_run: bool):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
-        data = get_ohlcv(symbol, INTERVAL)
 
-        if not data:
-            log(f"[{symbol}] ❌ Données OHLCV vides")
-            return
-
-        df = get_ohlcv_df(symbol, INTERVAL)
-
+        if INTERVAL == "1s":
+            end_ts = datetime.now(timezone.utc)
+            start_ts = end_ts - timedelta(seconds=60)  # dernière minute de données 1s
+            df = get_ohlcv_1s_sync(symbol, start_ts, end_ts)
+        else:
+            data = get_ohlcv(symbol, INTERVAL)
+            if not data:
+                log(f"[{symbol}] ❌ Données OHLCV vides")
+                return
+            df = get_ohlcv_df(symbol, INTERVAL)
+        
         if df.empty:
             log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
             return
