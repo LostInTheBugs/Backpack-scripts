@@ -107,7 +107,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
                 log(f"[{symbol}] 🧪 DRY-RUN: Simulation d'ouverture position {signal}")
             elif real_run:
                 log(f"[{symbol}] ✅ OUVERTURE position réelle : {signal}")
-                open_position(symbol, POSITION_AMOUNT_USDC, signal, public_key, secret_key)
+                open_position(symbol, POSITION_AMOUNT_USDC, signal)
             else:
                 log(f"[{symbol}] ❌ Ni --real-run ni --dry-run spécifié : aucune action")
     except Exception as e:
