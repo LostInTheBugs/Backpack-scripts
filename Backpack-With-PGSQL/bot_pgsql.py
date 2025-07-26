@@ -11,7 +11,7 @@ from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from backpack_public.get_market import get_market
 from utils.position_utils import position_already_open
-from backpack_public.public import get_ohlcv
+from utils.ohlcv_utils import get_ohlcv_df
 from fetch_top_volume_symbols import fetch_top_n_perp
 
 POSITION_AMOUNT_USDC = 25
@@ -28,7 +28,7 @@ def handle_live_symbol(symbol: str, real_run: bool, dry_run: bool):
             log(f"[{symbol}] ❌ Données OHLCV vides")
             return
 
-        df = pd.DataFrame(data)
+        df = get_ohlcv_df(symbol, INTERVAL)
 
         if df.empty:
             log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
