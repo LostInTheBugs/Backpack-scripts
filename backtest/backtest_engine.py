@@ -38,6 +38,12 @@ async def fetch_ohlcv_from_db(pool, symbol, interval):
             return pd.DataFrame()
 
 async def run_backtest_async(symbol, interval, dsn):
+
+    print(f"DEBUG avant conversion index: {df.index}, type: {type(df.index)}")
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df.set_index('timestamp', inplace=True)
+    print(f"DEBUG après conversion index: {df.index}, type: {type(df.index)}")
+
     log(f"[{symbol}] 🧪 Début backtest async interval={interval}")
 
     pool = await asyncpg.create_pool(dsn=dsn)
