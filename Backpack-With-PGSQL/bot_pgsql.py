@@ -3,6 +3,7 @@ import os
 import time
 import traceback
 from datetime import datetime
+import pandas as pd
 
 from utils.logger import log
 from signals.macd_rsi_breakout import get_combined_signal
@@ -21,10 +22,16 @@ secret_key = os.getenv("bpx_bot_secret_key")
 def handle_live_symbol(symbol: str, real_run: bool, dry_run: bool):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
-        df = get_ohlcv(symbol, INTERVAL)
-        log(f"[{symbol}] 🔍 Type de df : {type(df)}, exemple : {df[:1]}")
-        if df is None or df.empty:
+        data = get_ohlcv(symbol, INTERVAL)
+
+        if not data:
             log(f"[{symbol}] ❌ Données OHLCV vides")
+            return
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
             return
 
         signal = get_combined_signal(df)
