@@ -4,48 +4,41 @@ import hmac
 import hashlib
 import requests
 
-API_URL = "https://api.backpack.exchange/api/v1/position"
+API_BASE = "https://api.backpack.exchange"
+ENDPOINT = "/api/v1/position"
+URL = API_BASE + ENDPOINT
 
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
-def generate_signature(secret_key: str, method: str, path: str, timestamp: str, body: str = "") -> str:
-    """
-    Génère la signature HMAC SHA256 requise par l'API Backpack.
-    La chaîne signée est généralement : timestamp + méthode + chemin + body (body vide pour GET).
-    """
-    message = f"{timestamp}{method}{path}{body}"
-    signature = hmac.new(secret_key.encode(), message.encode(), hashlib.sha256).hexdigest()
+def sign_request(secret, nonce, method, path, body=""):
+    message = f"{nonce}{method}{path}{body}"
+    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
     return signature
 
 def position_already_open(symbol: str) -> bool:
-    """
-    Vérifie si une position ouverte existe pour le symbole donné.
-    """
+    nonce = str(int(time.time() * 1000))
     method = "GET"
-    path = "/api/v1/position"
-    timestamp = str(int(time.time() * 1000))  # timestamp en millisecondes
-    
-    signature = generate_signature(secret_key, method, path, timestamp)
+    body = ""
+
+    signature = sign_request(secret_key, nonce, method, ENDPOINT, body)
 
     headers = {
         "X-API-KEY": public_key,
-        "X-Signature": signature,
-        "X-Timestamp": timestamp
+        "X-API-SIGNATURE": signature,
+        "X-API-NONCE": nonce
     }
 
     try:
-        response = requests.get(API_URL, headers=headers)
+        response = requests.get(URL, headers=headers)
         response.raise_for_status()
         data = response.json()
-        # data est une liste de positions ouvertes, filtrer par symbole et taille non nulle
+
         for pos in data:
-            if pos.get("symbol") == symbol and float(pos.get("size", 0)) != 0:
+            if pos["symbol"] == symbol and float(pos.get("size", 0)) != 0:
                 return True
         return False
-    except requests.exceptions.HTTPError as e:
-        print(f"HTTP error lors de la vérification des positions : {e}")
-        return False
+
     except Exception as e:
-        print(f"Erreur vérif position ouverte : {e}")
+        print(f"❌ Erreur vérif position ouverte : {e}")
         return False
