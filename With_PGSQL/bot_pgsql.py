@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import asyncpg
 
-from With_PGSQL.pgsql_ohlcv import get_ohlcv_1s_sync
+from With_PGSQL.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from utils.logger import log
 from signals.macd_rsi_breakout import get_combined_signal
 from execute.open_position_usdc import open_position
@@ -62,7 +62,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
         if INTERVAL == "1s":
             end_ts = datetime.now(timezone.utc)
             start_ts = end_ts - timedelta(seconds=60)  # dernière minute de données 1s
-            df = get_ohlcv_1s_sync(symbol, start_ts, end_ts)
+            df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
         else:
             data = get_ohlcv(symbol, INTERVAL)
             if not data:
