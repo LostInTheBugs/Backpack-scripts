@@ -194,7 +194,7 @@ async def async_main(args):
     stop_event = asyncio.Event()
 
     def shutdown():
-        log("🛑 Arrêt manuel demandé (Ctrl+C)")
+        print("🛑 Arrêt manuel demandé (Ctrl+C)")
         stop_event.set()
 
     loop.add_signal_handler(signal.SIGINT, shutdown)
@@ -211,16 +211,24 @@ async def async_main(args):
         else:
             if args.symbols:
                 symbols = args.symbols.split(",")
-                task = asyncio.create_task(main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select))
+                task = asyncio.create_task(
+                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
+                )
                 await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
             else:
-                task = asyncio.create_task(watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run))
+                task = asyncio.create_task(
+                    watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
+                )
                 await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
+    except Exception:
+        traceback.print_exc()
     finally:
         await pool.close()
-        log("Pool de connexion fermé, fin du programme.")
+        print("Pool de connexion fermé, fin du programme.")
 
 if __name__ == "__main__":
+    import argparse
+
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
     parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
     parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
@@ -230,4 +238,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    asyncio.run(async_main(args))
+    try:
+        asyncio.run(async_main(args))
+    except KeyboardInterrupt:
+        print("🛑 Arrêt manuel demandé via KeyboardInterrupt, fermeture propre...")
+        sys.exit(0)
+    except Exception:
+        traceback.print_exc()
+        sys.exit(1)
