@@ -38,10 +38,6 @@ async def fetch_ohlcv_from_db(pool, symbol, interval):
             return pd.DataFrame()
 
 async def run_backtest_async(symbol, interval, dsn):
-    """
-    Fonction principale asynchrone de backtest.
-    Récupère les données OHLCV, calcule les signaux, simule les trades.
-    """
     log(f"[{symbol}] 🧪 Début backtest async interval={interval}")
 
     pool = await asyncpg.create_pool(dsn=dsn)
@@ -52,19 +48,17 @@ async def run_backtest_async(symbol, interval, dsn):
         await pool.close()
         return
 
-    # Exemple très simplifié: on calcule juste les signaux avec get_combined_signal sur tout le df
-    # Tu peux ici faire un backtest complet minute par minute, jour par jour, etc.
+    # Convertir colonnes Decimal en float pour éviter les erreurs de type
+    for col in ['open', 'high', 'low', 'close', 'volume']:
+        if col in df.columns:
+            df[col] = df[col].astype(float)
+
     try:
-        # Ex: appliquer ta fonction signal sur le df complet
         signal = get_combined_signal(df)
-
-        # Afficher le signal final en backtest (à compléter selon ta logique)
         log(f"[{symbol}] Backtest signal final: {signal}")
-
-        # Ici tu pourrais simuler des entrées / sorties avec PnL etc.
-
     except Exception as e:
         log(f"[{symbol}] 💥 Erreur backtest: {e}")
+        import traceback
         traceback.print_exc()
 
     await pool.close()
