@@ -16,10 +16,14 @@ def position_already_open(symbol: str) -> bool:
         response = requests.get(API_URL, headers=headers)
         response.raise_for_status()
         data = response.json()
+        # data est probablement une liste d'objets position
         for pos in data:
-            if pos["symbol"] == symbol and float(pos.get("size", 0)) != 0:
+            # vérifier que la clé 'symbol' et 'size' existent dans pos
+            if pos.get("symbol") == symbol and float(pos.get("size", 0)) != 0:
                 return True
         return False
+    except requests.HTTPError as http_err:
+        print(f"HTTP error lors de la vérification des positions : {http_err}")
     except Exception as e:
         print(f"Erreur vérif position ouverte : {e}")
-        return False
+    return False
