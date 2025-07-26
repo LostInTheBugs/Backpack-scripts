@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import asyncpg
 import signal
-import datetime
 import pytz
 
 from With_PGSQL.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
