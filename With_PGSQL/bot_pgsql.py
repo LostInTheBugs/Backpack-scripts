@@ -44,12 +44,12 @@ async def check_table_and_fresh_data(pool, symbol: str, max_age_seconds: int = 6
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=max_age_seconds)
 
-        # Vérifier si des données existent dans les dernières max_age_seconds
+        # Comparaison UTC : convertir timestamp de la base en UTC
         recent_rows = await conn.fetch(
             f"""
-            SELECT timestamp FROM {table_name}
-            WHERE timestamp >= $1
-            ORDER BY timestamp ASC
+            SELECT timestamp AT TIME ZONE 'UTC' as ts_utc FROM {table_name}
+            WHERE timestamp AT TIME ZONE 'UTC' >= $1
+            ORDER BY timestamp DESC
             """,
             cutoff
         )
