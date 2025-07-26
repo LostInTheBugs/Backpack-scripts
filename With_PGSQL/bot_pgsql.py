@@ -136,9 +136,24 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             log(f"💥 Erreur sélection symboles auto: {e}")
             return
 
-    # Pour chaque symbole, appeler la version async de handle_live_symbol
+    active_symbols = []
+    ignored_symbols = []
+
     for symbol in symbols:
-        await handle_live_symbol(symbol, pool, real_run, dry_run)
+        if await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+            active_symbols.append(symbol)
+            await handle_live_symbol(symbol, pool, real_run, dry_run)
+        else:
+            ignored_symbols.append(symbol)
+
+    # Résumé après traitement
+    if active_symbols:
+        log(f"✅ Symboles actifs ({len(active_symbols)}) : {active_symbols}")
+    if ignored_symbols:
+        log(f"⛔ Symboles ignorés ({len(ignored_symbols)}) : {ignored_symbols}")
+    if not active_symbols:
+        log("⚠️ Aucun symbole actif pour cette itération.")
+        
 
 async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
     last_modified = None
