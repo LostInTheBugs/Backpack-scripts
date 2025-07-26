@@ -37,38 +37,44 @@ async def fetch_ohlcv_from_db(pool, symbol, interval):
             traceback.print_exc()
             return pd.DataFrame()
 
-async def run_backtest_async(symbol, interval, dsn):
-
-    print(f"DEBUG avant conversion index: {df.index}, type: {type(df.index)}")
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df.set_index('timestamp', inplace=True)
-    print(f"DEBUG après conversion index: {df.index}, type: {type(df.index)}")
-
-    log(f"[{symbol}] 🧪 Début backtest async interval={interval}")
-
+async def run_backtest_async(symbol: str, interval: str, dsn: str):
+    # Connexion à la base
     pool = await asyncpg.create_pool(dsn=dsn)
-
-    df = await fetch_ohlcv_from_db(pool, symbol, interval)
-    if df.empty:
-        log(f"[{symbol}] ⚠️ DataFrame vide, backtest annulé")
-        await pool.close()
-        return
-
-    # Convertir colonnes Decimal en float pour éviter les erreurs de type
-    for col in ['open', 'high', 'low', 'close', 'volume']:
-        if col in df.columns:
-            df[col] = df[col].astype(float)
-
-    try:
+    async with pool.acquire() as conn:
+        # Récupérer les données OHLCV depuis la table correspondante
+        table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
+        query = f"""
+            SELECT timestamp, open, high, low, close, volume
+            FROM {table_name}
+            WHERE interval_sec = (SELECT interval_sec FROM intervals WHERE interval = $1)
+            ORDER BY timestamp
+        """
+        # Ici, si tu n'as pas de table "intervals", adapte ou mets un filtre interval_sec = 86400 pour 1d par ex.
+        
+        rows = await conn.fetch(query, interval)
+        if not rows:
+            print(f"[{symbol}] ❌ Pas de données OHLCV pour le backtest")
+            return
+        
+        # Convertir en DataFrame pandas
+        df = pd.DataFrame(rows)
+        if df.empty:
+            print(f"[{symbol}] ❌ DataFrame vide après conversion")
+            return
+        
+        # Convertir timestamp en datetime et indexer
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        
+        print(f"DEBUG avant appel get_combined_signal - index type: {type(df.index)}")
+        
+        # Appeler ta fonction de signal
+        from signals.macd_rsi_breakout import get_combined_signal
         signal = get_combined_signal(df)
-        log(f"[{symbol}] Backtest signal final: {signal}")
-    except Exception as e:
-        log(f"[{symbol}] 💥 Erreur backtest: {e}")
-        import traceback
-        traceback.print_exc()
-
+        
+        print(f"[{symbol}] Backtest signal final: {signal}")
+    
     await pool.close()
-    log(f"[{symbol}] ✅ Fin backtest")
 
 def run_backtest(symbol, interval):
     """
