@@ -1,9 +1,12 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import requests
 import time
 import numpy as np
 import pandas as pd
+import asyncio
+import asyncpg
+import os
 
 def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None):
     base_url = "https://api.backpack.exchange/api/v1/klines"
