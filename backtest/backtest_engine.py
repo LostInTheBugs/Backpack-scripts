@@ -18,7 +18,7 @@ def interval_to_pandas_freq(interval: str) -> str:
     elif unit == 'm':
         return f"{qty}T"  # T = minutes
     elif unit == 'h':
-        return f"{qty}H"
+        return f"{qty}h"
     elif unit == 'd':
         return f"{qty}D"
     else:
