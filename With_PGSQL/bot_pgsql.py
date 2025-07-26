@@ -146,7 +146,7 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
             log(f"💥 Erreur dans le watcher : {e}")
             traceback.print_exc()
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(1)
 
 async def async_main(args):
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
