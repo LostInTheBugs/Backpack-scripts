@@ -37,18 +37,32 @@ async def check_table_and_fresh_data(pool, symbol: str, max_age_seconds: int = 6
             table_name
         )
         if not table_exists:
-            log(f"⚠️ Table {table_name} n'existe pas")
+            log(f"[{symbol}] ❌ Table {table_name} n'existe pas")
             return False
 
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
-        recent_count = await conn.fetchval(
-            f"SELECT COUNT(*) FROM {table_name} WHERE timestamp >= $1",
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(seconds=max_age_seconds)
+
+        # Vérifier si des données existent dans les dernières max_age_seconds
+        recent_rows = await conn.fetch(
+            f"""
+            SELECT timestamp FROM {table_name}
+            WHERE timestamp >= $1
+            ORDER BY timestamp ASC
+            """,
             cutoff
         )
-        if recent_count == 0:
-            log(f"⚠️ Pas de données récentes dans {table_name} depuis plus de {max_age_seconds} secondes")
+
+        if not recent_rows:
+            log(f"[{symbol}] ⚠️ Pas de données récentes dans {table_name} depuis plus de {max_age_seconds} secondes")
             return False
+
+        if len(recent_rows) < 2:
+            log(f"[{symbol}] ⚠️ Pas assez de données récentes (moins de 2 lignes dans les {max_age_seconds}s)")
+            return False
+
     return True
+
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
     try:
