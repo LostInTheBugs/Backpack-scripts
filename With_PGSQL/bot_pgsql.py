@@ -41,7 +41,7 @@ async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
                 ORDER BY timestamp DESC
                 LIMIT 1
                 """,
-                datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=max_age_seconds),
+                datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds),
             )
             return bool(recent_rows)
         except asyncpg.exceptions.UndefinedTableError:
