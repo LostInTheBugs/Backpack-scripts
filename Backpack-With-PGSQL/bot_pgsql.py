@@ -2,9 +2,10 @@ import argparse
 import os
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 
+from utils.pgsql_ohlcv import get_ohlcv_1s_sync
 from utils.logger import log
 from signals.macd_rsi_breakout import get_combined_signal
 from execute.open_position_usdc import open_position

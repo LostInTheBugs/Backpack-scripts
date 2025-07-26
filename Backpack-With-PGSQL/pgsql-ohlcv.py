@@ -2,6 +2,7 @@ import asyncio
 import json
 import websockets
 import asyncpg
+import pandas as pd
 from datetime import datetime, timezone, timedelta
 import os
 
@@ -15,6 +16,32 @@ RETENTION_DAYS = 90
 
 def table_name_from_symbol(symbol: str) -> str:
     return "ohlcv_" + symbol.lower().replace("_", "__")
+
+async def fetch_ohlcv_1s(symbol: str, start_ts: datetime, end_ts: datetime) -> pd.DataFrame:
+    """
+    Récupère les bougies 1s de la base PostgreSQL entre start_ts et end_ts pour symbol donné.
+    """
+    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
+
+    query = f"""
+    SELECT timestamp, open, high, low, close, volume
+    FROM {table_name}
+    WHERE interval_sec = 1
+      AND timestamp >= $1
+      AND timestamp <= $2
+    ORDER BY timestamp ASC
+    """
+
+    pool = await asyncpg.create_pool(dsn=PG_DSN)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, start_ts, end_ts)
+    await pool.close()
+
+    if not rows:
+        return pd.DataFrame()  # vide si rien trouvé
+
+    df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    return df
 
 async def create_table_if_not_exists(conn, symbol):
     table_name = table_name_from_symbol(symbol)
@@ -176,6 +203,8 @@ async def monitor_symbols(pool):
         current_symbols = new_symbols
 
         await asyncio.sleep(60)  # vérifier toutes les minutes
+
+
 
 async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
