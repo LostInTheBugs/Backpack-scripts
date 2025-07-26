@@ -1,54 +1,37 @@
+import requests
 import os
 import time
 import hmac
 import hashlib
-import requests
 
-API_BASE = "https://api.backpack.exchange"
-ENDPOINT = "/api/v1/position"
-URL = API_BASE + ENDPOINT
+def position_already_open(symbol):
+    api_key = os.getenv("bpx_bot_public_key")
+    api_secret = os.getenv("bpx_bot_secret_key")
 
-public_key = os.getenv("bpx_bot_public_key")
-secret_key = os.getenv("bpx_bot_secret_key")
-
-def sign_request(secret, nonce, method, path, body=""):
-    message = f"{nonce}{method}{path}{body}"
-    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
-    return signature
-
-def position_already_open(symbol: str) -> bool:
-    nonce = str(int(time.time() * 1000))
+    url_path = "/api/v1/positions"
+    url = f"https://api.backpack.exchange{url_path}"
     method = "GET"
-    path = ENDPOINT
+    nonce = str(int(time.time() * 1000))
     body = ""
 
-    print(f"DEBUG nonce: {nonce}")
-    print(f"DEBUG method: {method}")
-    print(f"DEBUG path: {path}")
-    print(f"DEBUG body: '{body}'")
-
-    signature = sign_request(secret_key, nonce, method, path, body)
+    prehash_string = f"{nonce}{method}{url_path}{body}"
+    signature = hmac.new(
+        api_secret.encode(), prehash_string.encode(), hashlib.sha256
+    ).hexdigest()
 
     headers = {
-        "X-API-KEY": public_key,
+        "X-API-KEY": api_key,
         "X-API-NONCE": nonce,
-        "X-API-SIGNATURE": signature
+        "X-API-SIGNATURE": signature,
     }
 
-    print("DEBUG headers:", headers)
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    positions = response.json()
 
-    try:
-        response = requests.get(URL, headers=headers)
-        print("DEBUG status code:", response.status_code)
-        response.raise_for_status()
-        data = response.json()
-        print("DEBUG data:", data)
+    for pos in positions:
+        if pos["symbol"] == symbol:
+            size = float(pos.get("size", 0))
+            return abs(size) > 0
 
-        for pos in data:
-            if pos["symbol"] == symbol and float(pos.get("size", 0)) != 0:
-                return True
-        return False
-
-    except Exception as e:
-        print(f"❌ Erreur vérif position ouverte : {e}")
-        return False
+    return False
