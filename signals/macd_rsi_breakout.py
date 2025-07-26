@@ -7,10 +7,11 @@ def get_combined_signal(df):
         print("DEBUG DataFrame vide ou trop petit")
         return "HOLD"
 
-    # Assure-toi que l'index est datetime
+    # Conversion avec unité si ce n'est pas déjà un DatetimeIndex
     if not isinstance(df.index, pd.DatetimeIndex):
         try:
-            df.index = pd.to_datetime(df.index)
+            # Essayer avec unit='us' (microsecondes), tu peux adapter si besoin
+            df.index = pd.to_datetime(df.index, unit='us')
         except Exception as e:
             print(f"DEBUG Impossible de convertir l'index en datetime: {e}")
             return "HOLD"
