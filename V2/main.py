@@ -22,8 +22,7 @@ from execute.close_position_percent import close_position_percent
 from backtest.backtest_engine import run_backtest, backtest_symbol
 from live.handle_live_symbol import handle_live_symbol
 
-POSITION_AMOUNT_USDC = 25
-INTERVAL = "1s"
+# Configuration des clés API pour Backpack Exchange
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
