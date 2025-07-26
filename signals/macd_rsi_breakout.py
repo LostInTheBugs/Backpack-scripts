@@ -1,41 +1,33 @@
-import pandas as pd
-
 def get_combined_signal(df):
+    import pandas as pd
     print("DEBUG get_combined_signal: Entrée dans la fonction")
+    print("DEBUG index type:", type(df.index))
+    print("DEBUG index head:", df.index[:5])
 
-    if df.empty or len(df) < 2:
-        print("DEBUG DataFrame vide ou trop petit")
-        return "HOLD"
-
-    # Conversion avec unité si ce n'est pas déjà un DatetimeIndex
+    # Assure-toi que l'index est DatetimeIndex
     if not isinstance(df.index, pd.DatetimeIndex):
-        try:
-            # Essayer avec unit='us' (microsecondes), tu peux adapter si besoin
-            df.index = pd.to_datetime(df.index, unit='s')
-        except Exception as e:
-            print(f"DEBUG Impossible de convertir l'index en datetime: {e}")
-            return "HOLD"
+        df.index = pd.to_datetime(df.index)
 
-    last_close = float(df['close'].iloc[-1])
-    last_date = df.index[-1]
+    last_close = df['close'].iloc[-1]
+    last_close_date = df.index[-1]
 
-    min_close = float(df['close'].min())
-    min_date = df['close'].idxmin()
+    min_close = df['close'].min()
+    min_close_date = df['close'].idxmin()
 
-    max_close = float(df['close'].max())
-    max_date = df['close'].idxmax()
+    max_close = df['close'].max()
+    max_close_date = df['close'].idxmax()
 
-    print(f"DEBUG last_close={last_close} at {last_date}")
-    print(f"DEBUG min_close={min_close} at {min_date}")
-    print(f"DEBUG max_close={max_close} at {max_date}")
+    print(f"DEBUG last_close={last_close} at {last_close_date}")
+    print(f"DEBUG min_close={min_close} at {min_close_date}")
+    print(f"DEBUG max_close={max_close} at {max_close_date}")
 
-    if last_close >= max_close * 0.99:
+    # Exemple de condition simple
+    if last_close > max_close * 0.99:
         print("DEBUG Signal BUY détecté (last_close proche du max)")
         return "BUY"
-
-    if last_close <= min_close * 1.01:
+    elif last_close < min_close * 1.01:
         print("DEBUG Signal SELL détecté (last_close proche du min)")
         return "SELL"
-
-    print("DEBUG Pas de signal détecté, HOLD")
-    return "HOLD"
+    else:
+        print("DEBUG Pas de signal détecté, HOLD")
+        return "HOLD"
