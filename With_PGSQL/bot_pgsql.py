@@ -30,7 +30,6 @@ def format_table_name(symbol: str) -> str:
     parts = symbol.lower().split("_")
     return "ohlcv_" + "__".join(parts)
 
-# Vérifie si la table existe et si elle contient des données récentes
 async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
     table_name = format_table_name(symbol)
     async with pool.acquire() as conn:
@@ -52,7 +51,6 @@ async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
             print(f"❌ Erreur lors de la vérification de la table {table_name}: {e}")
             return False
 
-# Récupère le dernier timestamp pour un symbole donné
 async def get_last_timestamp(pool, symbol):
     table_name = format_table_name(symbol)
     async with pool.acquire() as conn:
@@ -64,24 +62,18 @@ async def get_last_timestamp(pool, symbol):
         except asyncpg.exceptions.UndefinedTableError:
             return None
 
-
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
 
-        # Vérification existence et fraîcheur des données
         if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
             log(f"[{symbol}] Ignoré : pas de données récentes")
             return
 
         if INTERVAL == "1s":
             end_ts = datetime.now(timezone.utc)
-            start_ts = end_ts - timedelta(seconds=60)  # dernière minute de données 1s
+            start_ts = end_ts - timedelta(seconds=60)
             df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            if df['timestamp'].dt.tz is None:
-                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
-            df.set_index('timestamp', inplace=True)
         else:
             data = get_ohlcv(symbol, INTERVAL)
             if not data:
@@ -144,30 +136,32 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             log(f"💥 Erreur sélection symboles auto: {e}")
             return
 
-    active_symbols = []
-    ignored_symbols = []
+    while True:  # boucle infinie
+        active_symbols = []
+        ignored_symbols = []
 
-    for symbol in symbols:
-        if await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
-            active_symbols.append(symbol)
-            await handle_live_symbol(symbol, pool, real_run, dry_run)
-        else:
-            ignored_symbols.append(symbol)
-
-    # Résumé après traitement avec date dernière donnée pour symboles ignorés
-    if active_symbols:
-        log(f"✅ Symboles actifs ({len(active_symbols)}) : {active_symbols}")
-    if ignored_symbols:
-        ignored_details = []
-        for sym in ignored_symbols:
-            last_ts = await get_last_timestamp(pool, sym)
-            if last_ts is None:
-                ignored_details.append(f"{sym} (table absente)")
+        for symbol in symbols:
+            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+                active_symbols.append(symbol)
+                await handle_live_symbol(symbol, pool, real_run, dry_run)
             else:
-                ignored_details.append(f"{sym} (dernière donnée : {last_ts.isoformat()})")
-        log(f"⛔ Symboles ignorés ({len(ignored_symbols)}) : {ignored_details}")
-    if not active_symbols:
-        log("⚠️ Aucun symbole actif pour cette itération.")
+                ignored_symbols.append(symbol)
+
+        if active_symbols:
+            log(f"✅ Symboles actifs ({len(active_symbols)}) : {active_symbols}")
+        if ignored_symbols:
+            ignored_details = []
+            for sym in ignored_symbols:
+                last_ts = await get_last_timestamp(pool, sym)
+                if last_ts is None:
+                    ignored_details.append(f"{sym} (table absente)")
+                else:
+                    ignored_details.append(f"{sym} (dernière donnée : {last_ts.isoformat()})")
+            log(f"⛔ Symboles ignorés ({len(ignored_symbols)}) : {ignored_details}")
+        if not active_symbols:
+            log("⚠️ Aucun symbole actif pour cette itération.")
+
+        await asyncio.sleep(1)  # pause 1 seconde avant prochaine itération
 
 async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
     last_modified = None
@@ -234,6 +228,7 @@ async def async_main(args):
 
 if __name__ == "__main__":
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
     parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
