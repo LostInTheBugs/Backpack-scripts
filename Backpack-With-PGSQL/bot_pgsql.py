@@ -22,6 +22,7 @@ def handle_live_symbol(symbol: str, real_run: bool, dry_run: bool):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
         df = get_ohlcv(symbol, INTERVAL)
+        log(f"[{symbol}] 🔍 Type de df : {type(df)}, exemple : {df[:1]}")
         if df is None or df.empty:
             log(f"[{symbol}] ❌ Données OHLCV vides")
             return
