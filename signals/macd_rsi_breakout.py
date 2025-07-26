@@ -5,16 +5,22 @@ def get_combined_signal(df):
         print("DEBUG DataFrame vide ou trop petit")
         return "HOLD"
 
+    # Assure-toi que l'index est datetime
+    if not isinstance(df.index, pd.DatetimeIndex):
+        try:
+            df.index = pd.to_datetime(df.index)
+        except Exception as e:
+            print(f"DEBUG Impossible de convertir l'index en datetime: {e}")
+            return "HOLD"
+
     last_close = float(df['close'].iloc[-1])
-    last_date = df.index[-1] if hasattr(df.index, 'strftime') else df.index[-1]
-    
+    last_date = df.index[-1]
+
     min_close = float(df['close'].min())
-    min_idx = df['close'].idxmin()
-    min_date = min_idx if hasattr(min_idx, 'strftime') else min_idx
+    min_date = df['close'].idxmin()
 
     max_close = float(df['close'].max())
-    max_idx = df['close'].idxmax()
-    max_date = max_idx if hasattr(max_idx, 'strftime') else max_idx
+    max_date = df['close'].idxmax()
 
     print(f"DEBUG last_close={last_close} at {last_date}")
     print(f"DEBUG min_close={min_close} at {min_date}")
