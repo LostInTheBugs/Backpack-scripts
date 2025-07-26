@@ -8,6 +8,7 @@ import pandas as pd
 import asyncpg
 import signal
 import datetime
+import pytz
 
 from With_PGSQL.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from utils.logger import log
@@ -25,70 +26,42 @@ INTERVAL = "1s"
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
+def format_table_name(symbol: str) -> str:
+    return "ohlcv_" + symbol.lower().replace("_perp", "__perp").replace("_", "__")
+
+# Vérifie si la table existe et si elle contient des données récentes
 async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
-    table_name = f"ohlcv_{symbol.lower().replace('-', '_').replace('/', '_').replace('__', '_')}"
+    table_name = format_table_name(symbol)
     async with pool.acquire() as conn:
-        # Vérifie si la table existe
-        table_exists = await conn.fetchval("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = $1
-            )
-        """, table_name)
-        if not table_exists:
-            print(f"[{symbol}] ❌ Table {table_name} absente.")
-            return False
-
         try:
-            now = datetime.datetime.utcnow()  # Naïf (sans tzinfo)
-            cutoff = now - datetime.timedelta(seconds=max_age_seconds)
-
-            row = await conn.fetchrow(f"""
-                SELECT timestamp FROM {table_name}
+            recent_rows = await conn.fetch(
+                f"""
+                SELECT * FROM {table_name}
+                WHERE timestamp >= $1
                 ORDER BY timestamp DESC
                 LIMIT 1
-            """)
-            if not row:
-                print(f"[{symbol}] ⚠️ Table présente mais aucune donnée.")
-                return False
-            
-            last_timestamp = row['timestamp']
-            if last_timestamp is None:
-                print(f"[{symbol}] ⚠️ Dernier timestamp vide.")
-                return False
-            
-            # For debug
-            print(f"[{symbol}] 🕒 Dernière donnée : {last_timestamp} (cutoff: {cutoff})")
-
-            if last_timestamp < cutoff:
-                print(f"[{symbol}] ⚠️ Pas de données récentes depuis plus de {max_age_seconds} sec.")
-                return False
-            return True
+                """,
+                datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=max_age_seconds),
+            )
+            return bool(recent_rows)
+        except asyncpg.exceptions.UndefinedTableError:
+            print(f"❌ Table {table_name} n'existe pas.")
+            return False
         except Exception as e:
-            print(f"[{symbol}] 💥 Erreur vérification données récentes : {e}")
+            print(f"❌ Erreur lors de la vérification de la table {table_name}: {e}")
             return False
 
-
-async def get_last_timestamp(pool, symbol: str):
-    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
+# Récupère le dernier timestamp pour un symbole donné
+async def get_last_timestamp(pool, symbol):
+    table_name = format_table_name(symbol)
     async with pool.acquire() as conn:
-        exists = await conn.fetchval(
-            """
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables WHERE table_name = $1
+        try:
+            row = await conn.fetchrow(
+                f"SELECT timestamp FROM {table_name} ORDER BY timestamp DESC LIMIT 1"
             )
-            """,
-            table_name
-        )
-        if not exists:
+            return row["timestamp"] if row else None
+        except asyncpg.exceptions.UndefinedTableError:
             return None
-        last_ts = await conn.fetchval(
-            f"""
-            SELECT MAX(timestamp) FROM {table_name}
-            """
-        )
-        return last_ts
 
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
