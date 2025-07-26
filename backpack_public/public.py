@@ -1,41 +1,30 @@
-import pandas as pd
 import requests
+from datetime import datetime
+import requests
+import time
+import numpy as np
+import pandas as pd
 
-def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 100):
-    """
-    Récupère les données OHLCV depuis l'API officielle de Backpack Exchange
-    et retourne un DataFrame avec les colonnes correctement typées.
-    """
-    url = f"https://api.backpack.exchange/api/v1/klines"
+def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None):
+    base_url = "https://api.backpack.exchange/api/v1/klines"
+    
+    if startTime is None:
+        # Par défaut : récupérer les dernières `limit` bougies 1m, donc startTime = now - limit*60s
+        startTime = int(time.time()) - limit * 60
+    
     params = {
         "symbol": symbol,
         "interval": interval,
-        "limit": limit
+        "limit": limit,
+        "startTime": startTime
     }
-
+    
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(base_url, params=params)
         response.raise_for_status()
         data = response.json()
+        return data
+    except requests.RequestException as e:
+        print(f"[ERROR] get_ohlcv(): {e}")
+        return None
 
-        if not isinstance(data, list) or len(data) == 0:
-            return pd.DataFrame()
-
-        df = pd.DataFrame(data)
-
-        # Conversion des colonnes numériques
-        for col in ['open', 'high', 'low', 'close', 'volume', 'quoteVolume', 'trades']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        # Conversion des dates
-        if 'start' in df.columns:
-            df['start'] = pd.to_datetime(df['start'])
-        if 'end' in df.columns:
-            df['end'] = pd.to_datetime(df['end'])
-
-        return df
-
-    except Exception as e:
-        print(f"[get_ohlcv] ❌ Erreur lors de la récupération OHLCV : {e}")
-        return pd.DataFrame()
