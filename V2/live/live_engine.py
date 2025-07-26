@@ -12,7 +12,8 @@ from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from signals.macd_rsi_breakout import get_combined_signal
 from execute.open_position_usdc import open_position
 
-
+INTERVAL = "1s"
+POSITION_AMOUNT_USDC = 25
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
     try:
