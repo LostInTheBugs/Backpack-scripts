@@ -214,12 +214,14 @@ async def async_main(args):
                 task = asyncio.create_task(
                     main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
                 )
-                await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
+                stop_task = asyncio.create_task(stop_event.wait())
+                await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
             else:
                 task = asyncio.create_task(
                     watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
                 )
-                await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
+                stop_task = asyncio.create_task(stop_event.wait())
+                await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
     except Exception:
         traceback.print_exc()
     finally:
