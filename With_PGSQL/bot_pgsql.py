@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import asyncpg
 import signal
+import datetime
 
 from With_PGSQL.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from utils.logger import log
@@ -24,45 +25,49 @@ INTERVAL = "1s"
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
-async def check_table_and_fresh_data(pool, symbol: str, max_age_seconds: int = 60) -> bool:
-    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
+async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+    table_name = f"ohlcv_{symbol.lower().replace('-', '_').replace('/', '_').replace('__', '_')}"
     async with pool.acquire() as conn:
-        # Vérifier que la table existe
-        table_exists = await conn.fetchval(
-            """
+        # Vérifie si la table existe
+        table_exists = await conn.fetchval("""
             SELECT EXISTS (
-                SELECT FROM information_schema.tables
-                WHERE table_name = $1
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = $1
             )
-            """,
-            table_name
-        )
+        """, table_name)
         if not table_exists:
-            log(f"[{symbol}] ❌ Table {table_name} n'existe pas")
+            print(f"[{symbol}] ❌ Table {table_name} absente.")
             return False
 
-        now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(seconds=max_age_seconds)
+        try:
+            now = datetime.datetime.utcnow()  # Naïf (sans tzinfo)
+            cutoff = now - datetime.timedelta(seconds=max_age_seconds)
 
-        # Comparaison UTC : convertir timestamp de la base en UTC
-        recent_rows = await conn.fetch(
-            f"""
-            SELECT timestamp AT TIME ZONE 'UTC' as ts_utc FROM {table_name}
-            WHERE timestamp AT TIME ZONE 'UTC' >= $1
-            ORDER BY timestamp DESC
-            """,
-            cutoff
-        )
+            row = await conn.fetchrow(f"""
+                SELECT timestamp FROM {table_name}
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """)
+            if not row:
+                print(f"[{symbol}] ⚠️ Table présente mais aucune donnée.")
+                return False
+            
+            last_timestamp = row['timestamp']
+            if last_timestamp is None:
+                print(f"[{symbol}] ⚠️ Dernier timestamp vide.")
+                return False
+            
+            # For debug
+            print(f"[{symbol}] 🕒 Dernière donnée : {last_timestamp} (cutoff: {cutoff})")
 
-        if not recent_rows:
-            log(f"[{symbol}] ⚠️ Pas de données récentes dans {table_name} depuis plus de {max_age_seconds} secondes")
+            if last_timestamp < cutoff:
+                print(f"[{symbol}] ⚠️ Pas de données récentes depuis plus de {max_age_seconds} sec.")
+                return False
+            return True
+        except Exception as e:
+            print(f"[{symbol}] 💥 Erreur vérification données récentes : {e}")
             return False
-
-        if len(recent_rows) < 2:
-            log(f"[{symbol}] ⚠️ Pas assez de données récentes (moins de 2 lignes dans les {max_age_seconds}s)")
-            return False
-
-    return True
 
 
 async def get_last_timestamp(pool, symbol: str):
