@@ -19,14 +19,173 @@ from utils.position_utils import position_already_open
 from utils.ohlcv_utils import get_ohlcv_df
 from fetch_top_volume_symbols import fetch_top_n_perp
 from backpack_public.public import get_ohlcv
-from backtest.backtest_engine import run_backtest, backtest_symbol
+from backtest.backtest_engine import run_backtest
 
 POSITION_AMOUNT_USDC = 25
 INTERVAL = "1s"
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
-# ... toutes tes fonctions existantes (format_table_name, check_table_and_fresh_data, etc.) ...
+def format_table_name(symbol: str) -> str:
+    parts = symbol.lower().split("_")
+    return "ohlcv_" + "__".join(parts)
+
+# Vérifie si la table existe et si elle contient des données récentes
+async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+    table_name = format_table_name(symbol)
+    async with pool.acquire() as conn:
+        try:
+            recent_rows = await conn.fetch(
+                f"""
+                SELECT * FROM {table_name}
+                WHERE timestamp >= $1
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds),
+            )
+            return bool(recent_rows)
+        except asyncpg.exceptions.UndefinedTableError:
+            print(f"❌ Table {table_name} n'existe pas.")
+            return False
+        except Exception as e:
+            print(f"❌ Erreur lors de la vérification de la table {table_name}: {e}")
+            return False
+
+# Récupère le dernier timestamp pour un symbole donné
+async def get_last_timestamp(pool, symbol):
+    table_name = format_table_name(symbol)
+    async with pool.acquire() as conn:
+        try:
+            row = await conn.fetchrow(
+                f"SELECT timestamp FROM {table_name} ORDER BY timestamp DESC LIMIT 1"
+            )
+            return row["timestamp"] if row else None
+        except asyncpg.exceptions.UndefinedTableError:
+            return None
+
+
+async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
+    try:
+        log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
+
+        # Vérification existence et fraîcheur des données
+        if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+            log(f"[{symbol}] Ignoré : pas de données récentes")
+            return
+
+        if INTERVAL == "1s":
+            end_ts = datetime.now(timezone.utc)
+            start_ts = end_ts - timedelta(seconds=60)  # dernière minute de données 1s
+            df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+        else:
+            data = get_ohlcv(symbol, INTERVAL)
+            if not data:
+                log(f"[{symbol}] ❌ Données OHLCV vides")
+                return
+            df = get_ohlcv_df(symbol, INTERVAL)
+
+        if df.empty:
+            log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
+            return
+        if len(df) < 2:
+            log(f"[{symbol}] ⚠️ Pas assez de données (moins de 2 lignes) pour calculer le signal")
+            return
+
+        df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+        signal = get_combined_signal(df)
+        log(f"[{symbol}] 🎯 Signal détecté : {signal}")
+
+        if signal in ["BUY", "SELL"]:
+            if position_already_open(symbol):
+                log(f"[{symbol}] ⚠️ Position déjà ouverte — Ignorée")
+                return
+
+            if dry_run:
+                log(f"[{symbol}] 🧪 DRY-RUN: Simulation d'ouverture position {signal}")
+            elif real_run:
+                log(f"[{symbol}] ✅ OUVERTURE position réelle : {signal}")
+                open_position(symbol, POSITION_AMOUNT_USDC, signal, public_key, secret_key)
+            else:
+                log(f"[{symbol}] ❌ Ni --real-run ni --dry-run spécifié : aucune action")
+    except Exception as e:
+        log(f"[{symbol}] 💥 Erreur: {e}")
+        traceback.print_exc()
+
+async def backtest_symbol(symbol: str, interval: str):
+    try:
+        from backtest.backtest_engine import run_backtest_async
+        log(f"[{symbol}] 🧪 Lancement du backtest en {interval}")
+        dsn = os.environ.get("PG_DSN")
+        await run_backtest_async(symbol, interval, dsn)
+    except ModuleNotFoundError:
+        log(f"[{symbol}] ❌ Module backtest non trouvé. Veuillez créer backtest/backtest_engine.py")
+    except Exception as e:
+        log(f"[{symbol}] 💥 Erreur durant le backtest: {e}")
+        traceback.print_exc()
+
+def load_symbols_from_file(filepath: str = "symbol.lst") -> list:
+    if not os.path.exists(filepath):
+        return []
+    with open(filepath, "r") as f:
+        return [line.strip() for line in f if line.strip()]
+
+async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
+    if auto_select:
+        log("🔍 Mode auto-select actif — sélection des symboles les plus volatils")
+        try:
+            symbols = fetch_top_n_perp(n=len(symbols))
+            log(f"✅ Symboles sélectionnés automatiquement : {symbols}")
+        except Exception as e:
+            log(f"💥 Erreur sélection symboles auto: {e}")
+            return
+
+    active_symbols = []
+    ignored_symbols = []
+
+    for symbol in symbols:
+        if await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+            active_symbols.append(symbol)
+            await handle_live_symbol(symbol, pool, real_run, dry_run)
+        else:
+            ignored_symbols.append(symbol)
+
+    # Résumé après traitement avec date dernière donnée pour symboles ignorés
+    if active_symbols:
+        log(f"✅ Symboles actifs ({len(active_symbols)}) : {active_symbols}")
+    if ignored_symbols:
+        ignored_details = []
+        for sym in ignored_symbols:
+            last_ts = await get_last_timestamp(pool, sym)
+            if last_ts is None:
+                ignored_details.append(f"{sym} (table absente)")
+            else:
+                ignored_details.append(f"{sym} (dernière donnée : {last_ts.isoformat()})")
+        log(f"⛔ Symboles ignorés ({len(ignored_symbols)}) : {ignored_details}")
+    if not active_symbols:
+        log("⚠️ Aucun symbole actif pour cette itération.")
+
+async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
+    last_modified = None
+    symbols = []
+
+    while True:
+        try:
+            current_modified = os.path.getmtime(filepath)
+            if current_modified != last_modified:
+                symbols = load_symbols_from_file(filepath)
+                log(f"🔁 symbol.lst rechargé : {symbols}")
+                last_modified = current_modified
+
+            await main_loop(symbols, pool, real_run=real_run, dry_run=dry_run)
+        except KeyboardInterrupt:
+            log("🛑 Arrêt manuel demandé")
+            break
+        except Exception as e:
+            log(f"💥 Erreur dans le watcher : {e}")
+            traceback.print_exc()
+
+        await asyncio.sleep(1)
 
 async def async_main(args):
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
@@ -47,7 +206,6 @@ async def async_main(args):
                 symbols = args.symbols.split(",")
             else:
                 symbols = load_symbols_from_file()
-
             for symbol in symbols:
                 await backtest_symbol(symbol, args.backtest)
         else:
@@ -58,14 +216,6 @@ async def async_main(args):
             else:
                 task = asyncio.create_task(watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run))
                 await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
-
-            # Si stop_event est déclenché, annuler la tâche si toujours active
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    log("Tâche annulée proprement après arrêt manuel")
     finally:
         await pool.close()
         log("Pool de connexion fermé, fin du programme.")
@@ -80,13 +230,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(async_main(args))
-    except KeyboardInterrupt:
-        log("🛑 Arrêt manuel détecté dans main")
-    except RuntimeError as e:
-        log(f"Erreur RuntimeLoop: {e}")
-    finally:
-        if not loop.is_closed():
-            loop.close()
+    asyncio.run(async_main(args))
