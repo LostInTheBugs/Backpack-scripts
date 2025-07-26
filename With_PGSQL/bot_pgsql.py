@@ -206,6 +206,19 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
 async def async_main(args):
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
+
+    loop = asyncio.get_running_loop()
+
+    stop_event = asyncio.Event()
+
+    def shutdown():
+        log("🛑 Arrêt manuel demandé (Ctrl+C)")
+        stop_event.set()
+
+    # Capturer SIGINT (Ctrl+C) proprement
+    loop.add_signal_handler(signal.SIGINT, shutdown)
+    loop.add_signal_handler(signal.SIGTERM, shutdown)
+
     if args.backtest:
         if args.symbols:
             symbols = args.symbols.split(",")
@@ -217,9 +230,16 @@ async def async_main(args):
     else:
         if args.symbols:
             symbols = args.symbols.split(",")
-            await main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
+            # Lancer la boucle avec arrêt possible
+            task = asyncio.create_task(main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select))
+            await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
         else:
-            await watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
+            # watcher avec arrêt possible
+            task = asyncio.create_task(watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run))
+            await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
+
+    # Fermer proprement la connexion
+    await pool.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
