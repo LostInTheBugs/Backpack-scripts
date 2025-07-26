@@ -19,20 +19,30 @@ def sign_request(secret, nonce, method, path, body=""):
 def position_already_open(symbol: str) -> bool:
     nonce = str(int(time.time() * 1000))
     method = "GET"
+    path = ENDPOINT
     body = ""
 
-    signature = sign_request(secret_key, nonce, method, ENDPOINT, body)
+    print(f"DEBUG nonce: {nonce}")
+    print(f"DEBUG method: {method}")
+    print(f"DEBUG path: {path}")
+    print(f"DEBUG body: '{body}'")
+
+    signature = sign_request(secret_key, nonce, method, path, body)
 
     headers = {
         "X-API-KEY": public_key,
-        "X-API-SIGNATURE": signature,
-        "X-API-NONCE": nonce
+        "X-API-NONCE": nonce,
+        "X-API-SIGNATURE": signature
     }
+
+    print("DEBUG headers:", headers)
 
     try:
         response = requests.get(URL, headers=headers)
+        print("DEBUG status code:", response.status_code)
         response.raise_for_status()
         data = response.json()
+        print("DEBUG data:", data)
 
         for pos in data:
             if pos["symbol"] == symbol and float(pos.get("size", 0)) != 0:
