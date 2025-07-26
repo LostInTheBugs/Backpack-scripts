@@ -39,42 +39,53 @@ async def fetch_ohlcv_from_db(pool, symbol, interval):
             return pd.DataFrame()
 
 async def run_backtest_async(symbol: str, interval: str, dsn: str):
-    # Connexion à la base
     pool = await asyncpg.create_pool(dsn=dsn)
     async with pool.acquire() as conn:
-        # Récupérer les données OHLCV depuis la table correspondante
         table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
+        
+        interval_sec_map = {
+            '1s': 1,
+            '1m': 60,
+            '1h': 3600,
+            '1d': 86400,
+            '1w': 604800,
+        }
+        
+        interval_sec = interval_sec_map.get(interval)
+        if interval_sec is None:
+            print(f"[{symbol}] ❌ Intervalle inconnu: {interval}")
+            await pool.close()
+            return
+        
         query = f"""
             SELECT timestamp, open, high, low, close, volume
             FROM {table_name}
-            WHERE interval_sec = (SELECT interval_sec FROM intervals WHERE interval = $1)
+            WHERE interval_sec = $1
             ORDER BY timestamp
         """
-        # Ici, si tu n'as pas de table "intervals", adapte ou mets un filtre interval_sec = 86400 pour 1d par ex.
         
-        rows = await conn.fetch(query, interval)
+        rows = await conn.fetch(query, interval_sec)
         if not rows:
             print(f"[{symbol}] ❌ Pas de données OHLCV pour le backtest")
+            await pool.close()
             return
         
-        # Convertir en DataFrame pandas
         df = pd.DataFrame(rows)
         if df.empty:
             print(f"[{symbol}] ❌ DataFrame vide après conversion")
+            await pool.close()
             return
         
-        # Convertir timestamp en datetime et indexer
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df.set_index('timestamp', inplace=True)
         
         print(f"DEBUG avant appel get_combined_signal - index type: {type(df.index)}")
         
-        # Appeler ta fonction de signal
         from signals.macd_rsi_breakout import get_combined_signal
         signal = get_combined_signal(df)
         
         print(f"[{symbol}] Backtest signal final: {signal}")
-    
+        
     await pool.close()
 
 async def backtest_symbol(symbol: str, interval: str):
