@@ -73,6 +73,9 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
         if df.empty:
             log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
             return
+        if len(df) < 2:
+            log(f"[{symbol}] ⚠️ Pas assez de données (moins de 2 lignes) pour calculer le signal")
+            return
 
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
         signal = get_combined_signal(df)
