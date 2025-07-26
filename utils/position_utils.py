@@ -1,7 +1,7 @@
 import os
 import requests
 
-API_URL = "https://api.backpack.exchange/v1/trade/positions"
+API_URL = "https://api.backpack.exchange/api/v1/position"
 
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
