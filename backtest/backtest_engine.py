@@ -2,57 +2,78 @@ import asyncio
 import asyncpg
 import pandas as pd
 from datetime import datetime, timezone
-from signals.macd_rsi_breakout import get_combined_signal
+import traceback
 from utils.logger import log
-from utils.ohlcv_utils import get_ohlcv_df
+from signals.macd_rsi_breakout import get_combined_signal
 
-# Format table name same as in main script
-def format_table_name(symbol: str) -> str:
-    parts = symbol.lower().split("_")
-    return "ohlcv_" + "__".join(parts)
-
-async def fetch_ohlcv(pool, symbol):
-    table_name = format_table_name(symbol)
+async def fetch_ohlcv_from_db(pool, symbol, interval):
+    """
+    Récupère les données OHLCV depuis la base PostgreSQL pour un symbole et interval donné.
+    interval: '1s', '1m', '1h', '1d', etc.
+    """
+    table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
+    
+    # Exemple simplifié: récupérer tout le contenu
+    # Tu peux optimiser selon intervalle demandé
     async with pool.acquire() as conn:
-        rows = await conn.fetch(f"SELECT * FROM {table_name} ORDER BY timestamp ASC")
-        if not rows:
+        try:
+            rows = await conn.fetch(f"""
+                SELECT timestamp, open, high, low, close, volume
+                FROM {table_name}
+                ORDER BY timestamp ASC
+            """)
+            if not rows:
+                log(f"[{symbol}] ❌ Pas de données OHLCV en base pour backtest")
+                return pd.DataFrame()
+            
+            # Convertir en DataFrame pandas
+            data = [dict(row) for row in rows]
+            df = pd.DataFrame(data)
+            # Convert timestamp en datetime au besoin (assure tz aware)
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_convert('UTC')
+            return df
+        except Exception as e:
+            log(f"[{symbol}] ❌ Erreur fetch OHLCV backtest: {e}")
+            traceback.print_exc()
             return pd.DataFrame()
-        df = pd.DataFrame(rows)
-        # Convert timestamps if needed
-        if 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
-        return df
 
 async def run_backtest_async(symbol, interval, dsn):
+    """
+    Fonction principale asynchrone de backtest.
+    Récupère les données OHLCV, calcule les signaux, simule les trades.
+    """
+    log(f"[{symbol}] 🧪 Début backtest async interval={interval}")
+
     pool = await asyncpg.create_pool(dsn=dsn)
 
-    log(f"[{symbol}] 🧪 Chargement données pour backtest {interval}")
-
-    df = await fetch_ohlcv(pool, symbol)
+    df = await fetch_ohlcv_from_db(pool, symbol, interval)
     if df.empty:
-        log(f"[{symbol}] ❌ Pas de données pour le backtest")
+        log(f"[{symbol}] ⚠️ DataFrame vide, backtest annulé")
         await pool.close()
         return
 
-    # Ici tu peux filtrer ou resampler selon interval si besoin
-    # Pour simplifier on prend tout tel quel
+    # Exemple très simplifié: on calcule juste les signaux avec get_combined_signal sur tout le df
+    # Tu peux ici faire un backtest complet minute par minute, jour par jour, etc.
+    try:
+        # Ex: appliquer ta fonction signal sur le df complet
+        signal = get_combined_signal(df)
 
-    # Calcul des signaux (on doit reproduire le même calcul que dans le bot)
-    df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
-    signal = get_combined_signal(df)
+        # Afficher le signal final en backtest (à compléter selon ta logique)
+        log(f"[{symbol}] Backtest signal final: {signal}")
 
-    # Simulation simple : on compte combien de BUY/SELL détectés
-    signals = df.apply(lambda row: get_combined_signal(df), axis=1)  # ou appliquer sur chaque ligne si possible
+        # Ici tu pourrais simuler des entrées / sorties avec PnL etc.
 
-    # Pour simplifier, on affiche le signal final (à améliorer)
-    log(f"[{symbol}] 🎯 Signal final backtest: {signal}")
+    except Exception as e:
+        log(f"[{symbol}] 💥 Erreur backtest: {e}")
+        traceback.print_exc()
 
     await pool.close()
+    log(f"[{symbol}] ✅ Fin backtest")
 
 def run_backtest(symbol, interval):
-    import os
+    """
+    Fonction synchrone qui peut être appelée hors boucle asyncio.
+    """
     dsn = os.environ.get("PG_DSN")
-    if not dsn:
-        print("⚠️ PG_DSN non défini dans les variables d'environnement")
-        return
+    import asyncio
     asyncio.run(run_backtest_async(symbol, interval, dsn))

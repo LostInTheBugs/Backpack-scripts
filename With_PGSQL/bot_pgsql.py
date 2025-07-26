@@ -112,11 +112,12 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
         log(f"[{symbol}] 💥 Erreur: {e}")
         traceback.print_exc()
 
-def backtest_symbol(symbol: str, interval: str):
+async def backtest_symbol(symbol: str, interval: str):
     try:
-        from backtest.backtest_engine import run_backtest
+        from backtest.backtest_engine import run_backtest_async
         log(f"[{symbol}] 🧪 Lancement du backtest en {interval}")
-        run_backtest(symbol, interval)
+        dsn = os.environ.get("PG_DSN")
+        await run_backtest_async(symbol, interval, dsn)
     except ModuleNotFoundError:
         log(f"[{symbol}] ❌ Module backtest non trouvé. Veuillez créer backtest/backtest_engine.py")
     except Exception as e:
@@ -206,9 +207,10 @@ async def async_main(args):
         else:
             symbols = load_symbols_from_file()
 
-        # Utiliser la variable d'environnement PG_DSN pour le backtest
+        # Backtests asynchrones en série (ou en parallèle si souhaité)
         for symbol in symbols:
-            backtest_symbol(symbol, args.backtest)
+            await backtest_symbol(symbol, args.backtest)
+
     else:
         if args.symbols:
             symbols = args.symbols.split(",")
