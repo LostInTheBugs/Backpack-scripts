@@ -103,12 +103,12 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
                 log(f"[{symbol}] ⚠️ Position déjà ouverte — Ignorée")
                 return
             direction = "long" if signal == "BUY" else "short"
-            
+
             if dry_run:
-                log(f"[{symbol}] 🧪 DRY-RUN: Simulation d'ouverture position {signal}")
+                log(f"[{symbol}] 🧪 DRY-RUN: Simulation d'ouverture position {direction.upper()}")
             elif real_run:
-                log(f"[{symbol}] ✅ OUVERTURE position réelle : {signal}")
-                open_position(symbol, POSITION_AMOUNT_USDC, signal)
+                log(f"[{symbol}] ✅ OUVERTURE position réelle : {direction.upper()}")
+                open_position(symbol, POSITION_AMOUNT_USDC, direction)
             else:
                 log(f"[{symbol}] ❌ Ni --real-run ni --dry-run spécifié : aucune action")
     except Exception as e:
