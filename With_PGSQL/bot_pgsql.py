@@ -64,6 +64,27 @@ async def check_table_and_fresh_data(pool, symbol: str, max_age_seconds: int = 6
     return True
 
 
+async def get_last_timestamp(pool, symbol: str):
+    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
+    async with pool.acquire() as conn:
+        exists = await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables WHERE table_name = $1
+            )
+            """,
+            table_name
+        )
+        if not exists:
+            return None
+        last_ts = await conn.fetchval(
+            f"""
+            SELECT MAX(timestamp) FROM {table_name}
+            """
+        )
+        return last_ts
+
+
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
@@ -146,14 +167,20 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         else:
             ignored_symbols.append(symbol)
 
-    # Résumé après traitement
+    # Résumé après traitement avec date dernière donnée pour symboles ignorés
     if active_symbols:
         log(f"✅ Symboles actifs ({len(active_symbols)}) : {active_symbols}")
     if ignored_symbols:
-        log(f"⛔ Symboles ignorés ({len(ignored_symbols)}) : {ignored_symbols}")
+        ignored_details = []
+        for sym in ignored_symbols:
+            last_ts = await get_last_timestamp(pool, sym)
+            if last_ts is None:
+                ignored_details.append(f"{sym} (table absente)")
+            else:
+                ignored_details.append(f"{sym} (dernière donnée : {last_ts.isoformat()})")
+        log(f"⛔ Symboles ignorés ({len(ignored_symbols)}) : {ignored_details}")
     if not active_symbols:
         log("⚠️ Aucun symbole actif pour cette itération.")
-        
 
 async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
     last_modified = None
