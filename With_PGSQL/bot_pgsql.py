@@ -27,7 +27,8 @@ public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
 def format_table_name(symbol: str) -> str:
-    return "ohlcv_" + symbol.lower().replace("_perp", "__perp").replace("_", "__")
+    parts = symbol.lower().split("_")
+    return "ohlcv_" + "__".join(parts)
 
 # Vérifie si la table existe et si elle contient des données récentes
 async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
