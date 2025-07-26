@@ -11,7 +11,7 @@ from execute.close_position_percent import close_position_percent
 from backpack_public.get_market import get_market
 from utils.position_utils import position_already_open
 from backpack_public.public import get_ohlcv
-from utils.auto_symbol_selector import get_top_n_symbols_by_volatility
+from fetch_top_volume_symbols import fetch_top_n_perp
 
 POSITION_AMOUNT_USDC = 25
 INTERVAL = "1m"
@@ -64,7 +64,7 @@ def main_loop(symbols: list, real_run: bool, dry_run: bool, auto_select=False):
     if auto_select:
         log("🔍 Mode auto-select actif — sélection des symboles les plus volatils")
         try:
-            symbols = get_top_n_symbols_by_volatility(n=len(symbols))
+            symbols = fetch_top_n_perp(n=len(symbols))
             log(f"✅ Symboles sélectionnés automatiquement : {symbols}")
         except Exception as e:
             log(f"💥 Erreur sélection symboles auto: {e}")
