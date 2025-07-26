@@ -20,7 +20,7 @@ from utils.fetch_top_volume_symbols import fetch_top_n_perp
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from backtest.backtest_engine import run_backtest, backtest_symbol
-from live.handle_live_symbol import handle_live_symbol
+from live.live_engine import handle_live_symbol
 
 # Configuration des clés API pour Backpack Exchange
 public_key = os.getenv("bpx_bot_public_key")
