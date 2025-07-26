@@ -1,6 +1,7 @@
 import asyncio
 import asyncpg
 import pandas as pd
+import os
 from datetime import datetime, timezone
 import traceback
 from utils.logger import log
@@ -88,7 +89,7 @@ async def backtest_symbol(symbol: str, interval: str):
         log(f"[{symbol}] 💥 Erreur durant le backtest: {e}")
         import traceback
         traceback.print_exc()
-        
+
 def run_backtest(symbol, interval):
     """
     Fonction synchrone qui peut être appelée hors boucle asyncio.
