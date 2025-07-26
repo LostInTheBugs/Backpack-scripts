@@ -26,6 +26,8 @@ from live.live_engine import handle_live_symbol
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
+INTERVAL = "1s"
+POSITION_AMOUNT_USDC = 25
 
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
