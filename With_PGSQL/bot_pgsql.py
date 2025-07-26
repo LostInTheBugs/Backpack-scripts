@@ -78,6 +78,10 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
             end_ts = datetime.now(timezone.utc)
             start_ts = end_ts - timedelta(seconds=60)  # dernière minute de données 1s
             df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            if df['timestamp'].dt.tz is None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+            df.set_index('timestamp', inplace=True)
         else:
             data = get_ohlcv(symbol, INTERVAL)
             if not data:
