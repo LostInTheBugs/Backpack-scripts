@@ -76,6 +76,19 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
     
     await pool.close()
 
+async def backtest_symbol(symbol: str, interval: str):
+    try:
+        from backtest.backtest_engine import run_backtest_async
+        log(f"[{symbol}] 🧪 Lancement du backtest en {interval}")
+        dsn = os.environ.get("PG_DSN")
+        await run_backtest_async(symbol, interval, dsn)
+    except ModuleNotFoundError:
+        log(f"[{symbol}] ❌ Module backtest non trouvé. Veuillez créer backtest/backtest_engine.py")
+    except Exception as e:
+        log(f"[{symbol}] 💥 Erreur durant le backtest: {e}")
+        import traceback
+        traceback.print_exc()
+        
 def run_backtest(symbol, interval):
     """
     Fonction synchrone qui peut être appelée hors boucle asyncio.

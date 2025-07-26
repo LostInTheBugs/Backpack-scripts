@@ -19,7 +19,7 @@ from utils.position_utils import position_already_open
 from utils.ohlcv_utils import get_ohlcv_df
 from fetch_top_volume_symbols import fetch_top_n_perp
 from backpack_public.public import get_ohlcv
-from backtest.backtest_engine import run_backtest
+from backtest.backtest_engine import run_backtest, backtest_symbol
 
 POSITION_AMOUNT_USDC = 25
 INTERVAL = "1s"
