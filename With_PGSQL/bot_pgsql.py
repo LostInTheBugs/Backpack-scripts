@@ -39,7 +39,8 @@ def handle_live_symbol(symbol: str, real_run: bool, dry_run: bool):
         if df.empty:
             log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
             return
-
+        
+        df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
         signal = get_combined_signal(df)
         log(f"[{symbol}] 🎯 Signal détecté : {signal}")
 
