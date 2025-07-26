@@ -1,3 +1,5 @@
+import pandas as pd
+
 def get_combined_signal(df):
     print("DEBUG get_combined_signal: Entrée dans la fonction")
 
