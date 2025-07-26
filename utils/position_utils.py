@@ -12,13 +12,13 @@ def position_already_open(symbol: str) -> bool:
         "X-API-SECRET": secret_key
     }
 
+    url = f"{API_URL}?symbol={symbol}"
+
     try:
-        response = requests.get(API_URL, headers=headers)
+        response = requests.get(url, headers=headers)
         response.raise_for_status()
         data = response.json()
-        # data est probablement une liste d'objets position
         for pos in data:
-            # vérifier que la clé 'symbol' et 'size' existent dans pos
             if pos.get("symbol") == symbol and float(pos.get("size", 0)) != 0:
                 return True
         return False
