@@ -88,6 +88,12 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
             log(f"[{symbol}] ⚠️ Pas assez de données (moins de 2 lignes) pour calculer le signal")
             return
 
+        # Correction des timestamps
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        if df['timestamp'].dt.tz is None:
+            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+        df.set_index('timestamp', inplace=True)
+
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
         signal = get_combined_signal(df)
         log(f"[{symbol}] 🎯 Signal détecté : {signal}")
