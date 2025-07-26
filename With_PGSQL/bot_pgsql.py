@@ -19,6 +19,7 @@ from utils.position_utils import position_already_open
 from utils.ohlcv_utils import get_ohlcv_df
 from fetch_top_volume_symbols import fetch_top_n_perp
 from backpack_public.public import get_ohlcv
+from batestch.backtest_engine import run_backtest
 
 POSITION_AMOUNT_USDC = 25
 INTERVAL = "1s"
@@ -112,10 +113,12 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
         traceback.print_exc()
 
 def backtest_symbol(symbol: str, interval: str):
-    from backtest.backtest_engine import run_backtest  # à adapter selon ton structure
     try:
+        from backtest.backtest_engine import run_backtest
         log(f"[{symbol}] 🧪 Lancement du backtest en {interval}")
         run_backtest(symbol, interval)
+    except ModuleNotFoundError:
+        log(f"[{symbol}] ❌ Module backtest non trouvé. Veuillez créer backtest/backtest_engine.py")
     except Exception as e:
         log(f"[{symbol}] 💥 Erreur durant le backtest: {e}")
         traceback.print_exc()
@@ -194,7 +197,6 @@ async def async_main(args):
         log("🛑 Arrêt manuel demandé (Ctrl+C)")
         stop_event.set()
 
-    # Capturer SIGINT (Ctrl+C) proprement
     loop.add_signal_handler(signal.SIGINT, shutdown)
     loop.add_signal_handler(signal.SIGTERM, shutdown)
 
@@ -204,20 +206,18 @@ async def async_main(args):
         else:
             symbols = load_symbols_from_file()
 
+        # Utiliser la variable d'environnement PG_DSN pour le backtest
         for symbol in symbols:
             backtest_symbol(symbol, args.backtest)
     else:
         if args.symbols:
             symbols = args.symbols.split(",")
-            # Lancer la boucle avec arrêt possible
             task = asyncio.create_task(main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select))
             await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
         else:
-            # watcher avec arrêt possible
             task = asyncio.create_task(watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run))
             await asyncio.wait([task, stop_event.wait()], return_when=asyncio.FIRST_COMPLETED)
 
-    # Fermer proprement la connexion
     await pool.close()
 
 if __name__ == "__main__":
