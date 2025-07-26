@@ -44,18 +44,19 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
         table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
         
         interval_sec_map = {
-            '1s': 1,
-            '1m': 60,
-            '1h': 3600,
-            '1d': 86400,
-            '1w': 604800,
+            "1s": 1,
+            "1m": 60,
+            "1h": 3600,
+            "1d": 86400,
+            "1w": 604800,
         }
         
-        interval_sec = interval_sec_map.get(interval)
-        if interval_sec is None:
-            print(f"[{symbol}] ❌ Intervalle inconnu: {interval}")
+        if interval not in interval_sec_map:
+            print(f"[{symbol}] ❌ Intervalle inconnu : {interval}")
             await pool.close()
             return
+        
+        interval_sec = interval_sec_map[interval]
         
         query = f"""
             SELECT timestamp, open, high, low, close, volume
@@ -65,6 +66,7 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
         """
         
         rows = await conn.fetch(query, interval_sec)
+        
         if not rows:
             print(f"[{symbol}] ❌ Pas de données OHLCV pour le backtest")
             await pool.close()
@@ -85,7 +87,7 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
         signal = get_combined_signal(df)
         
         print(f"[{symbol}] Backtest signal final: {signal}")
-        
+    
     await pool.close()
 
 async def backtest_symbol(symbol: str, interval: str):
