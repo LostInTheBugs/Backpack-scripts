@@ -2,8 +2,10 @@ import argparse
 import os
 import time
 import traceback
+import asyncio
 from datetime import datetime, timedelta, timezone
 import pandas as pd
+import asyncpg
 
 from With_PGSQL.pgsql_ohlcv import get_ohlcv_1s_sync
 from utils.logger import log
@@ -21,9 +23,41 @@ INTERVAL = "1s"
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
-def handle_live_symbol(symbol: str, real_run: bool, dry_run: bool):
+async def check_table_and_fresh_data(pool, symbol: str, max_age_seconds: int = 60) -> bool:
+    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
+    async with pool.acquire() as conn:
+        # Vérifier que la table existe
+        table_exists = await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = $1
+            )
+            """,
+            table_name
+        )
+        if not table_exists:
+            log(f"⚠️ Table {table_name} n'existe pas")
+            return False
+
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        recent_count = await conn.fetchval(
+            f"SELECT COUNT(*) FROM {table_name} WHERE timestamp >= $1",
+            cutoff
+        )
+        if recent_count == 0:
+            log(f"⚠️ Pas de données récentes dans {table_name} depuis plus de {max_age_seconds} secondes")
+            return False
+    return True
+
+async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
+
+        # Vérification existence et fraîcheur des données
+        if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+            log(f"[{symbol}] Ignoré : pas de données récentes")
+            return
 
         if INTERVAL == "1s":
             end_ts = datetime.now(timezone.utc)
@@ -35,11 +69,11 @@ def handle_live_symbol(symbol: str, real_run: bool, dry_run: bool):
                 log(f"[{symbol}] ❌ Données OHLCV vides")
                 return
             df = get_ohlcv_df(symbol, INTERVAL)
-        
+
         if df.empty:
             log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
             return
-        
+
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
         signal = get_combined_signal(df)
         log(f"[{symbol}] 🎯 Signal détecté : {signal}")
@@ -75,7 +109,7 @@ def load_symbols_from_file(filepath: str = "symbol.lst") -> list:
     with open(filepath, "r") as f:
         return [line.strip() for line in f if line.strip()]
 
-def main_loop(symbols: list, real_run: bool, dry_run: bool, auto_select=False):
+async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
     if auto_select:
         log("🔍 Mode auto-select actif — sélection des symboles les plus volatils")
         try:
@@ -85,10 +119,11 @@ def main_loop(symbols: list, real_run: bool, dry_run: bool, auto_select=False):
             log(f"💥 Erreur sélection symboles auto: {e}")
             return
 
+    # Pour chaque symbole, appeler la version async de handle_live_symbol
     for symbol in symbols:
-        handle_live_symbol(symbol, real_run, dry_run)
+        await handle_live_symbol(symbol, pool, real_run, dry_run)
 
-def watch_symbols_file(filepath: str = "symbol.lst", real_run: bool = False, dry_run: bool = False):
+async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
     last_modified = None
     symbols = []
 
@@ -100,7 +135,7 @@ def watch_symbols_file(filepath: str = "symbol.lst", real_run: bool = False, dry
                 log(f"🔁 symbol.lst rechargé : {symbols}")
                 last_modified = current_modified
 
-            main_loop(symbols, real_run=real_run, dry_run=dry_run)
+            await main_loop(symbols, pool, real_run=real_run, dry_run=dry_run)
         except KeyboardInterrupt:
             log("🛑 Arrêt manuel demandé")
             break
@@ -108,18 +143,10 @@ def watch_symbols_file(filepath: str = "symbol.lst", real_run: bool = False, dry
             log(f"💥 Erreur dans le watcher : {e}")
             traceback.print_exc()
 
-        time.sleep(60)
+        await asyncio.sleep(60)
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
-    parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
-    parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
-    parser.add_argument("--dry-run", action="store_true", help="Mode simulation sans exécuter de trade")
-    parser.add_argument("--backtest", type=str, help="Exécuter un backtest (ex: 1h, 1d, 1w)")
-    parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
-
-    args = parser.parse_args()
-
+async def async_main(args):
+    pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
     if args.backtest:
         if args.symbols:
             symbols = args.symbols.split(",")
@@ -131,6 +158,18 @@ if __name__ == "__main__":
     else:
         if args.symbols:
             symbols = args.symbols.split(",")
-            main_loop(symbols, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
+            await main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
         else:
-            watch_symbols_file(real_run=args.real_run, dry_run=args.dry_run)
+            await watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
+    parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
+    parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
+    parser.add_argument("--dry-run", action="store_true", help="Mode simulation sans exécuter de trade")
+    parser.add_argument("--backtest", type=str, help="Exécuter un backtest (ex: 1h, 1d, 1w)")
+    parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
+
+    args = parser.parse_args()
+
+    asyncio.run(async_main(args))
