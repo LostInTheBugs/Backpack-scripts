@@ -7,89 +7,96 @@ import traceback
 from utils.logger import log
 from signals.macd_rsi_breakout import get_combined_signal
 
+def interval_to_pandas_freq(interval: str) -> str:
+    """
+    Convertit l'intervalle sous forme '1s', '2s', '1m', '5m', '1h', '1d' en fréquence pandas (resample).
+    """
+    unit = interval[-1]
+    qty = int(interval[:-1])
+    if unit == 's':
+        return f"{qty}S"
+    elif unit == 'm':
+        return f"{qty}T"  # T = minutes
+    elif unit == 'h':
+        return f"{qty}H"
+    elif unit == 'd':
+        return f"{qty}D"
+    else:
+        return "1S"  # défaut
+
 async def fetch_ohlcv_from_db(pool, symbol, interval):
     """
-    Récupère les données OHLCV depuis la base PostgreSQL pour un symbole et interval donné.
-    interval: '1s', '1m', '1h', '1d', etc.
+    Récupère les données OHLCV en 1 seconde (interval_sec=1) depuis la base PostgreSQL,
+    puis fait un resampling dynamique sur l'interval demandé.
     """
     table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
-    
-    # Exemple simplifié: récupérer tout le contenu
-    # Tu peux optimiser selon intervalle demandé
+
     async with pool.acquire() as conn:
         try:
-            rows = await conn.fetch(f"""
+            # Toujours récupérer en interval_sec=1 pour resampler ensuite
+            query = f"""
                 SELECT timestamp, open, high, low, close, volume
                 FROM {table_name}
+                WHERE interval_sec = 1
                 ORDER BY timestamp ASC
-            """)
+            """
+            rows = await conn.fetch(query)
+
             if not rows:
                 log(f"[{symbol}] ❌ Pas de données OHLCV en base pour backtest")
                 return pd.DataFrame()
-            
-            # Convertir en DataFrame pandas
+
             data = [dict(row) for row in rows]
             df = pd.DataFrame(data)
-            # Convert timestamp en datetime au besoin (assure tz aware)
-            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_convert('UTC')
-            return df
+
+            # Gestion timezone: tz naive -> localize Europe/Paris (ajuster selon ta zone)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            if df['timestamp'].dt.tz is None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize('Europe/Paris').dt.tz_convert('UTC')
+            else:
+                df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+
+            df.set_index('timestamp', inplace=True)
+
+            # Conversion colonnes en float
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+            # Resample selon intervalle demandé
+            freq = interval_to_pandas_freq(interval)
+            if freq != "1S":
+                df_resampled = df.resample(freq).agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+            else:
+                df_resampled = df
+
+            return df_resampled
+
         except Exception as e:
             log(f"[{symbol}] ❌ Erreur fetch OHLCV backtest: {e}")
             traceback.print_exc()
             return pd.DataFrame()
 
 async def run_backtest_async(symbol: str, interval: str, dsn: str):
-    import asyncpg
     try:
         pool = await asyncpg.create_pool(dsn=dsn)
-        async with pool.acquire() as conn:
-            table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
+        df = await fetch_ohlcv_from_db(pool, symbol, interval)
 
-            # Ici je suppose que tu travailles avec interval_sec = 1 (1s)
-            # ou adapte selon ton intervalle (ex: 3600 pour 1h)
-            # Tu peux convertir 'interval' en secondes ou prévoir une map
-            interval_map = {
-                '1s': 1,
-                '1m': 60,
-                '1h': 3600,
-                '1d': 86400,
-            }
-            interval_sec = interval_map.get(interval, 1)
+        if df.empty:
+            print(f"[{symbol}] ❌ Pas de données OHLCV pour backtest avec intervalle {interval}")
+            await pool.close()
+            return
 
-            query = f"""
-                SELECT timestamp, open, high, low, close, volume
-                FROM {table_name}
-                WHERE interval_sec = $1
-                ORDER BY timestamp
-            """
-            rows = await conn.fetch(query, interval_sec)
+        print(f"[{symbol}] ✅ Données OHLCV chargées ({len(df)} lignes), début: {df.index.min()}, fin: {df.index.max()}")
 
-            if not rows:
-                print(f"[{symbol}] ❌ Pas de données OHLCV pour le backtest avec intervalle {interval} ({interval_sec}s)")
-                return
-
-            # Conversion explicite en liste de dict pour DataFrame
-            data = [dict(row) for row in rows]
-            df = pd.DataFrame(data)
-
-            if 'timestamp' not in df.columns:
-                print(f"[{symbol}] ❌ La colonne 'timestamp' est absente dans les données")
-                return
-
-            # Conversion en datetime, tz-aware UTC
-            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_convert('UTC')
-            df.set_index('timestamp', inplace=True)
-
-            # Optionnel: convertir colonnes numériques au bon type float
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-
-            print(f"[{symbol}] ✅ Données OHLCV chargées ({len(df)} lignes), début: {df.index.min()}, fin: {df.index.max()}")
-
-            # Importer ta fonction signal ici (ou en début de fichier)
-            from signals.macd_rsi_breakout import get_combined_signal
-            signal = get_combined_signal(df)
-            print(f"[{symbol}] Backtest signal final: {signal}")
+        # Importer ta fonction signal ici (ou en début de fichier)
+        signal = get_combined_signal(df)
+        print(f"[{symbol}] Backtest signal final: {signal}")
 
         await pool.close()
 
