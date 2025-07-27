@@ -93,19 +93,29 @@ def open_position(symbol: str, usdc_amount: float, direction: str):
     print(tabulate(table, headers=headers, tablefmt="grid"))
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION>")
-        print("Example: python open_position_usdc.py SOL_USDC_PERP 25 long")
+    dry_run = False
+
+    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+    flags = [arg for arg in sys.argv[1:] if arg.startswith("--")]
+
+    if "--dry-run" in flags:
+        dry_run = True
+
+    if len(args) != 3:
+        print("Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> [--dry-run]")
+        print("Example: python open_position_usdc.py SOL_USDC_PERP 25 long --dry-run")
         sys.exit(1)
 
-    symbol = sys.argv[1]
-
+    symbol = args[0]
     try:
-        usdc_amount = float(sys.argv[2])
+        usdc_amount = float(args[1])
     except ValueError:
         print("USDC amount must be a number.")
         sys.exit(1)
 
-    direction = sys.argv[3]
+    direction = args[2]
 
-    open_position(symbol, usdc_amount, direction)
+    if dry_run:
+        print(f"[DRY RUN] Would open {direction} position on {symbol} using {usdc_amount} USDC")
+    else:
+        open_position(symbol, usdc_amount, direction)
