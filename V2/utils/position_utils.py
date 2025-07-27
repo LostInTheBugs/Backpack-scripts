@@ -24,30 +24,32 @@ def position_already_open(symbol: str) -> bool:
         return False
 
 async def get_open_positions():
-    url = "https://api.backpack.exchange/api/v1/trade/positions"
     method = "GET"
     path = "/api/v1/trade/positions"
-    body = ""  # vide pour GET sans query
-    query = ""
+    body = {}  # vide pour GET
 
-    # Signature
-    headers = account.sign(method, path, body, query)
+    try:
+        response = await account.signed_request(
+            method=method,
+            path=path,
+            body=body
+        )
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                raise Exception(f"Erreur API position: {response.status} {await response.text()}")
+        data = response.get("positions", [])
 
-            data = await response.json()
+        positions = {}
+        for p in data:
+            if float(p["size"]) != 0:
+                symbol = p["symbol"]
+                side = "long" if float(p["size"]) > 0 else "short"
+                entry_price = float(p["entryPrice"])
+                positions[symbol] = {
+                    "side": side,
+                    "entry_price": entry_price
+                }
 
-            positions = {}
-            for p in data.get("positions", []):
-                if float(p["size"]) != 0:
-                    symbol = p["symbol"]
-                    side = "long" if float(p["size"]) > 0 else "short"
-                    entry_price = float(p["entryPrice"])
-                    positions[symbol] = {
-                        "side": side,
-                        "entry_price": entry_price
-                    }
-            return positions
+        return positions
+
+    except Exception as e:
+        print(f"❌ Erreur API signée Backpack : {e}")
+        return {}
