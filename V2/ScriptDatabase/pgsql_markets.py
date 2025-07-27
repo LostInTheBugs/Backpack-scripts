@@ -17,9 +17,9 @@ async def update_markets_table(pool):
         async with conn.transaction():
             for m in markets:
                 await conn.execute("""
-                    INSERT INTO backpack_markets (name, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt, raw_json)
+                    INSERT INTO backpack_markets (symbol, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt, raw_json)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (name) DO UPDATE SET
+                    ON CONFLICT (symbol) DO UPDATE SET
                         baseSymbol = EXCLUDED.baseSymbol,
                         quoteSymbol = EXCLUDED.quoteSymbol,
                         marketType = EXCLUDED.marketType,
