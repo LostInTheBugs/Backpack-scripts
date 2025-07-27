@@ -60,6 +60,8 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
         if position_already_open(symbol):
             # --- GESTION DU STOP SUIVEUR PAR PNL ---
             market_data = get_market(symbol)
+            if not market_data:
+                return  # ou log + skip ce symbole
             pnl_percent = market_data.get("pnl", 0.0)
 
             if symbol not in MAX_PNL_TRACKER:
