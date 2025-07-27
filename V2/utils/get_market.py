@@ -2,13 +2,21 @@
 
 import requests
 
-def list_valid_symbols():
-    url = "https://api.backpack.exchange/v1/markets"
+def get_market(symbol):
+    # retirer '_PERP' si présent
+    if symbol.endswith('_PERP'):
+        symbol = symbol.replace('_PERP', '')
+
+    url = f"https://api.backpack.exchange/v1/market/{symbol}"
     response = requests.get(url)
+
+    if response.status_code == 404:
+        print(f"⚠️ Marché {symbol} non trouvé (404)")
+        return None
+
     response.raise_for_status()
-    markets = response.json()
+    return response.json()
 
-    for market in markets:
-        print(f"{market['symbol']:20} | {market['marketType']:6} | {market['orderBookState']:10}")
-
-list_valid_symbols()
+market = get_market("BTC_USDC_PERP")
+if market:
+    print(f"Symbole: {market['symbol']}, Type: {market['marketType']}")
