@@ -91,27 +91,6 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
 async def async_main(args):
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
-    log("📥 Récupération des positions ouvertes existantes...")
-    open_positions = await get_open_positions()
-    trailing_stops = {}
-
-    for symbol, pos in open_positions.items():
-        entry_price = pos["entry_price"]
-        side = pos["side"]
-        stop_pct = 0.01  # par ex. stop à 1%
-
-        if side == "long":
-            stop_price = entry_price * (1 - stop_pct)
-        else:
-            stop_price = entry_price * (1 + stop_pct)
-
-        trailing_stops[symbol] = {
-            "side": side,
-            "entry_price": entry_price,
-            "current_stop": stop_price
-        }
-
-        log(f"🔁 {symbol} — position détectée {side.upper()} @ {entry_price:.2f}, stop initial à {stop_price:.2f}")
 
 
     loop = asyncio.get_running_loop()
