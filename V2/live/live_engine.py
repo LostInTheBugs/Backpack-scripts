@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 from utils.ohlcv_utils import get_ohlcv_df
 from utils.position_utils import position_already_open
 from utils.logger import log
-from utils.public import get_ohlcv, format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file, get_market
+from utils.public import get_ohlcv, format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
+from utils.get_market import get_market
 from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from signals.macd_rsi_breakout import get_combined_signal
 from execute.open_position_usdc import open_position
