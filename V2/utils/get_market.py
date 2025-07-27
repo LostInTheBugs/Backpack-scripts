@@ -1,8 +1,9 @@
 import os
 import asyncpg
+import pandas as pd
 from datetime import datetime, timedelta, timezone
-from utils.ohlcv_utils import get_ohlcv_df
 from utils.position_utils import get_open_positions
+from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 
 PG_DSN = os.environ.get("PG_DSN")
 if not PG_DSN:
@@ -38,11 +39,19 @@ async def get_market(symbol: str):
     position = open_positions.get(symbol)
 
     if position:
-        # Récupérer le prix actuel depuis OHLCV (dernière bougie)
-        df = get_ohlcv_df(symbol, "1s")
-        if df.empty:
+        # Récupérer le prix actuel depuis la BDD OHLCV (dernière bougie 1s)
+        end_ts = datetime.now(timezone.utc)
+        start_ts = end_ts - timedelta(seconds=10)  # suffisant pour avoir une bougie
+        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+
+        if df is None or df.empty:
             result["pnl"] = 0.0
             return result
+
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        df = df.sort_index()
+        df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
 
         current_price = float(df.iloc[-1]["close"])
         entry_price = position["entry_price"]
