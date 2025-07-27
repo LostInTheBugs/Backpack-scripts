@@ -55,8 +55,22 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
         print(f"❌ Symbol '{symbol}' not found.")
         return 
 
-    step_size_decimals = get_step_size_decimals(market_info)
-    quantity = round(usdc_amount / mark_price, step_size_decimals)
+    step_size_str = market_info.get("filters", {}).get("quantity", {}).get("stepSize", "1")
+    step_size = float(step_size_str)
+
+    raw_quantity = usdc_amount / mark_price
+
+    def round_quantity_to_step(quantity: float, step_size: float) -> float:
+        return (quantity // step_size) * step_size
+
+    quantity = round_quantity_to_step(raw_quantity, step_size)
+
+    # Nombre de décimales à afficher selon step_size
+    if '.' in step_size_str:
+        step_size_decimals = len(step_size_str.split('.')[1].rstrip('0'))
+    else:
+        step_size_decimals = 0
+
     quantity_str = f"{quantity:.{step_size_decimals}f}"
 
     min_qty = float(market_info.get("filters", {}).get("quantity", {}).get("minQty", "0.00001"))
