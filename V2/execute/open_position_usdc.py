@@ -14,13 +14,13 @@ def get_step_size_decimals(market_info):
         return len(step_size.split(".")[1].rstrip("0"))
     return 0
 
-def open_position(symbol: str, usdc_amount: float, direction: str):
+def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool = False):
     if direction.lower() not in ["long", "short"]:
-        print("Invalid direction. Use 'long' or 'short'.")
+        print("❌ Invalid direction. Use 'long' or 'short'.")
         return
 
     if usdc_amount <= 0:
-        print("USDC amount must be greater than zero.")
+        print("❌ USDC amount must be greater than zero.")
         return
 
     account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
@@ -32,37 +32,55 @@ def open_position(symbol: str, usdc_amount: float, direction: str):
     # Check if symbol exists
     markets = public.get_markets()
     if not isinstance(markets, list):
-        print("Failed to retrieve market list.")
+        print("❌ Failed to retrieve market list.")
         return
 
     if not any(m.get("symbol") == symbol for m in markets):
-        print(f"Symbol '{symbol}' not found in market list.")
+        print(f"❌ Symbol '{symbol}' not found in market list.")
         return
 
     # Get ticker for mark price
     ticker = public.get_ticker(symbol)
     if not isinstance(ticker, dict):
-        print("Failed to retrieve ticker data.")
+        print("❌ Failed to retrieve ticker data.")
         return
 
     mark_price = float(ticker.get("lastPrice", "0"))
     if mark_price == 0:
-        print("Invalid mark price from ticker.")
+        print("❌ Invalid mark price from ticker.")
         return
 
     market_info = next((m for m in markets if m.get("symbol") == symbol), None)
     if not market_info:
-        print(f"Symbol '{symbol}' not found.")
+        print(f"❌ Symbol '{symbol}' not found.")
         return 
 
     step_size_decimals = get_step_size_decimals(market_info)
     quantity = round(usdc_amount / mark_price, step_size_decimals)
     quantity_str = f"{quantity:.{step_size_decimals}f}"
 
+    min_qty = float(market_info.get("filters", {}).get("quantity", {}).get("minQty", "0.00001"))
+    step_size = market_info.get("filters", {}).get("quantity", {}).get("stepSize", "N/A")
+
+    print(f"📊 {symbol} market info:")
+    print(f"   - markPrice: {mark_price}")
+    print(f"   - stepSize: {step_size}")
+    print(f"   - minQty: {min_qty}")
+    print(f"   - targetQuantity: {quantity_str}")
+
+    if quantity < min_qty:
+        print(f"❌ Order quantity {quantity_str} is below the minimum allowed ({min_qty}) for {symbol}.")
+        print(f"➡️ Increase your USDC amount or choose another symbol.")
+        return
+
     side = "Bid" if direction.lower() == "long" else "Ask"
     order_type = "Market"
 
-    print(f"Submitting {order_type} {side} order on {symbol} using {usdc_amount} USDC ≈ {quantity_str} units")
+    if dry_run:
+        print(f"[DRY RUN] Would submit {order_type} {side} order on {symbol} using {usdc_amount:.2f} USDC ≈ {quantity_str} units")
+        return
+
+    print(f"🚀 Submitting {order_type} {side} order on {symbol} using {usdc_amount:.2f} USDC ≈ {quantity_str} units")
 
     response = account.execute_order(
         symbol=symbol,
@@ -73,7 +91,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str):
     )
 
     if not isinstance(response, dict):
-        print("Invalid response from order execution.")
+        print("❌ Invalid response from order execution.")
         return
 
     status = response.get("status", "UNKNOWN")
@@ -110,12 +128,9 @@ if __name__ == "__main__":
     try:
         usdc_amount = float(args[1])
     except ValueError:
-        print("USDC amount must be a number.")
+        print("❌ USDC amount must be a number.")
         sys.exit(1)
 
     direction = args[2]
 
-    if dry_run:
-        print(f"[DRY RUN] Would open {direction} position on {symbol} using {usdc_amount} USDC")
-    else:
-        open_position(symbol, usdc_amount, direction)
+    open_position(symbol, usdc_amount, direction, dry_run=dry_run)
