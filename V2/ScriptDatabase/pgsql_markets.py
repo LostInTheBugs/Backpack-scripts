@@ -2,6 +2,7 @@ import requests
 import asyncpg
 import asyncio
 import os
+import json
 from datetime import datetime
 
 PG_DSN = os.environ.get("PG_DSN")
@@ -17,8 +18,8 @@ async def update_markets_table(pool):
     async with pool.acquire() as conn:
         async with conn.transaction():
             for m in markets:
-                # Convertir createdAt de str à datetime
                 created_at_dt = datetime.fromisoformat(m["createdAt"])
+                raw_json_str = json.dumps(m)  # <-- convertir dict en JSON string
 
                 await conn.execute("""
                     INSERT INTO backpack_markets (symbol, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt, raw_json)
@@ -30,8 +31,8 @@ async def update_markets_table(pool):
                         orderBookState = EXCLUDED.orderBookState,
                         createdAt = EXCLUDED.createdAt,
                         raw_json = EXCLUDED.raw_json
-                """, m["symbol"], m["baseSymbol"], m["quoteSymbol"], m["marketType"], m["orderBookState"], created_at_dt, m)
-
+                """, m["symbol"], m["baseSymbol"], m["quoteSymbol"], m["marketType"], m["orderBookState"], created_at_dt, raw_json_str)
+                
 async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
     await update_markets_table(pool)
