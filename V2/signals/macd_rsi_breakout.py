@@ -23,11 +23,11 @@ def get_combined_signal(df):
 
     # Exemple de condition simple
     if last_close > max_close * 0.99:
-        print("DEBUG Signal BUY détecté (last_close proche du max)")
+#        print("DEBUG Signal BUY détecté (last_close proche du max)")
         return "BUY"
     elif last_close < min_close * 1.01:
-        print("DEBUG Signal SELL détecté (last_close proche du min)")
+#        print("DEBUG Signal SELL détecté (last_close proche du min)")
         return "SELL"
     else:
-        print("DEBUG Pas de signal détecté, HOLD")
+#        print("DEBUG Pas de signal détecté, HOLD")
         return "HOLD"
