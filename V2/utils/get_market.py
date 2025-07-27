@@ -17,9 +17,9 @@ async def get_market(symbol: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT name, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt
+            SELECT symbol, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt
             FROM backpack_markets
-            WHERE name = $1
+            WHERE symbol = $1
         """, symbol)
 
     if not row:
