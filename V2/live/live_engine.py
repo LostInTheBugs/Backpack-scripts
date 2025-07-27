@@ -82,7 +82,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
                 log(f"[{symbol}] 🧪 DRY-RUN: Simulation ouverture position {direction.upper()}")
             elif real_run:
                 log(f"[{symbol}] ✅ OUVERTURE position réelle : {direction.upper()}")
-                await open_position(symbol, POSITION_AMOUNT_USDC, direction)
+                open_position(symbol, POSITION_AMOUNT_USDC, direction)
             else:
                 log(f"[{symbol}] ❌ Ni --real-run ni --dry-run spécifié : aucune action")
 
