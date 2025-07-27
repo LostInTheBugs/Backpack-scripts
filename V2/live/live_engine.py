@@ -1,6 +1,7 @@
 import traceback
 import pandas as pd
 from datetime import datetime, timedelta, timezone
+import os
 
 from utils.ohlcv_utils import get_ohlcv_df
 from utils.position_utils import position_already_open
@@ -17,6 +18,10 @@ POSITION_AMOUNT_USDC = 25
 TRAILING_STOP_TRIGGER = 0.5  # stop si le PnL baisse de 0.5% depuis le max
 
 MAX_PNL_TRACKER = {}  # Tracker du max PnL par symbole
+
+
+public_key = os.environ.get("bpx_bot_public_key")
+secret_key = os.environ.get("bpx_bot_secret_key")
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
     try:
@@ -63,7 +68,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
             if max_pnl - pnl_percent >= TRAILING_STOP_TRIGGER:
                 log(f"[{symbol}] ⛔ Stop suiveur déclenché : PnL {pnl_percent:.2f}% < Max {max_pnl:.2f}% - {TRAILING_STOP_TRIGGER}%")
                 if real_run:
-                    await close_position_percent(symbol, percent=100)
+                    close_position_percent(public_key, secret_key, symbol, percent=100)
                 else:
                     log(f"[{symbol}] 🧪 DRY-RUN: Clôture simulée via trailing stop")
                 MAX_PNL_TRACKER.pop(symbol, None)

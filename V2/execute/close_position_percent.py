@@ -4,7 +4,6 @@ from tabulate import tabulate  # <- ajouté
 import sys
 import subprocess
 import os
-
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
