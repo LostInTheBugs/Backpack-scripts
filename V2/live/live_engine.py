@@ -1,50 +1,58 @@
 import os
 import traceback
 import pandas as pd
-
 from datetime import datetime, timedelta, timezone
+
+from utils.logger import log
 from utils.ohlcv_utils import get_ohlcv_df
 from utils.position_utils import position_already_open
-from utils.logger import log
-from utils.public import get_ohlcv, format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
+from utils.public import (
+    get_ohlcv,
+    check_table_and_fresh_data,
+    load_symbols_from_file
+)
 from utils.get_market import get_market
-from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
+from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from signals.macd_rsi_breakout import get_combined_signal
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 
+# === Configuration ===
 INTERVAL = "1s"
 POSITION_AMOUNT_USDC = 25
-TRAILING_STOP_TRIGGER = 0.5  # stop si le PnL baisse de 0.5% depuis le max
+TRAILING_STOP_TRIGGER = 0.5  # Seuil de déclenchement du stop suiveur
 
-# Dictionnaire pour stocker le PnL max atteint par symbole
+# === Suivi du PnL maximum par symbole ===
 MAX_PNL_TRACKER = {}
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
 
+        # Vérifie si les données OHLCV sont fraîches en BDD
         if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
             log(f"[{symbol}] Ignoré : pas de données récentes")
             return
 
-        # Chargement des données OHLCV
+        # === Chargement des données OHLCV ===
         if INTERVAL == "1s":
             end_ts = datetime.now(timezone.utc)
             start_ts = end_ts - timedelta(seconds=60)
             df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+
+            if df is None or df.empty:
+                log(f"[{symbol}] ❌ Données OHLCV 1s vides depuis PostgreSQL")
+                return
         else:
             data = get_ohlcv(symbol, INTERVAL)
             if not data:
-                log(f"[{symbol}] ❌ Données OHLCV vides")
+                log(f"[{symbol}] ❌ Données OHLCV vides depuis l'API Backpack")
                 return
             df = get_ohlcv_df(symbol, INTERVAL)
 
-        if df.empty:
-            log(f"[{symbol}] ❌ DataFrame OHLCV vide après conversion")
-            return
-        if len(df) < 2:
-            log(f"[{symbol}] ⚠️ Pas assez de données (moins de 2 lignes) pour calculer le signal")
+        # === Nettoyage et vérifications ===
+        if df.empty or len(df) < 2:
+            log(f"[{symbol}] ⚠️ Pas assez de données pour calculer le signal")
             return
 
         df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -54,16 +62,17 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
 
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
 
+        # === Analyse du signal ===
         signal = get_combined_signal(df)
         log(f"[{symbol}] 🎯 Signal détecté : {signal}")
 
+        # === Vérification d'une position déjà ouverte ===
         if position_already_open(symbol):
-            # --- GESTION DU STOP SUIVEUR PAR PNL ---
             market_data = await get_market(symbol)
             if not market_data:
-                return  # ou log + skip ce symbole
-            pnl_percent = market_data.get("pnl", 0.0)
+                return
 
+            pnl_percent = market_data.get("pnl", 0.0)
             if symbol not in MAX_PNL_TRACKER:
                 MAX_PNL_TRACKER[symbol] = pnl_percent
 
@@ -84,6 +93,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool):
             log(f"[{symbol}] ⚠️ Position déjà ouverte — Ignorée (sauf stop suiveur)")
             return
 
+        # === Ouverture de position si un signal est détecté ===
         if signal in ["BUY", "SELL"]:
             direction = "long" if signal == "BUY" else "short"
 
