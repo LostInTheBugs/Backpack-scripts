@@ -1,7 +1,7 @@
 import os
 import asyncpg
 from datetime import datetime, timedelta, timezone
-from utils.public import get_ohlcv_df
+from utils.ohlcv_utils import get_ohlcv_df
 from utils.position_utils import get_open_positions
 
 PG_DSN = os.environ.get("PG_DSN")
