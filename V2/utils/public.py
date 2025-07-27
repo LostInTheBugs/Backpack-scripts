@@ -1,25 +1,44 @@
 import requests
 from datetime import datetime, timedelta, timezone
-import requests
 import time
-import numpy as np
-import pandas as pd
-import asyncio
-import asyncpg
 import os
+import asyncpg
 
 def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None):
+    """
+    Récupère les données OHLCV via l'API Backpack pour un symbole et intervalle donnés.
+    - interval ne doit PAS être '1s' (non supporté par l'API)
+    - startTime doit être un timestamp UNIX en secondes (sera converti en ms)
+    """
+    if interval == "1s":
+        print("[ERROR] get_ohlcv() : l'intervalle '1s' n'est pas supporté via l'API. Utiliser la BDD locale.")
+        return None
+    
     base_url = "https://api.backpack.exchange/api/v1/klines"
     
+    # Calcul startTime en ms
     if startTime is None:
-        # Par défaut : récupérer les dernières `limit` bougies 1m, donc startTime = now - limit*60s
-        startTime = int(time.time()) - limit * 60
-    
+        # Timestamp actuel en ms - limit*interval en ms
+        now_ms = int(time.time() * 1000)
+        # Pour l'intervalle 1m, interval en ms = 60_000 ms
+        # Attention: ici on ne gère que l'intervalle en minutes pour le calcul par défaut
+        # Pour un vrai usage général, gérer tous les cas d'intervalle
+        if interval.endswith('m'):
+            minutes = int(interval[:-1])
+            delta_ms = limit * minutes * 60_000
+        else:
+            # fallback : juste limit * 60_000
+            delta_ms = limit * 60_000
+        startTime = now_ms - delta_ms
+    else:
+        # Convertir startTime secondes en ms
+        startTime = int(startTime * 1000)
+
     params = {
         "symbol": symbol,
         "interval": interval,
         "limit": limit,
-        "startTime": startTime
+        "startTime": startTime,
     }
     
     try:
@@ -66,7 +85,6 @@ async def get_last_timestamp(pool, symbol):
             return row["timestamp"] if row else None
         except asyncpg.exceptions.UndefinedTableError:
             return None        
-        
 
 def load_symbols_from_file(filepath: str = "symbol.lst") -> list:
     if not os.path.exists(filepath):
