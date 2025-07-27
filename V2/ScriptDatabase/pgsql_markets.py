@@ -26,7 +26,8 @@ async def update_markets_table(pool):
                         orderBookState = EXCLUDED.orderBookState,
                         createdAt = EXCLUDED.createdAt,
                         raw_json = EXCLUDED.raw_json
-                """, m["name"], m["baseSymbol"], m["quoteSymbol"], m["marketType"], m["orderBookState"], m["createdAt"], m)
+                """, m["symbol"], m["baseSymbol"], m["quoteSymbol"], m["marketType"], m["orderBookState"], m["createdAt"], m)
+
 
 async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
