@@ -6,6 +6,7 @@ To Do
 * Review output text (too much information, not well organized)
 * Webpage for supervision
 * Monitoring database updates
+* Consider pausing on the symbol when a position in that symbol has been liquidated
 
 
 |-backtest
