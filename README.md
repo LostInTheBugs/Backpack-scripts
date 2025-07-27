@@ -1,7 +1,8 @@
 # Backpack-scripts
 
 To Do
-Restore positions after restarting
+* Restore positions after restarting
+* Manage opened position when the top 10 change
 
 
 
