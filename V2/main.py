@@ -15,7 +15,7 @@ from utils.logger import log
 from utils.position_utils import position_already_open, get_open_positions
 from utils.ohlcv_utils import get_ohlcv_df
 from utils.get_market import get_market
-from utils.public import get_ohlcv, format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
+from utils.public import format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.fetch_top_volume_symbols import fetch_top_n_perp
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
