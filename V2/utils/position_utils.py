@@ -24,7 +24,7 @@ def position_already_open(symbol: str) -> bool:
         return False
 
 async def get_open_positions():
-    url = "https://api.backpack.exchange/api/v1/trade/positions"
+    url = "https://api.backpack.exchange/api/v1/position"
     headers = {
         "X-BPX-API-KEY": os.getenv("bpx_bot_public_key"),
         "X-BPX-API-SECRET": os.getenv("bpx_bot_secret_key"),
