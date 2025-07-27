@@ -1,12 +1,28 @@
-import requests
+import os
+import asyncpg
+import asyncio
 
-def get_market(symbol):
-    url = f"https://api.backpack.exchange/api/v1/market/{symbol}"  # ← endpoint corrigé
-    response = requests.get(url)
+PG_DSN = os.environ.get("PG_DSN")
+if not PG_DSN:
+    raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
-    if response.status_code == 404:
-        print(f"⚠️ Marché {symbol} non trouvé (404)")
+async def get_market(symbol: str):
+    pool = await asyncpg.create_pool(dsn=PG_DSN)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT name, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt
+            FROM backpack_markets
+            WHERE name = $1
+        """, symbol)
+    await pool.close()
+
+    if not row:
+        print(f"⚠️ Marché {symbol} non trouvé en base locale")
         return None
 
-    response.raise_for_status()
-    return response.json()
+    # Transformer le record en dict
+    return dict(row)
+
+# Pour usage synchrone simple (juste pour tests)
+def get_market_sync(symbol: str):
+    return asyncio.run(get_market(symbol))
