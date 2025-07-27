@@ -1,8 +1,8 @@
 def get_combined_signal(df):
     import pandas as pd
-    print("DEBUG get_combined_signal: Entrée dans la fonction")
-    print("DEBUG index type:", type(df.index))
-    print("DEBUG index head:", df.index[:5])
+#    print("DEBUG get_combined_signal: Entrée dans la fonction")
+#    print("DEBUG index type:", type(df.index))
+#    print("DEBUG index head:", df.index[:5])
 
     # Assure-toi que l'index est DatetimeIndex
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -17,9 +17,9 @@ def get_combined_signal(df):
     max_close = df['close'].max()
     max_close_date = df['close'].idxmax()
 
-    print(f"DEBUG last_close={last_close} at {last_close_date}")
-    print(f"DEBUG min_close={min_close} at {min_close_date}")
-    print(f"DEBUG max_close={max_close} at {max_close_date}")
+#    print(f"DEBUG last_close={last_close} at {last_close_date}")
+#    print(f"DEBUG min_close={min_close} at {min_close_date}")
+#    print(f"DEBUG max_close={max_close} at {max_close_date}")
 
     # Exemple de condition simple
     if last_close > max_close * 0.99:
