@@ -3,16 +3,14 @@ import os
 import time
 import traceback
 import asyncio
-from datetime import datetime, timedelta, timezone
-import pandas as pd
+from datetime import datetime
 import asyncpg
 import signal
-import pytz
 
 from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from signals.macd_rsi_breakout import get_combined_signal
 from utils.logger import log
-from utils.position_utils import position_already_open, get_open_positions
+from utils.position_utils import position_already_open, get_open_positions  # <-- ajout get_open_positions
 from utils.ohlcv_utils import get_ohlcv_df
 from utils.get_market import get_market
 from utils.public import get_ohlcv, format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
@@ -22,7 +20,6 @@ from execute.close_position_percent import close_position_percent
 from backtest.backtest_engine import run_backtest, backtest_symbol
 from live.live_engine import handle_live_symbol
 
-# Configuration des clés API pour Backpack Exchange
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
@@ -30,7 +27,7 @@ INTERVAL = "1s"
 POSITION_AMOUNT_USDC = 25
 
 
-async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
+async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, trailing_stops: dict, auto_select=False):
     if auto_select:
         log("🔍 Mode auto-select actif — sélection des symboles les plus volatils")
         try:
@@ -40,14 +37,14 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             log(f"💥 Erreur sélection symboles auto: {e}")
             return
 
-    while True:  # boucle infinie
+    while True:
         active_symbols = []
         ignored_symbols = []
 
         for symbol in symbols:
             if await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
                 active_symbols.append(symbol)
-                await handle_live_symbol(symbol, pool, real_run, dry_run)
+                await handle_live_symbol(symbol, pool, real_run, dry_run, trailing_stops)
             else:
                 ignored_symbols.append(symbol)
 
@@ -65,9 +62,10 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         if not active_symbols:
             log("⚠️ Aucun symbole actif pour cette itération.")
 
-        await asyncio.sleep(1)  # pause 1 seconde avant prochaine itération
+        await asyncio.sleep(1)
 
-async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
+
+async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False, trailing_stops=None):
     last_modified = None
     symbols = []
 
@@ -79,7 +77,7 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
                 log(f"🔁 symbol.lst rechargé : {symbols}")
                 last_modified = current_modified
 
-            await main_loop(symbols, pool, real_run=real_run, dry_run=dry_run)
+            await main_loop(symbols, pool, real_run=real_run, dry_run=dry_run, trailing_stops=trailing_stops)
         except KeyboardInterrupt:
             log("🛑 Arrêt manuel demandé")
             break
@@ -89,9 +87,28 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
         await asyncio.sleep(1)
 
+
 async def async_main(args):
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
 
+    # Récupération des positions ouvertes via API au démarrage
+    open_positions = await get_open_positions()
+    trailing_stops = {}
+
+    # Initialisation du trailing stop (exemple stop à 1% du prix d'entrée)
+    for symbol, pos in open_positions.items():
+        entry_price = pos['entry_price']
+        side = pos['side']
+        if side == "long":
+            stop_price = entry_price * 0.99
+        else:
+            stop_price = entry_price * 1.01
+        trailing_stops[symbol] = {
+            "side": side,
+            "entry_price": entry_price,
+            "current_stop": stop_price
+        }
+        log(f"🔁 Position détectée pour {symbol} — stop suiveur initialisé à {stop_price}")
 
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -115,13 +132,13 @@ async def async_main(args):
             if args.symbols:
                 symbols = args.symbols.split(",")
                 task = asyncio.create_task(
-                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
+                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, trailing_stops=trailing_stops, auto_select=args.auto_select)
                 )
                 stop_task = asyncio.create_task(stop_event.wait())
                 await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
             else:
                 task = asyncio.create_task(
-                    watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
+                    watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run, trailing_stops=trailing_stops)
                 )
                 stop_task = asyncio.create_task(stop_event.wait())
                 await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
@@ -131,8 +148,8 @@ async def async_main(args):
         await pool.close()
         print("Pool de connexion fermé, fin du programme.")
 
+
 if __name__ == "__main__":
-    import argparse
     import sys
 
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
