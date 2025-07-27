@@ -24,32 +24,22 @@ def position_already_open(symbol: str) -> bool:
         return False
 
 async def get_open_positions():
-    method = "GET"
-    path = "/api/v1/trade/positions"
-    body = {}  # vide pour GET
-
     try:
-        response = await account.signed_request(
-            method=method,
-            path=path,
-            body=body
-        )
-
-        data = response.get("positions", [])
+        raw_positions = account.get_open_positions()
 
         positions = {}
-        for p in data:
-            if float(p["size"]) != 0:
+        for p in raw_positions:
+            if float(p.get("netQuantity", 0)) != 0:
                 symbol = p["symbol"]
-                side = "long" if float(p["size"]) > 0 else "short"
                 entry_price = float(p["entryPrice"])
-                positions[symbol] = {
-                    "side": side,
-                    "entry_price": entry_price
-                }
+                side = "long" if float(p["netQuantity"]) > 0 else "short"
 
+                positions[symbol] = {
+                    "entry_price": entry_price,
+                    "side": side
+                }
         return positions
 
     except Exception as e:
-        print(f"❌ Erreur API signée Backpack : {e}")
+        print(f"⚠️ Erreur get_open_positions(): {e}")
         return {}
