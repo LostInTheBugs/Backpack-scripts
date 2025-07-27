@@ -7,6 +7,7 @@ To Do
 * Webpage for supervision
 * Monitoring database updates
 * Consider pausing on the symbol when a position in that symbol has been liquidated
+* Change the default size of (new) positions without having to restart
 
 
 |-backtest
