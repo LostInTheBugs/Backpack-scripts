@@ -24,22 +24,25 @@ def position_already_open(symbol: str) -> bool:
         return False
 
 async def get_open_positions():
-    url = "https://api.backpack.exchange/api/v1/position"
-    headers = {
-        "X-BPX-API-KEY": os.getenv("bpx_bot_public_key"),
-        "X-BPX-API-SECRET": os.getenv("bpx_bot_secret_key"),
-        "Content-Type": "application/json",
-    }
+    url = "https://api.backpack.exchange/api/v1/trade/positions"
+    method = "GET"
+    path = "/api/v1/trade/positions"
+    body = ""  # vide pour GET sans query
+    query = ""
+
+    # Signature
+    headers = account.sign(method, path, body, query)
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:
             if response.status != 200:
                 raise Exception(f"Erreur API position: {response.status} {await response.text()}")
+
             data = await response.json()
 
             positions = {}
             for p in data.get("positions", []):
-                if float(p["size"]) > 0:
+                if float(p["size"]) != 0:
                     symbol = p["symbol"]
                     side = "long" if float(p["size"]) > 0 else "short"
                     entry_price = float(p["entryPrice"])
