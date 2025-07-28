@@ -5,6 +5,8 @@ import os
 import traceback
 from utils.logger import log
 from signals.macd_rsi_breakout import get_combined_signal  # À ajuster selon la stratégie choisie
+from pandas.tseries.frequencies import to_offset
+
 
 async def fetch_ohlcv_from_db(pool, symbol):
     """
@@ -48,6 +50,7 @@ async def fetch_ohlcv_from_db(pool, symbol):
             traceback.print_exc()
             return pd.DataFrame()
 
+
 async def run_backtest_async(symbol: str, interval: str, dsn: str):
     try:
         pool = await asyncpg.create_pool(dsn=dsn)
@@ -60,6 +63,15 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
 
         print(f"[{symbol}] ✅ Données OHLCV chargées ({len(df)} lignes), début: {df.index.min()}, fin: {df.index.max()}")
 
+        # Filtrer les données selon intervalle demandé (ex: "1h", "3d", "5m")
+        try:
+            offset = to_offset(interval)
+            cutoff_time = df.index.max() - offset
+            df = df[df.index >= cutoff_time]
+            print(f"[{symbol}] ⏱ Filtrage backtest sur intervalle {interval} : {len(df)} lignes restantes")
+        except Exception as e:
+            print(f"[{symbol}] ⚠️ Erreur parsing de l’intervalle '{interval}': {e}")
+
         # Analyse avec la stratégie choisie
         signal = get_combined_signal(df)
         print(f"[{symbol}] Backtest signal final: {signal}")
@@ -69,6 +81,7 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
     except Exception as e:
         print(f"[{symbol}] 💥 Exception durant le backtest: {e}")
         traceback.print_exc()
+
 
 async def backtest_symbol(symbol: str, interval: str):
     try:
@@ -83,7 +96,7 @@ async def backtest_symbol(symbol: str, interval: str):
         import traceback
         traceback.print_exc()
 
-        
+
 def run_backtest(symbol, interval):
     dsn = os.environ.get("PG_DSN")
     asyncio.run(run_backtest_async(symbol, interval, dsn))
