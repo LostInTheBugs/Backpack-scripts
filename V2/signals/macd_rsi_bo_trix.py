@@ -1,53 +1,56 @@
 import pandas as pd
 
 def calculate_macd(df, fast=12, slow=26, signal=9):
-    exp1 = df['close'].ewm(span=fast, adjust=False).mean()
-    exp2 = df['close'].ewm(span=slow, adjust=False).mean()
-    macd = exp1 - exp2
-    signal_line = macd.ewm(span=signal, adjust=False).mean()
-    return macd, signal_line
+    df['ema_fast'] = df['close'].ewm(span=fast, adjust=False).mean()
+    df['ema_slow'] = df['close'].ewm(span=slow, adjust=False).mean()
+    df['macd'] = df['ema_fast'] - df['ema_slow']
+    df['signal'] = df['macd'].ewm(span=signal, adjust=False).mean()
+    return df
 
 def calculate_rsi(df, period=14):
     delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    df['rsi'] = 100 - (100 / (1 + rs))
+    return df
 
-def breakout(df):
-    last_close = df['close'].iloc[-1]
-    if last_close > df['close'].max() * 0.99:
-        return "BUY"
-    elif last_close < df['close'].min() * 1.01:
-        return "SELL"
-    return "HOLD"
-
-def trix(df, length=15, signal=9):
-    close = df['close']
-    ema1 = close.ewm(span=length, adjust=False).mean()
-    ema2 = ema1.ewm(span=length, adjust=False).mean()
-    ema3 = ema2.ewm(span=length, adjust=False).mean()
-    trix_line = 100 * (ema3 - ema3.shift(1)) / ema3.shift(1)
-    trix_signal = trix_line.ewm(span=signal, adjust=False).mean()
-    return trix_line, trix_signal
+def calculate_trix(df, period=9):
+    ema1 = df['close'].ewm(span=period, adjust=False).mean()
+    ema2 = ema1.ewm(span=period, adjust=False).mean()
+    ema3 = ema2.ewm(span=period, adjust=False).mean()
+    df['trix'] = ema3.pct_change() * 100
+    return df
 
 def get_combined_signal(df):
-    if not isinstance(df.index, pd.DatetimeIndex):
-        df.index = pd.to_datetime(df.index)
+    df = df.copy()
+    df = calculate_macd(df)
+    df = calculate_rsi(df)
+    df = calculate_trix(df)
 
-    macd_line, macd_signal = calculate_macd(df)
-    rsi = calculate_rsi(df)
-    trix_line, trix_signal = trix(df)
-    bo_signal = breakout(df)
+    if len(df) < 2:
+        return None
 
-    latest_macd = macd_line.iloc[-1] > macd_signal.iloc[-1]
-    latest_rsi = rsi.iloc[-1] < 30 or rsi.iloc[-1] > 70
-    latest_trix = trix_line.iloc[-1] > trix_signal.iloc[-1]
-    latest_bo = bo_signal
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    if latest_macd and latest_trix and latest_rsi and latest_bo == "BUY":
+    macd_buy = prev['macd'] < prev['signal'] and last['macd'] > last['signal']
+    macd_sell = prev['macd'] > prev['signal'] and last['macd'] < last['signal']
+
+    rsi_buy = last['rsi'] < 30
+    rsi_sell = last['rsi'] > 70
+
+    breakout_buy = last['close'] > df['high'][-20:-1].max()
+    breakout_sell = last['close'] < df['low'][-20:-1].min()
+
+    trix_buy = prev['trix'] < 0 and last['trix'] > 0
+    trix_sell = prev['trix'] > 0 and last['trix'] < 0
+
+    if macd_buy and rsi_buy and breakout_buy and trix_buy:
         return "BUY"
-    elif not latest_macd and not latest_trix and latest_rsi and latest_bo == "SELL":
+    elif macd_sell and rsi_sell and breakout_sell and trix_sell:
         return "SELL"
     else:
-        return "HOLD"
+        return None

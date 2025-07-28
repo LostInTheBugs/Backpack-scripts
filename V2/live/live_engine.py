@@ -22,9 +22,20 @@ MAX_PNL_TRACKER = {}  # Tracker du max PnL par symbole
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
+def import_strategy_signal(strategy):
+    if strategy == "Trix":
+        from signals.trix_only_signal import get_combined_signal
+    elif strategy == "Combo":
+        from signals.macd_rsi_bo_trix import get_combined_signal
+    else:
+        from signals.macd_rsi_breakout import get_combined_signal
+    return get_combined_signal
+
 
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args):
+    get_combined_signal = import_strategy_signal(args.strategie)
+    print(f"📊 Stratégie sélectionnée : {args.strategie}")
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
 
