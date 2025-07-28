@@ -138,7 +138,7 @@ if __name__ == "__main__":
     parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
     parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
     parser.add_argument("--dry-run", action="store_true", help="Mode simulation sans exécuter de trade")
-    parser.add_argument("--backtest", type=str, help="Exécuter un backtest (ex: 1h, 1d, 1w)")
+    parser.add_argument("--backtest", type=int, help="Durée du backtest en heures (ex: 1, 2, 24)")
     parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
     parser.add_argument("--strategie", choices=["Default", "Trix", "Combo"], default="Default", help="Stratégie de signal à utiliser")
     args = parser.parse_args()
