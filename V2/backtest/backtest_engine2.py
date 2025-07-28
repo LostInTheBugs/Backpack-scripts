@@ -6,8 +6,17 @@ import traceback
 from utils.logger import log
 from utils.position_tracker import PositionTracker
 from datetime import timedelta
+from importlib import import_module
 
-from live.live_engine import get_combined_signal  # dynamique selon la stratégie
+# Cette fonction charge dynamiquement la stratégie demandée
+def get_signal_function(strategy_name):
+    if strategy_name == "Trix":
+        module = import_module("signals.trix_only_signal")
+    elif strategy_name == "Combo":
+        module = import_module("signals.macd_rsi_bo_trix")
+    else:
+        module = import_module("signals.macd_rsi_breakout")
+    return module.get_combined_signal
 
 async def fetch_ohlcv_from_db(pool, symbol):
     table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
@@ -46,7 +55,7 @@ async def fetch_ohlcv_from_db(pool, symbol):
             traceback.print_exc()
             return pd.DataFrame()
 
-async def run_backtest_async(symbol: str, interval: str, dsn: str):
+async def run_backtest_async(symbol: str, interval: str, dsn: str, strategy_name: str):
     try:
         pool = await asyncpg.create_pool(dsn=dsn)
         df = await fetch_ohlcv_from_db(pool, symbol)
@@ -60,6 +69,8 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
 
         tracker = PositionTracker(symbol)
         stats = {"total": 0, "win": 0, "loss": 0, "pnl": []}
+
+        get_combined_signal = get_signal_function(strategy_name)
 
         for current_time in df.index:
             current_df = df.loc[:current_time]
@@ -103,6 +114,7 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str):
         log(f"[{symbol}] 💥 Exception dans le backtest complet: {e}")
         traceback.print_exc()
 
-def run_backtest(symbol, interval):
+# Appel principal depuis main.py
+def run_backtest(symbol: str, interval: str, strategy_name: str):
     dsn = os.environ.get("PG_DSN")
-    asyncio.run(run_backtest_async(symbol, interval, dsn))
+    asyncio.run(run_backtest_async(symbol, interval, dsn, strategy_name))
