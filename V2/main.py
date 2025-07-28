@@ -20,7 +20,6 @@ from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from backtest.backtest_engine import run_backtest, backtest_symbol
 from live.live_engine import handle_live_symbol
-from utils.args import args
 
 # Configuration des clés API pour Backpack Exchange
 public_key = os.getenv("bpx_bot_public_key")
@@ -47,7 +46,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         for symbol in symbols:
             if await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
                 active_symbols.append(symbol)
-                await handle_live_symbol(symbol, pool, real_run, dry_run)
+                await handle_live_symbol(symbol, pool, real_run, dry_run, args)
             else:
                 ignored_symbols.append(symbol)
 
@@ -136,10 +135,22 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
-
+    parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
+    parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
+    parser.add_argument("--dry-run", action="store_true", help="Mode simulation sans exécuter de trade")
+    parser.add_argument("--backtest", type=str, help="Exécuter un backtest (ex: 1h, 1d, 1w)")
+    parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
+    parser.add_argument("--strategie", choices=["Default", "Trix", "Combo"], default="Default", help="Stratégie de signal à utiliser")
     args = parser.parse_args()
 
     try:
+        if args.strategie == "Trix":
+            from signals.trix_only_signal import get_combined_signal
+        elif args.strategie == "Combo":
+            from signals.macd_rsi_bo_trix import get_combined_signal
+        else:
+            from signals.macd_rsi_breakout import get_combined_signal
+        args.get_combined_signal = get_combined_signal
         asyncio.run(async_main(args))
     except KeyboardInterrupt:
         print("🛑 Arrêt manuel demandé via KeyboardInterrupt, fermeture propre...")
