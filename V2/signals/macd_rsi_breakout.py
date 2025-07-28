@@ -1,33 +1,49 @@
 def get_combined_signal(df):
     import pandas as pd
-#    print("DEBUG get_combined_signal: Entrée dans la fonction")
-#    print("DEBUG index type:", type(df.index))
-#    print("DEBUG index head:", df.index[:5])
+    import numpy as np
 
-    # Assure-toi que l'index est DatetimeIndex
+    # Assure DatetimeIndex
     if not isinstance(df.index, pd.DatetimeIndex):
         df.index = pd.to_datetime(df.index)
 
-    last_close = df['close'].iloc[-1]
-    last_close_date = df.index[-1]
+    close = df['close']
 
-    min_close = df['close'].min()
-    min_close_date = df['close'].idxmin()
+    # --- Calcul MACD ---
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal_line = macd.ewm(span=9, adjust=False).mean()
 
-    max_close = df['close'].max()
-    max_close_date = df['close'].idxmax()
+    # MACD crossover detection (sur les deux dernières valeurs)
+    macd_prev = macd.iloc[-2]
+    signal_prev = signal_line.iloc[-2]
+    macd_curr = macd.iloc[-1]
+    signal_curr = signal_line.iloc[-1]
 
-#    print(f"DEBUG last_close={last_close} at {last_close_date}")
-#    print(f"DEBUG min_close={min_close} at {min_close_date}")
-#    print(f"DEBUG max_close={max_close} at {max_close_date}")
+    macd_buy = (macd_prev < signal_prev) and (macd_curr > signal_curr)
+    macd_sell = (macd_prev > signal_prev) and (macd_curr < signal_curr)
 
-    # Exemple de condition simple
-    if last_close > max_close * 0.99:
-#        print("DEBUG Signal BUY détecté (last_close proche du max)")
+    # --- Calcul RSI ---
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    window_length = 14
+
+    avg_gain = gain.rolling(window=window_length).mean()
+    avg_loss = loss.rolling(window=window_length).mean()
+
+    rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
+    rsi = 100 - (100 / (1 + rs))
+
+    rsi_curr = rsi.iloc[-1]
+
+    # --- Logique de décision combinée ---
+    # Conditions d'achat
+    if macd_buy and rsi_curr < 40:
         return "BUY"
-    elif last_close < min_close * 1.01:
-#        print("DEBUG Signal SELL détecté (last_close proche du min)")
+
+    # Conditions de vente
+    if macd_sell and rsi_curr > 60:
         return "SELL"
-    else:
-#        print("DEBUG Pas de signal détecté, HOLD")
-        return "HOLD"
+
+    return "HOLD"

@@ -10,7 +10,6 @@ import signal
 import pytz
 
 from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
-from signals.macd_rsi_breakout import get_combined_signal
 from utils.logger import log
 from utils.position_utils import position_already_open, get_open_positions
 from utils.ohlcv_utils import get_ohlcv_df
