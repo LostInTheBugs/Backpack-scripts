@@ -9,24 +9,19 @@ def fetch_top_n_volatility(n):
         resp = requests.get(API_URL)
         resp.raise_for_status()
     except Exception as e:
-        print(f"Erreur lors de la récupération des données : {e}")
+        print(f"❌ Erreur lors de la récupération des données : {e}")
         sys.exit(1)
 
     data = resp.json()
     perp_tickers = [t for t in data if "_PERP" in t.get("symbol", "")]
 
-    # Calcul de la volatilité journalière : (high - low) / open
     tickers_with_volatility = []
     for t in perp_tickers:
         try:
-            high = float(t.get("high", 0))
-            low = float(t.get("low", 0))
-            open_price = float(t.get("open", 0))
-            if open_price > 0:
-                volatility = (high - low) / open_price * 100
-                tickers_with_volatility.append((t["symbol"], volatility))
+            price_change_percent = abs(float(t.get("priceChangePercent", 0)))
+            tickers_with_volatility.append((t["symbol"], price_change_percent))
         except Exception:
-            continue  # Ignore les symboles avec des données manquantes ou invalides
+            continue  # Ignore en cas d'erreur de parsing
 
     # Tri par volatilité décroissante
     tickers_with_volatility.sort(key=lambda x: x[1], reverse=True)
