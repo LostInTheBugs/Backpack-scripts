@@ -84,11 +84,7 @@ def run_backtest(symbol, start_date, end_date, signal_func=get_combined_signal, 
 
     return results
 
-async def backtest_symbol(symbol: str, hours: int):
-    dsn = os.environ.get("PG_DSN")
-    await run_backtest_async(symbol, dsn, hours)
 
-    
 def backtest_main(symbols, start_date, end_date):
     all_results = []
     for symbol in symbols:
