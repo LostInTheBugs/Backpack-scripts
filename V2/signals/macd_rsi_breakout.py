@@ -1,55 +1,63 @@
-def get_combined_signal(df):
-    import pandas as pd
-    import numpy as np
+import pandas as pd
+import numpy as np
 
-    if not isinstance(df.index, pd.DatetimeIndex):
-        df.index = pd.to_datetime(df.index)
+def get_combined_signal(df: pd.DataFrame) -> str:
+    """
+    Calcule MACD, RSI et Breakout sur données 1 seconde (sans resample),
+    puis retourne un signal simple: "BUY", "SELL" ou "HOLD".
+    """
+    if df.empty or len(df) < 50:
+        return "HOLD"  # Pas assez de données pour calculs
 
     close = df['close']
 
-    # Minimum 26 valeurs pour EMA26 (la plus longue EMA)
-    if len(close) < 26:
-        return "HOLD"  # Pas assez de données pour calcul MACD
+    # --- MACD ---
+    exp1 = close.ewm(span=12*60, adjust=False).mean()  # MACD fast EMA sur 12 minutes (720s)
+    exp2 = close.ewm(span=26*60, adjust=False).mean()  # MACD slow EMA sur 26 minutes (1560s)
+    macd = exp1 - exp2
+    signal_line = macd.ewm(span=9*60, adjust=False).mean()  # Signal line sur 9 minutes (540s)
 
-    # --- Calcul MACD ---
-    ema12 = close.ewm(span=12, adjust=False).mean()
-    ema26 = close.ewm(span=26, adjust=False).mean()
-    macd = ema12 - ema26
-    signal_line = macd.ewm(span=9, adjust=False).mean()
+    macd_hist = macd - signal_line
 
-    # Vérifie qu'on a au moins 2 valeurs pour détecter croisement
-    if len(macd) < 2 or len(signal_line) < 2:
-        return "HOLD"
-
-    macd_prev = macd.iloc[-2]
-    signal_prev = signal_line.iloc[-2]
-    macd_curr = macd.iloc[-1]
-    signal_curr = signal_line.iloc[-1]
-
-    macd_buy = (macd_prev < signal_prev) and (macd_curr > signal_curr)
-    macd_sell = (macd_prev > signal_prev) and (macd_curr < signal_curr)
-
-    # --- Calcul RSI ---
+    # --- RSI ---
     delta = close.diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    window_length = 14
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-    if len(close) < window_length:
-        return "HOLD"  # Pas assez de données pour RSI
-
-    avg_gain = gain.rolling(window=window_length).mean()
-    avg_loss = loss.rolling(window=window_length).mean()
+    window_length = 14 * 60  # RSI sur 14 minutes = 840 secondes
+    avg_gain = gain.rolling(window=window_length, min_periods=1).mean()
+    avg_loss = loss.rolling(window=window_length, min_periods=1).mean()
 
     rs = avg_gain / (avg_loss + 1e-9)
     rsi = 100 - (100 / (1 + rs))
-    rsi_curr = rsi.iloc[-1]
 
-    # --- Logique de décision combinée ---
-    if macd_buy and rsi_curr < 40:
+    # --- Breakout simple ---
+    # Prix max des dernières 60 minutes (3600s)
+    breakout_window = 60 * 60
+    highest_high = df['high'].rolling(window=breakout_window, min_periods=1).max()
+    lowest_low = df['low'].rolling(window=breakout_window, min_periods=1).min()
+
+    # Dernier prix close
+    last_close = close.iloc[-1]
+
+    # Critères pour signal
+    # MACD bullish si macd_hist > 0, bearish si < 0
+    macd_bull = macd_hist.iloc[-1] > 0
+    macd_bear = macd_hist.iloc[-1] < 0
+
+    # RSI overbought/sold zones
+    rsi_val = rsi.iloc[-1]
+    rsi_oversold = rsi_val < 30
+    rsi_overbought = rsi_val > 70
+
+    # Breakout : breakout haussier si last_close dépasse highest_high précédent
+    breakout_up = last_close > highest_high.iloc[-2] if len(highest_high) > 1 else False
+    breakout_down = last_close < lowest_low.iloc[-2] if len(lowest_low) > 1 else False
+
+    # Synthèse simple :
+    if macd_bull and rsi_oversold and breakout_up:
         return "BUY"
-
-    if macd_sell and rsi_curr > 60:
+    elif macd_bear and rsi_overbought and breakout_down:
         return "SELL"
-
-    return "HOLD"
+    else:
+        return "HOLD"
