@@ -51,7 +51,10 @@ def get_real_pnl(symbol: str) -> float:
             if p.get("symbol") == symbol and float(p.get("netQuantity", 0)) != 0:
                 pnl = float(p.get("unrealizedPnl", 0))
                 print(f"DEBUG get_real_pnl: symbol={symbol}, unrealizedPnl={pnl}")
-                return float(p.get("unrealizedPnl", 0))
+                entry_price = float(p.get("entryPrice", 0))
+                quantity = float(p.get("netQuantity", 0))
+                print(f"DEBUG get_real_pnl: symbol={symbol}, unrealizedPnl={pnl}, entryPrice={entry_price}, netQuantity={quantity}")
+                return pnl
         print(f"DEBUG get_real_pnl: symbol={symbol} pas de position ouverte")
         return 0.0
     except Exception as e:
