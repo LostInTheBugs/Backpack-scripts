@@ -64,19 +64,7 @@ async def fetch_ohlcv_from_db(pool, symbol, interval):
 
             # Resample selon intervalle demandé
             freq = interval_to_pandas_freq(interval)
-            if freq != "1S":
-                df_resampled = df.resample(freq).agg({
-                    'open': 'first',
-                    'high': 'max',
-                    'low': 'min',
-                    'close': 'last',
-                    'volume': 'sum'
-                }).dropna()
-            else:
-                df_resampled = df
-
-            return df_resampled
-
+ 
         except Exception as e:
             log(f"[{symbol}] ❌ Erreur fetch OHLCV backtest: {e}")
             traceback.print_exc()
