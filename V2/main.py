@@ -3,11 +3,12 @@ import os
 import time
 import traceback
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import pandas as pd
 import asyncpg
 import signal
 import pytz
+import sys
 
 from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from utils.logger import log
@@ -18,8 +19,8 @@ from utils.public import format_table_name, check_table_and_fresh_data, get_last
 from utils.fetch_top_volume_symbols import fetch_top_n_perp
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
-from backtest.backtest_engine import run_backtest, backtest_symbol
 from live.live_engine import handle_live_symbol
+from backtest.backtest_engine import run_backtest, backtest_symbol
 
 # Configuration des clés API pour Backpack Exchange
 public_key = os.getenv("bpx_bot_public_key")
@@ -39,7 +40,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             log(f"💥 Erreur sélection symboles auto: {e}")
             return
 
-    while True:  # boucle infinie
+    while True:
         active_symbols = []
         ignored_symbols = []
 
@@ -64,7 +65,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         if not active_symbols:
             log("⚠️ Aucun symbole actif pour cette itération.")
 
-        await asyncio.sleep(1)  # pause 1 seconde avant prochaine itération
+        await asyncio.sleep(1)
 
 async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
     last_modified = None
@@ -91,7 +92,6 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 async def async_main(args):
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
 
-
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -109,8 +109,8 @@ async def async_main(args):
             else:
                 symbols = load_symbols_from_file()
             for symbol in symbols:
-                log(f"[{symbol}] 🧪 Lancement du backtest {args.backtest}h")
-                await backtest_symbol(symbol, args.backtest)
+                log(f"[{symbol}] 🧪 Lancement du backtest {args.backtest}h avec stratégie {args.strategie}")
+                await backtest_symbol(symbol, args.backtest, args.get_combined_signal)
         else:
             if args.symbols:
                 symbols = args.symbols.split(",")
@@ -132,9 +132,6 @@ async def async_main(args):
         print("Pool de connexion fermé, fin du programme.")
 
 if __name__ == "__main__":
-    import argparse
-    import sys
-
     parser = argparse.ArgumentParser(description="Breakout MACD RSI bot for Backpack Exchange")
     parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
     parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
@@ -144,6 +141,7 @@ if __name__ == "__main__":
     parser.add_argument("--strategie", choices=["Default", "Trix", "Combo"], default="Default", help="Stratégie de signal à utiliser")
     args = parser.parse_args()
 
+    # Import dynamique de la stratégie
     try:
         if args.strategie == "Trix":
             from signals.trix_only_signal import get_combined_signal
@@ -152,6 +150,7 @@ if __name__ == "__main__":
         else:
             from signals.macd_rsi_breakout import get_combined_signal
         args.get_combined_signal = get_combined_signal
+
         asyncio.run(async_main(args))
     except KeyboardInterrupt:
         print("🛑 Arrêt manuel demandé via KeyboardInterrupt, fermeture propre...")
