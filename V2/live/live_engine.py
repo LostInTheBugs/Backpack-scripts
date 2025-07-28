@@ -15,6 +15,7 @@ from utils.position_utils import get_real_pnl
 
 INTERVAL = "1s"
 POSITION_AMOUNT_USDC = 25
+LEVERAGE = 2
 TRAILING_STOP_TRIGGER = 0.5  # stop si le PnL baisse de 0.5% depuis le max
 
 MAX_PNL_TRACKER = {}  # Tracker du max PnL par symbole
@@ -74,8 +75,8 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
             #nl_percent = market_data.get("pnl", 0.0)
             pnl_usdc = get_real_pnl(symbol)
-            pnl_percent = (pnl_usdc / POSITION_AMOUNT_USDC) * 100
-            
+            pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC * LEVERAGE)) * 100
+
             max_pnl = MAX_PNL_TRACKER.get(symbol, pnl_percent)
             if pnl_percent > max_pnl:
                 MAX_PNL_TRACKER[symbol] = pnl_percent

@@ -49,7 +49,10 @@ def get_real_pnl(symbol: str) -> float:
         positions = account.get_open_positions()
         for p in positions:
             if p.get("symbol") == symbol and float(p.get("netQuantity", 0)) != 0:
+                pnl = float(p.get("unrealizedPnl", 0))
+                print(f"DEBUG get_real_pnl: symbol={symbol}, unrealizedPnl={pnl}")
                 return float(p.get("unrealizedPnl", 0))
+        print(f"DEBUG get_real_pnl: symbol={symbol} pas de position ouverte")
         return 0.0
     except Exception as e:
         print(f"Erreur get_real_pnl(): {e}")
