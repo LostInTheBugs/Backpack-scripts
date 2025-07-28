@@ -109,6 +109,7 @@ async def async_main(args):
             else:
                 symbols = load_symbols_from_file()
             for symbol in symbols:
+                log(f"[{symbol}] 🧪 Lancement du backtest {args.backtest}h")
                 await backtest_symbol(symbol, args.backtest)
         else:
             if args.symbols:
