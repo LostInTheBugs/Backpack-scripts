@@ -1,100 +1,108 @@
+import asyncio
+import asyncpg
 import pandas as pd
+import os
+import traceback
+from utils.logger import log
+from utils.position_tracker import PositionTracker
 from datetime import timedelta
-from utils.backtest_utils import analyze_results
-from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync
-from signals.macd_rsi_breakout import get_combined_signal  # ou autre selon stratégie
-import numpy as np
 
-def simulate_trailing_stop(entry_price, df_slice, side, trailing_pct):
-    highest_price = entry_price
-    lowest_price = entry_price
-    for current_time, row in df_slice.iterrows():
-        price = row['close']
+from live.live_engine import get_combined_signal  # dynamique selon la stratégie
 
-        if side == 'long':
-            if price > highest_price:
-                highest_price = price
-            trailing_stop = highest_price * (1 - trailing_pct)
-            if price <= trailing_stop:
-                return price, current_time
-        else:  # short
-            if price < lowest_price:
-                lowest_price = price
-            trailing_stop = lowest_price * (1 + trailing_pct)
-            if price >= trailing_stop:
-                return price, current_time
+async def fetch_ohlcv_from_db(pool, symbol):
+    table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
 
-    return df_slice.iloc[-1]['close'], df_slice.index[-1]
+    async with pool.acquire() as conn:
+        try:
+            query = f"""
+                SELECT timestamp, open, high, low, close, volume
+                FROM {table_name}
+                WHERE interval_sec = 1
+                ORDER BY timestamp ASC
+            """
+            rows = await conn.fetch(query)
 
-def run_backtest(symbol, start_date, end_date, signal_func=get_combined_signal, trailing_pct=0.01):
-    df = get_ohlcv_1s_sync(symbol, start_date, end_date)
+            if not rows:
+                log(f"[{symbol}] ❌ Pas de données OHLCV en base pour backtest")
+                return pd.DataFrame()
 
-    if df.empty:
-        print(f"[{symbol}] ❌ Aucune donnée pour la période demandée.")
-        return []
+            df = pd.DataFrame([dict(row) for row in rows])
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
 
-    df_signals = signal_func(df.copy())
-    results = []
+            if df['timestamp'].dt.tz is None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize('Europe/Paris').dt.tz_convert('UTC')
+            else:
+                df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
 
-    position = None
+            df.set_index('timestamp', inplace=True)
 
-    for current_time in df_signals.index:
-        row = df_signals.loc[current_time]
-        signal = row.get('signal', None)
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        if position:
-            df_slice = df.loc[current_time:]
-            exit_price, exit_time = simulate_trailing_stop(
-                entry_price=position['entry_price'],
-                df_slice=df_slice,
-                side=position['side'],
-                trailing_pct=trailing_pct
-            )
+            return df
 
-            pnl = (exit_price - position['entry_price']) if position['side'] == 'long' else (position['entry_price'] - exit_price)
-            pnl_pct = pnl / position['entry_price']
+        except Exception as e:
+            log(f"[{symbol}] ❌ Erreur fetch OHLCV backtest: {e}")
+            traceback.print_exc()
+            return pd.DataFrame()
 
-            results.append({
-                'symbol': symbol,
-                'side': position['side'],
-                'entry_time': position['entry_time'],
-                'entry_price': position['entry_price'],
-                'exit_time': exit_time,
-                'exit_price': exit_price,
-                'pnl': pnl,
-                'pnl_pct': pnl_pct,
-            })
+async def run_backtest_async(symbol: str, interval: str, dsn: str):
+    try:
+        pool = await asyncpg.create_pool(dsn=dsn)
+        df = await fetch_ohlcv_from_db(pool, symbol)
+        await pool.close()
 
-            position = None  # On clôt la position
-            continue
+        if df.empty:
+            log(f"[{symbol}] ❌ Pas de données OHLCV")
+            return
 
-        # Pas de position ouverte
-        if signal == 'BUY':
-            position = {
-                'side': 'long',
-                'entry_time': current_time,
-                'entry_price': row['close']
-            }
-        elif signal == 'SELL':
-            position = {
-                'side': 'short',
-                'entry_time': current_time,
-                'entry_price': row['close']
-            }
+        log(f"[{symbol}] ✅ Début du backtest avec {len(df)} bougies")
 
-    return results
+        tracker = PositionTracker(symbol)
+        stats = {"total": 0, "win": 0, "loss": 0, "pnl": []}
 
+        for current_time in df.index:
+            current_df = df.loc[:current_time]
+            if len(current_df) < 100:
+                continue
 
-def backtest_main(symbols, start_date, end_date):
-    all_results = []
-    for symbol in symbols:
-        print(f"🔁 Backtest en cours pour {symbol}")
-        results = run_backtest(symbol, start_date, end_date)
-        all_results.extend(results)
+            signal = get_combined_signal(current_df)
 
-    df_results = pd.DataFrame(all_results)
-    if df_results.empty:
-        print("❌ Aucun trade simulé.")
-        return
+            current_price = current_df.iloc[-1]["close"]
 
-    analyze_results(df_results)
+            # Ouvre position si signal et aucune position
+            if signal in ("BUY", "SELL") and not tracker.is_open():
+                tracker.open(signal, current_price, current_time)
+
+            # Met à jour trailing stop si position ouverte
+            if tracker.is_open():
+                tracker.update_trailing_stop(current_price, current_time)
+
+                # Ferme si stop touché
+                if tracker.should_close(current_price):
+                    pnl = tracker.close(current_price, current_time)
+                    stats["total"] += 1
+                    stats["pnl"].append(pnl)
+                    if pnl >= 0:
+                        stats["win"] += 1
+                    else:
+                        stats["loss"] += 1
+
+        log(f"[{symbol}] 🔚 Backtest terminé")
+        if stats["total"] > 0:
+            pnl_total = sum(stats["pnl"])
+            pnl_moyen = pnl_total / stats["total"]
+            pnl_median = pd.Series(stats["pnl"]).median()
+            win_rate = stats["win"] / stats["total"] * 100
+            log(f"[{symbol}] 📊 Positions: {stats['total']} | Gagnantes: {stats['win']} | Perdantes: {stats['loss']}")
+            log(f"[{symbol}] 📈 PnL total: {pnl_total:.2f}% | moyen: {pnl_moyen:.2f}% | médian: {pnl_median:.2f}% | taux de succès: {win_rate:.2f}%")
+        else:
+            log(f"[{symbol}] ⚠️ Aucune position prise")
+
+    except Exception as e:
+        log(f"[{symbol}] 💥 Exception dans le backtest complet: {e}")
+        traceback.print_exc()
+
+def run_backtest(symbol, interval):
+    dsn = os.environ.get("PG_DSN")
+    asyncio.run(run_backtest_async(symbol, interval, dsn))
