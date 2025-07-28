@@ -140,7 +140,7 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="Mode simulation sans exécuter de trade")
     parser.add_argument("--backtest", type=str, help="Exécuter un backtest (ex: 1h, 1d, 1w)")
     parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
-
+    parser.add_argument("--strategie", choices=["Default", "Trix", "Combo"], default="Default", help="Stratégie de signal à utiliser")
     args = parser.parse_args()
 
     try:
