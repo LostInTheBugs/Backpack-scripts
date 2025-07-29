@@ -75,7 +75,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
             #nl_percent = market_data.get("pnl", 0.0)
             pnl_usdc = await get_real_pnl(symbol)
-            pnl_percent = (pnl_usdc / POSITION_SIZE_USDC) * 100
+            pnl_percent = (pnl_usdc / POSITION_AMOUNT_USDC) * 100
 
             max_pnl = MAX_PNL_TRACKER.get(symbol, pnl_percent)
             if pnl_percent > max_pnl:
