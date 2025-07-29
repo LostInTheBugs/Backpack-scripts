@@ -43,33 +43,14 @@ async def get_open_positions():
 
 from utils.get_market import get_market  # tu dois avoir une fonction async pour ça
 
-async def get_real_pnl(symbol: str) -> float:
-    try:
-        positions = account.get_open_positions()
-        for p in positions:
-            if p.get("s") == symbol and float(p.get("q", 0)) != 0:
-                entry_price = float(p.get("B", 0))
-                quantity = float(p.get("q", 0))
-                side = "long" if quantity > 0 else "short"
-                abs_quantity = abs(quantity)
-
-                # Récupération du prix actuel du marché
-                ticker = await get_market(symbol)
-                if not ticker or "lastPrice" not in ticker:
-                    print(f"⚠️ Prix actuel indisponible pour {symbol}")
-                    return 0.0
-                current_price = float(ticker["lastPrice"])
-
-                if side == "long":
-                    pnl = (current_price - entry_price) * abs_quantity
-                else:
-                    pnl = (entry_price - current_price) * abs_quantity
-
-                print(f"DEBUG get_real_pnl: symbol={symbol}, entry={entry_price}, current={current_price}, q={quantity}, pnl={pnl:.4f}")
-                return pnl
-        print(f"DEBUG get_real_pnl: symbol={symbol} pas de position ouverte")
-        return 0.0
-    except Exception as e:
-        print(f"Erreur get_real_pnl(): {e}")
-        return 0.0
+def get_real_pnl(symbol):
+    from backpack_private.auth import get_private_client
+    client = get_private_client()
+    positions = client.get_positions()
+    for position in positions:
+        if position["productSymbol"] == symbol and float(position["size"]) != 0:
+            unrealized_pnl = float(position["unrealizedPnl"])
+            notional_value = float(position["notionalValue"])
+            return unrealized_pnl, notional_value
+    return 0.0, 1.0  # éviter division par 0
 
