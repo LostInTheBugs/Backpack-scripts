@@ -43,14 +43,14 @@ async def get_open_positions():
 
 from utils.get_market import get_market  # tu dois avoir une fonction async pour ça
 
-def get_real_pnl(symbol):
-    from backpack_private.auth import get_private_client
-    client = get_private_client()
-    positions = client.get_positions()
-    for position in positions:
-        if position["productSymbol"] == symbol and float(position["size"]) != 0:
-            unrealized_pnl = float(position["unrealizedPnl"])
-            notional_value = float(position["notionalValue"])
-            return unrealized_pnl, notional_value
-    return 0.0, 1.0  # éviter division par 0
+def get_real_pnl(symbol: str):
+    account = Account(public_key=public_key, secret_key=secret_key)
+    positions = account.get_open_positions()
 
+    for position in positions:
+        if position["symbol"] == symbol and float(position.get("netQuantity", 0)) != 0:
+            pnl_unrealized = float(position.get("pnlUnrealized", 0))
+            notional = float(position.get("netExposureNotional", 1))  # <--- clé importante ici
+            return pnl_unrealized, notional
+
+    return 0.0, 1.0  # fallback pour éviter division par zéro
