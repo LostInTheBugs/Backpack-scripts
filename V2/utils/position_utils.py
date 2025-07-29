@@ -41,19 +41,35 @@ async def get_open_positions():
         print(f"⚠️ Erreur get_open_positions(): {e}")
         return {}
 
-def get_real_pnl(symbol: str) -> float:
+from utils.get_market import get_market  # tu dois avoir une fonction async pour ça
+
+async def get_real_pnl(symbol: str) -> float:
     try:
         positions = account.get_open_positions()
         for p in positions:
             if p.get("s") == symbol and float(p.get("q", 0)) != 0:
-                pnl = float(p.get("P", 0))  # unrealized PnL
-                entry_price = float(p.get("B", 0))  # entry price
-                quantity = float(p.get("q", 0))  # net quantity
+                entry_price = float(p.get("B", 0))
+                quantity = float(p.get("q", 0))
                 side = "long" if quantity > 0 else "short"
-                print(f"DEBUG get_real_pnl: symbol={symbol}, unrealizedPnl={pnl}, entryPrice={entry_price}, netQuantity={quantity}, side={side}")
+                abs_quantity = abs(quantity)
+
+                # Récupération du prix actuel du marché
+                ticker = await get_market(symbol)
+                if not ticker or "lastPrice" not in ticker:
+                    print(f"⚠️ Prix actuel indisponible pour {symbol}")
+                    return 0.0
+                current_price = float(ticker["lastPrice"])
+
+                if side == "long":
+                    pnl = (current_price - entry_price) * abs_quantity
+                else:
+                    pnl = (entry_price - current_price) * abs_quantity
+
+                print(f"DEBUG get_real_pnl: symbol={symbol}, entry={entry_price}, current={current_price}, q={quantity}, pnl={pnl:.4f}")
                 return pnl
         print(f"DEBUG get_real_pnl: symbol={symbol} pas de position ouverte")
         return 0.0
     except Exception as e:
         print(f"Erreur get_real_pnl(): {e}")
         return 0.0
+
