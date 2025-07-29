@@ -14,7 +14,7 @@ from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from utils.position_utils import get_real_pnl
 
 INTERVAL = "1s"
-POSITION_AMOUNT_USDC = 25
+POSITION_AMOUNT_USDC = 50
 LEVERAGE = 2
 TRAILING_STOP_TRIGGER = 0.5  # stop si le PnL baisse de 0.5% depuis le max
 

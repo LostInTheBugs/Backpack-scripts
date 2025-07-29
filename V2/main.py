@@ -26,9 +26,6 @@ from backtest.backtest_engine2 import run_backtest, run_backtest_async
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
-INTERVAL = "1s"
-POSITION_AMOUNT_USDC = 50
-
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
     if auto_select:
