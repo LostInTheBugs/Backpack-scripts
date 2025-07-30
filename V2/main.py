@@ -106,10 +106,10 @@ async def async_main(args):
     if args.auto_select:
         print("🔄 Génération du fichier symbol.lst via fetch_top_n_volatility_volume.py ...")
         if args.no_limit:
-            ret = subprocess.run(["python3", "fetch_top_n_volatility_volume.py", "--no-limit"])
+            ret = subprocess.run(["python3", "../ScriptDatabase/fetch_top_n_volatility_volume.py", "--no-limit"])
         else:
             # Tu peux ajuster ici le nombre par défaut, ex 10
-            ret = subprocess.run(["python3", "fetch_top_n_volatility_volume.py", "10"])
+            ret = subprocess.run(["python3", "../ScriptDatabase/fetch_top_n_volatility_volume.py", "10"])
 
         if ret.returncode != 0:
             print("❌ Erreur lors de la génération de symbol.lst, arrêt.")
