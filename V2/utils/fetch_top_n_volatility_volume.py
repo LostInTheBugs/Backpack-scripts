@@ -4,7 +4,7 @@ import sys
 API_URL = "https://api.backpack.exchange/api/v1/tickers"
 OUTPUT_FILE = "symbol.lst"
 
-def fetch_top_n_volatility_volume(n):
+def fetch_top_n_volatility_volume(n=None):
     try:
         resp = requests.get(API_URL)
         resp.raise_for_status()
@@ -25,11 +25,11 @@ def fetch_top_n_volatility_volume(n):
         except Exception:
             continue
 
-    # 💡 Filtrer ceux avec volume < 1 million
+    # Filtrer ceux avec volume < 1 million
     tickers_data = [
         (symbol, price_change_percent, volume)
         for symbol, price_change_percent, volume in tickers_data
-        if volume >= 200_000
+        if volume >= 1_000_000
     ]
 
     if not tickers_data:
@@ -45,23 +45,32 @@ def fetch_top_n_volatility_volume(n):
         scored_tickers.append((symbol, score))
 
     scored_tickers.sort(key=lambda x: x[1], reverse=True)
-    top_n = scored_tickers[:n]
+
+    if n is None:
+        top_n = scored_tickers  # Pas de limite
+    else:
+        top_n = scored_tickers[:n]
 
     with open(OUTPUT_FILE, "w") as f:
         for symbol, score in top_n:
             f.write(symbol + "\n")
 
-    print(f"✅ Écrit {len(top_n)} symboles les plus volatils (volume ≥ 200k) dans {OUTPUT_FILE}")
+    print(f"✅ Écrit {len(top_n)} symboles les plus volatils (volume ≥ 1M) dans {OUTPUT_FILE}")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(f"Usage: python3 {sys.argv[0]} N")
-        sys.exit(1)
-
-    try:
-        n = int(sys.argv[1])
-    except ValueError:
-        print("N doit être un entier")
+    # Parse argument avec --no-limit support
+    if len(sys.argv) == 2:
+        arg = sys.argv[1]
+        if arg == "--no-limit":
+            n = None
+        else:
+            try:
+                n = int(arg)
+            except ValueError:
+                print("N doit être un entier ou --no-limit")
+                sys.exit(1)
+    else:
+        print(f"Usage: python3 {sys.argv[0]} N | --no-limit")
         sys.exit(1)
 
     fetch_top_n_volatility_volume(n)

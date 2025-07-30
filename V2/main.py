@@ -9,7 +9,9 @@ import asyncpg
 import signal
 import pytz
 import sys
+import subprocess
 
+from ScriptDatabase.pgsql import get_symbols, get_symbol_info, get_symbol_info_sync
 from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync, fetch_ohlcv_1s
 from utils.logger import log
 from utils.position_utils import position_already_open, get_open_positions
@@ -29,16 +31,11 @@ public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
 
-async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
+async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, args=None):
     if auto_select:
-        log("🔍 Mode auto-select actif — sélection des symboles les plus volatils ET avec volume")
-        try:
-            #symbols = fetch_top_n_volatility_volume(n=len(symbols))
-            symbols = fetch_top_n_volatility_volume(n=0)
-            log(f"✅ Symboles sélectionnés automatiquement : {symbols}")
-        except Exception as e:
-            log(f"💥 Erreur sélection symboles auto: {e}")
-            return
+        log("🔍 Mode auto-select actif — chargement des symboles depuis symbol.lst")
+        symbols = load_symbols_from_file("symbol.lst")
+        log(f"✅ Symboles chargés : {symbols}")
 
     while True:
         active_symbols = []
@@ -100,6 +97,22 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
 
 async def async_main(args):
+    # Génération dynamique de la liste des symboles avant démarrage
+    if args.auto_select:
+        try:
+            if args.no_limit:
+                subprocess.run(
+                    ["python3", "fetch_top_n_volatility_volume.py", "--no-limit"], check=True
+                )
+            else:
+                subprocess.run(
+                    ["python3", "fetch_top_n_volatility_volume.py", "10"], check=True
+                )
+            log("✅ Génération du fichier symbol.lst terminée")
+        except Exception as e:
+            log(f"💥 Erreur lors de la génération de symbol.lst : {e}")
+            return
+
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
 
     loop = asyncio.get_running_loop()
@@ -125,7 +138,7 @@ async def async_main(args):
             if args.symbols:
                 symbols = args.symbols.split(",")
                 task = asyncio.create_task(
-                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
+                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select, args=args)
                 )
                 stop_task = asyncio.create_task(stop_event.wait())
                 await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
@@ -150,6 +163,7 @@ if __name__ == "__main__":
     parser.add_argument("--backtest", type=int, help="Durée du backtest en heures (ex: 1, 2, 24)")
     parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
     parser.add_argument('--strategie', type=str, default='Default', help='Nom de la stratégie (Default, Trix, Combo, Auto, etc.)')
+    parser.add_argument("--no-limit", action="store_true", help="Désactive la limite du nombre de symboles")
     args = parser.parse_args()
 
     # Import dynamique de la stratégie
