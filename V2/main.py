@@ -45,7 +45,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         ignored_symbols = []
 
         for symbol in symbols:
-            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=120):
                 active_symbols.append(symbol)
                 await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
             else:
