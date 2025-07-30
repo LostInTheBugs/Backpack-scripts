@@ -13,13 +13,14 @@ from execute.close_position_percent import close_position_percent
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from utils.position_utils import get_real_pnl
 
+from signals.strategy_selector import get_strategy_for_market  # Ajouté
+
 INTERVAL = "1s"
 POSITION_AMOUNT_USDC = 50
 LEVERAGE = 2
 TRAILING_STOP_TRIGGER = 0.5  # stop si le PnL baisse de 0.5% depuis le max
 
 MAX_PNL_TRACKER = {}  # Tracker du max PnL par symbole
-
 
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
@@ -33,20 +34,14 @@ def import_strategy_signal(strategy):
         from signals.macd_rsi_breakout import get_combined_signal
     return get_combined_signal
 
-
-
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args):
-    get_combined_signal = import_strategy_signal(args.strategie)
-    print(f"📊 Stratégie sélectionnée : {args.strategie}")
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
 
-        # Vérifie que la table locale a des données récentes (moins de 60s)
         if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
             log(f"[{symbol}] Ignoré : pas de données récentes dans la BDD locale")
             return
 
-        # Récupère OHLCV 1s depuis la BDD locale
         end_ts = datetime.now(timezone.utc)
         start_ts = end_ts - timedelta(seconds=60)
         df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
@@ -55,25 +50,26 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[{symbol}] ❌ Pas de données 1s récupérées depuis la BDD locale")
             return
 
-        # Préparation DataFrame
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         if df['timestamp'].dt.tz is None:
             df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
         df.set_index('timestamp', inplace=True)
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
 
-        # Calcul du signal
-        signal = args.get_combined_signal(df)
+        # Sélection dynamique ou fixe de la stratégie
+        if args.strategie == "Auto":
+            market_condition, selected_strategy = get_strategy_for_market(df)
+            log(f"[{symbol}] 📊 Marché détecté : {market_condition.upper()} — Stratégie sélectionnée : {selected_strategy}")
+        else:
+            selected_strategy = args.strategie
+            log(f"[{symbol}] 📊 Stratégie sélectionnée manuellement : {selected_strategy}")
+
+        get_combined_signal = import_strategy_signal(selected_strategy)
+
+        signal = get_combined_signal(df)
         log(f"[{symbol}] 🎯 Signal détecté : {signal}")
 
-        # Gestion position ouverte
         if position_already_open(symbol):
-            #arket_data = await get_market(symbol)
-            #f not market_data:
-            #   log(f"[{symbol}] ⚠️ Données marché non trouvées, stop trailing ignoré")
-            #   return
-
-            #nl_percent = market_data.get("pnl", 0.0)
             pnl_usdc, notional_value = get_real_pnl(symbol)
             pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100
 
@@ -97,7 +93,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[{symbol}] ⚠️ Position déjà ouverte — Ignorée (sauf stop suiveur)")
             return
 
-        # Pas de position ouverte : exécution si signal BUY ou SELL
         if signal in ["BUY", "SELL"]:
             direction = "long" if signal == "BUY" else "short"
             if dry_run:
