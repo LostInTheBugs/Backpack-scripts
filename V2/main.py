@@ -54,12 +54,16 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             log(f"✅ Symboles actifs ({len(active_symbols)}) : {active_symbols}")
         if ignored_symbols:
             ignored_details = []
-            for sym in ignored_symbols:
-                last_ts = await get_last_timestamp(pool, sym)
-                if last_ts is None:
-                    ignored_details.append(f"{sym} (table absente)")
-                else:
-                    ignored_details.append(f"{sym} (dernière donnée : {last_ts.isoformat()})")
+        for sym in ignored_symbols:
+            last_ts = await get_last_timestamp(pool, sym)
+            if last_ts is None:
+                ignored_details.append(f"{sym} (table absente)")
+            else:
+                now = datetime.timezone.utc().replace(tzinfo=pytz.utc)
+                delay = now - last_ts
+                seconds = int(delay.total_seconds())
+                human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
+                ignored_details.append(f"{sym} (inactif depuis {human_delay})")
             log(f"⛔ Symboles ignorés ({len(ignored_symbols)}) : {ignored_details}")
         if not active_symbols:
             log("⚠️ Aucun symbole actif pour cette itération.")
