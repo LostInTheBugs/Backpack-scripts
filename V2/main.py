@@ -16,7 +16,7 @@ from utils.position_utils import position_already_open, get_open_positions
 from utils.ohlcv_utils import get_ohlcv_df
 from utils.get_market import get_market
 from utils.public import format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
-from utils.fetch_top_volatility_symbols import fetch_top_n_volatility
+from utils.fetch_top_volatility_symbols import fetch_top_n_volatility_volume
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from live.live_engine import handle_live_symbol
@@ -29,12 +29,11 @@ public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
 
-
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
     if auto_select:
-        log("🔍 Mode auto-select actif — sélection des symboles les plus volatils")
+        log("🔍 Mode auto-select actif — sélection des symboles les plus volatils ET avec volume")
         try:
-            symbols = fetch_top_n_volatility(n=len(symbols))
+            symbols = fetch_top_n_volatility_volume(n=len(symbols))
             log(f"✅ Symboles sélectionnés automatiquement : {symbols}")
         except Exception as e:
             log(f"💥 Erreur sélection symboles auto: {e}")
@@ -66,7 +65,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                     seconds = int(delay.total_seconds())
                     human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
                     ignored_details.append(f"{sym} (inactif depuis {human_delay})")
-            
+
             if ignored_details:
                 log(f"⛔ Symboles ignorés ({len(ignored_details)}) : {ignored_details}")
 
@@ -74,6 +73,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             log("⚠️ Aucun symbole actif pour cette itération.")
 
         await asyncio.sleep(1)
+
 
 async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
     last_modified = None
@@ -96,6 +96,7 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
             traceback.print_exc()
 
         await asyncio.sleep(1)
+
 
 async def async_main(args):
     pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
@@ -138,6 +139,7 @@ async def async_main(args):
     finally:
         await pool.close()
         print("Pool de connexion fermé, fin du programme.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bot for Backpack Exchange")
