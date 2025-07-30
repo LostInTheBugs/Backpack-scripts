@@ -33,7 +33,8 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
     if auto_select:
         log("🔍 Mode auto-select actif — sélection des symboles les plus volatils ET avec volume")
         try:
-            symbols = fetch_top_n_volatility_volume(n=len(symbols))
+            #symbols = fetch_top_n_volatility_volume(n=len(symbols))
+            symbols = fetch_top_n_volatility_volume(n=0)
             log(f"✅ Symboles sélectionnés automatiquement : {symbols}")
         except Exception as e:
             log(f"💥 Erreur sélection symboles auto: {e}")
