@@ -162,20 +162,30 @@ async def periodic_cleanup(pool, get_symbols_func, retention_days=RETENTION_DAYS
                 await delete_old_data(conn, symbol, retention_days)
         await asyncio.sleep(24 * 3600)  # 24h
 
-async def read_symbols_file() -> list[str]:
-    if not os.path.exists(SYMBOLS_FILE):
-        print(f"⚠️ Fichier {SYMBOLS_FILE} introuvable")
+async def fetch_all_symbols() -> list[str]:
+    import aiohttp
+
+    url = "https://api.backpack.exchange/api/v1/tickers"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    print(f"❌ Erreur API Backpack : HTTP {resp.status}")
+                    return []
+                data = await resp.json()
+    except Exception as e:
+        print(f"❌ Exception lors de la récupération des symboles : {e}")
         return []
-    with open(SYMBOLS_FILE, "r") as f:
-        symbols = [line.strip() for line in f if line.strip()]
+
+    symbols = [t["symbol"] for t in data if "_PERP" in t.get("symbol", "")]
     return symbols
 
-async def monitor_symbols(pool):
+async def monitor_symbols(pool, get_symbols_func):
     current_tasks = {}
     current_symbols = set()
 
     while True:
-        new_symbols = set(await read_symbols_file())
+        new_symbols = set(await get_symbols_func())
 
         # Stop subscriptions for removed symbols
         removed = current_symbols - new_symbols
@@ -217,9 +227,8 @@ async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
 
     # Lance la surveillance du fichier et la purge
-    cleanup_task = asyncio.create_task(periodic_cleanup(pool, read_symbols_file))
-    monitor_task = asyncio.create_task(monitor_symbols(pool))
-
+    cleanup_task = asyncio.create_task(periodic_cleanup(pool, fetch_all_symbols))
+    monitor_task = asyncio.create_task(monitor_symbols(pool, fetch_all_symbols))
     await asyncio.gather(cleanup_task, monitor_task)
 
 if __name__ == "__main__":
