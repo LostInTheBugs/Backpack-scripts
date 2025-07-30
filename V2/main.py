@@ -102,7 +102,24 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
 
 async def async_main(args):
-    pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
+        # 1. Générer symbol.lst avant tout si --auto-select
+    if args.auto_select:
+        print("🔄 Génération du fichier symbol.lst via fetch_top_n_volatility_volume.py ...")
+        if args.no_limit:
+            ret = subprocess.run(["python3", "fetch_top_n_volatility_volume.py", "--no-limit"])
+        else:
+            # Tu peux ajuster ici le nombre par défaut, ex 10
+            ret = subprocess.run(["python3", "fetch_top_n_volatility_volume.py", "10"])
+
+        if ret.returncode != 0:
+            print("❌ Erreur lors de la génération de symbol.lst, arrêt.")
+            return
+
+        if not os.path.isfile("symbol.lst"):
+            print("❌ Fichier symbol.lst non trouvé après génération, arrêt.")
+            return
+
+        pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
 
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
