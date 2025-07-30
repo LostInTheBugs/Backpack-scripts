@@ -3,7 +3,7 @@ import os
 import time
 import traceback
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 import asyncpg
 import signal
@@ -59,7 +59,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             if last_ts is None:
                 ignored_details.append(f"{sym} (table absente)")
             else:
-                now = datetime.timezone.utc().replace(tzinfo=pytz.utc)
+                now = datetime.now(timezone.utc)
                 delay = now - last_ts
                 seconds = int(delay.total_seconds())
                 human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
