@@ -29,7 +29,7 @@ def fetch_top_n_volatility_volume(n):
     tickers_data = [
         (symbol, price_change_percent, volume)
         for symbol, price_change_percent, volume in tickers_data
-        if volume >= 1_000_000
+        if volume >= 200_000
     ]
 
     if not tickers_data:
@@ -51,7 +51,7 @@ def fetch_top_n_volatility_volume(n):
         for symbol, score in top_n:
             f.write(symbol + "\n")
 
-    print(f"✅ Écrit {len(top_n)} symboles les plus volatils (volume ≥ 1M) dans {OUTPUT_FILE}")
+    print(f"✅ Écrit {len(top_n)} symboles les plus volatils (volume ≥ 200k) dans {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
