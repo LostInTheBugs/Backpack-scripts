@@ -63,3 +63,19 @@ def strategy_auto(df):
             return 'WAIT'
 
     return 'WAIT'
+
+def get_strategy_for_market(df):
+    """
+    Retourne une stratégie recommandée selon le contexte détecté.
+    """
+    df = prepare_indicators(df)
+    context = detect_market_context(df)
+
+    if context == 'bull':
+        strategy = "Trix"       # ou ta stratégie préférée en bull
+    elif context == 'bear':
+        strategy = "Breakout"   # par ex. stratégie breakout agressive
+    else:
+        strategy = "Combo"      # mélange pour les marchés en range
+
+    return context, strategy
