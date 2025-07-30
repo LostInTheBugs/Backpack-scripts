@@ -25,30 +25,33 @@ def fetch_top_n_volatility_volume(n):
         except Exception:
             continue
 
+    # 💡 Filtrer ceux avec volume < 1 million
+    tickers_data = [
+        (symbol, price_change_percent, volume)
+        for symbol, price_change_percent, volume in tickers_data
+        if volume >= 1_000_000
+    ]
+
     if not tickers_data:
-        print("Aucun ticker valide trouvé")
+        print("❌ Aucun ticker avec un volume >= 1 million")
         sys.exit(1)
 
-    # Trouver max volume pour normalisation
     max_volume = max(t[2] for t in tickers_data)
 
-    # Calcul score = volatilité * volume normalisé
     scored_tickers = []
     for symbol, volat, vol in tickers_data:
         volume_norm = vol / max_volume if max_volume > 0 else 0
         score = volat * volume_norm
         scored_tickers.append((symbol, score))
 
-    # Tri par score décroissant
     scored_tickers.sort(key=lambda x: x[1], reverse=True)
-
     top_n = scored_tickers[:n]
 
     with open(OUTPUT_FILE, "w") as f:
         for symbol, score in top_n:
             f.write(symbol + "\n")
 
-    print(f"✅ Écrit {len(top_n)} symboles les plus volatils et avec volume dans {OUTPUT_FILE}")
+    print(f"✅ Écrit {len(top_n)} symboles les plus volatils (volume ≥ 1M) dans {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
