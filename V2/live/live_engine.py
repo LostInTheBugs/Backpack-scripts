@@ -14,6 +14,7 @@ from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from utils.position_utils import get_real_pnl
 from signals.strategy_selector import strategy_auto, strategy_autosoft
 from signals.strategy_selector import get_strategy_for_market  # Ajouté
+from signals.range_soft_signal import get_combined_signal as range_soft_signal
 
 INTERVAL = "1s"
 POSITION_AMOUNT_USDC = 50
@@ -32,6 +33,8 @@ def import_strategy_signal(strategy):
         from signals.macd_rsi_bo_trix import get_combined_signal
     elif strategy == "Range":
         from signals.range_signal import get_combined_signal
+    elif strategy == "RangeSoft":
+        from signals.range_soft_signal import get_combined_signal
     elif strategy == "AutoSoft":
         from signals.strategy_selector import strategy_autosoft as get_combined_signal
     else:
