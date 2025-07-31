@@ -42,7 +42,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
 
-        if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+        if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=600):
             log(f"[{symbol}] Ignoré : pas de données récentes dans la BDD locale")
             return
 
