@@ -11,9 +11,8 @@ import pytz
 import sys
 import subprocess
 
-# Import corrigé, on enlève le module introuvable ScriptDatabase.pgsql
-from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync  # à adapter selon besoin
-from ScriptDatabase.pgsql_markets import update_markets_table  # si tu en as besoin
+from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync
+from ScriptDatabase.pgsql_markets import update_markets_table
 from utils.logger import log
 from utils.position_utils import position_already_open, get_open_positions
 from utils.ohlcv_utils import get_ohlcv_df
@@ -27,22 +26,27 @@ from backtest.backtest_engine2 import run_backtest, run_backtest_async
 from utils.logger import utc_to_local
 from signals.strategy_selector import strategy_auto, detect_market_context
 
-# Configuration des clés API pour Backpack Exchange
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
 
 
-async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False):
-    if auto_select:
-        log("🔍 Mode auto-select actif — sélection des symboles les plus volatils ET avec volume")
-        try:
-            symbols = fetch_top_n_volatility_volume(n=len(symbols))
-            log(f"✅ Symboles sélectionnés automatiquement : {symbols}")
-        except Exception as e:
-            log(f"💥 Erreur sélection symboles auto: {e}")
-            return
-
+async def update_symbols_periodically(symbols_container: dict, n: int = 10, interval_sec: int = 300):
     while True:
+        try:
+            new_symbols = fetch_top_n_volatility_volume(n=n)
+            if new_symbols:
+                symbols_container['list'] = new_symbols
+                log(f"🔄 Mise à jour symboles auto : {new_symbols}")
+        except Exception as e:
+            log(f"❌ Erreur maj symboles auto: {e}")
+        await asyncio.sleep(interval_sec)
+
+
+async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
+    while True:
+        if auto_select and symbols_container:
+            symbols = symbols_container.get('list', [])
+
         active_symbols = []
         ignored_symbols = []
 
@@ -102,24 +106,7 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
 
 async def async_main(args):
-        # 1. Générer symbol.lst avant tout si --auto-select
-    if args.auto_select:
-        print("🔄 Génération du fichier symbol.lst via fetch_top_n_volatility_volume.py ...")
-        if args.no_limit:
-            ret = subprocess.run(["python3", "V2/utils/fetch_top_n_volatility_volume.py", "--no-limit"])
-        else:
-            # Tu peux ajuster ici le nombre par défaut, ex 10
-            ret = subprocess.run(["python3", "V2/utils/fetch_top_n_volatility_volume.py", "10"])
-
-        if ret.returncode != 0:
-            print("❌ Erreur lors de la génération de symbol.lst, arrêt.")
-            return
-
-        if not os.path.isfile("symbol.lst"):
-            print("❌ Fichier symbol.lst non trouvé après génération, arrêt.")
-            return
-
-        pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
+    pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
 
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -141,27 +128,30 @@ async def async_main(args):
                 log(f"[{symbol}] 🧪 Lancement du backtest {args.backtest}h avec stratégie {args.strategie}")
                 await run_backtest_async(symbol, args.backtest, os.environ.get("PG_DSN"), args.strategie)
         else:
-            if args.symbols:
+            if args.auto_select:
+                symbols_container = {'list': fetch_top_n_volatility_volume(n=10 if not args.no_limit else None)}
+                updater_task = asyncio.create_task(update_symbols_periodically(symbols_container, n=10 if not args.no_limit else None))
+                task = asyncio.create_task(
+                    main_loop([], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container)
+                )
+            elif args.symbols:
                 symbols = args.symbols.split(",")
                 task = asyncio.create_task(
-                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=args.auto_select)
+                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run)
                 )
-                stop_task = asyncio.create_task(stop_event.wait())
-                await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
             else:
                 task = asyncio.create_task(
                     watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
                 )
-                stop_task = asyncio.create_task(stop_event.wait())
-                await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
+
+            stop_task = asyncio.create_task(stop_event.wait())
+            await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
     except Exception:
         traceback.print_exc()
     finally:
         await pool.close()
         print("Pool de connexion fermé, fin du programme.")
 
-
-# ... tout le début du fichier inchangé ...
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bot for Backpack Exchange")
@@ -174,24 +164,18 @@ if __name__ == "__main__":
     parser.add_argument("--no-limit", action="store_true", help="Désactive la limite du nombre de symboles")
     args = parser.parse_args()
 
-    # Import dynamique de la stratégie
     try:
         if args.strategie == "Trix":
             from signals.trix_only_signal import get_combined_signal
             args.get_combined_signal = get_combined_signal
-
         elif args.strategie == "Combo":
             from signals.macd_rsi_bo_trix import get_combined_signal
             args.get_combined_signal = get_combined_signal
-
         elif args.strategie == "RangeSoft":
             from signals.range_soft_signal import get_combined_signal
             args.get_combined_signal = get_combined_signal
-
         elif args.strategie in ["Auto", "AutoSoft", "Range"]:
-            # Géré directement dans strategy_selector
             args.get_combined_signal = None
-
         else:
             from signals.macd_rsi_breakout import get_combined_signal
             args.get_combined_signal = get_combined_signal
@@ -203,4 +187,3 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
         sys.exit(1)
-
