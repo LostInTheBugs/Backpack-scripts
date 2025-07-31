@@ -161,6 +161,8 @@ async def async_main(args):
         print("Pool de connexion fermé, fin du programme.")
 
 
+# ... tout le début du fichier inchangé ...
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bot for Backpack Exchange")
     parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
@@ -168,7 +170,7 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="Mode simulation sans exécuter de trade")
     parser.add_argument("--backtest", type=int, help="Durée du backtest en heures (ex: 1, 2, 24)")
     parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
-    parser.add_argument('--strategie', type=str, default='Default', help='Nom de la stratégie (Default, Trix, Combo, Auto, etc.)')
+    parser.add_argument('--strategie', type=str, default='Default', help='Nom de la stratégie (Default, Trix, Combo, Auto, Range, RangeSoft, etc.)')
     parser.add_argument("--no-limit", action="store_true", help="Désactive la limite du nombre de symboles")
     args = parser.parse_args()
 
@@ -180,6 +182,10 @@ if __name__ == "__main__":
 
         elif args.strategie == "Combo":
             from signals.macd_rsi_bo_trix import get_combined_signal
+            args.get_combined_signal = get_combined_signal
+
+        elif args.strategie == "RangeSoft":
+            from signals.range_soft_signal import get_combined_signal
             args.get_combined_signal = get_combined_signal
 
         elif args.strategie in ["Auto", "AutoSoft", "Range"]:
