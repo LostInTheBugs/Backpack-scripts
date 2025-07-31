@@ -54,7 +54,7 @@ def format_table_name(symbol: str) -> str:
     parts = symbol.lower().split("_")
     return "ohlcv_" + "__".join(parts)
 
-async def check_table_and_fresh_data(pool, symbol, max_age_seconds=60):
+async def check_table_and_fresh_data(pool, symbol, max_age_seconds=600):
     table_name = format_table_name(symbol)
     async with pool.acquire() as conn:
         try:
