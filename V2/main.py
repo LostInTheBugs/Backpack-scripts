@@ -182,9 +182,10 @@ if __name__ == "__main__":
             from signals.macd_rsi_bo_trix import get_combined_signal
             args.get_combined_signal = get_combined_signal
 
-        elif args.strategie == "Auto":
-            # Pas besoin d’import de signal ; utilisera strategy_auto()
-            args.get_combined_signal = None  # Géré directement dans handle_live_symbol()
+        elif args.strategie in ["Auto", "AutoSoft", "Range"]:
+            # Géré directement dans strategy_selector
+            args.get_combined_signal = None
+
         else:
             from signals.macd_rsi_breakout import get_combined_signal
             args.get_combined_signal = get_combined_signal
@@ -196,3 +197,4 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
         sys.exit(1)
+

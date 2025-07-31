@@ -2,9 +2,6 @@ import pandas as pd
 import ta
 
 def prepare_indicators(df):
-    """
-    Ajoute les indicateurs techniques nécessaires au DataFrame.
-    """
     df['EMA20'] = df['close'].ewm(span=20).mean()
     df['EMA50'] = df['close'].ewm(span=50).mean()
     df['EMA200'] = df['close'].ewm(span=200).mean()
@@ -13,6 +10,8 @@ def prepare_indicators(df):
     macd = ta.trend.MACD(close=df['close'])
     df['MACD'] = macd.macd()
     df['MACD_signal'] = macd.macd_signal()
+
+    df['TRIX'] = ta.trend.trix(close=df['close'], window=15)
 
     return df
 
@@ -29,13 +28,10 @@ def detect_market_context(df):
     else:
         return 'range'
 
-def strategy_auto(df):
+def strategy_auto(df, mode='normal'):
     df = prepare_indicators(df)
 
-    # Ajout TRIX
-    df['TRIX'] = ta.trend.trix(close=df['close'], window=15)
     trix = df['TRIX'].iloc[-1]
-
     context = detect_market_context(df)
 
     price = df['close'].iloc[-1]
@@ -45,45 +41,49 @@ def strategy_auto(df):
     high = df['high'].rolling(window=20).max().iloc[-1]
     low = df['low'].rolling(window=20).min().iloc[-1]
 
-    breakout_thresh = 0.002  # 0.2%
+    # Seuils adaptatifs
+    if mode == 'soft':
+        breakout_thresh = 0.004  # 0.4% (vs 0.2%)
+        trix_buy = 0.03
+        trix_sell = -0.03
+        rsi_buy = 50
+        rsi_sell = 50
+    else:
+        breakout_thresh = 0.002
+        trix_buy = 0.1
+        trix_sell = -0.1
+        rsi_buy = 55
+        rsi_sell = 45
+
     context_info = (
-        f"📊 Context={context} | Price={price:.4f} | High={high:.4f} | Low={low:.4f} | "
+        f"📊 Mode={mode} | Context={context} | Price={price:.4f} | High={high:.4f} | Low={low:.4f} | "
         f"RSI={rsi:.2f} | MACD={macd:.5f} | Signal={macd_signal:.5f} | TRIX={trix:.5f}"
     )
 
-    # --- BULL ---
     if context == 'bull':
-        if (
-            (price > high * (1 - breakout_thresh) and macd > macd_signal and rsi > 55)
-            or (trix > 0.1)
-        ):
-            print("🐂 BUY (Bull Market) | " + context_info)
+        if (price > high * (1 - breakout_thresh) and macd > macd_signal and rsi > rsi_buy) or (trix > trix_buy):
+            print("🐂 BUY (Bull) | " + context_info)
             return 'BUY'
         else:
             print("🐂 HOLD (Bull) | " + context_info)
             return 'HOLD'
 
-    # --- BEAR ---
     elif context == 'bear':
-        if (
-            (price < low * (1 + breakout_thresh) and macd < macd_signal and rsi < 45)
-            or (trix < -0.1)
-        ):
-            print("🐻 SELL (Bear Market) | " + context_info)
+        if (price < low * (1 + breakout_thresh) and macd < macd_signal and rsi < rsi_sell) or (trix < trix_sell):
+            print("🐻 SELL (Bear) | " + context_info)
             return 'SELL'
         else:
             print("🐻 HOLD (Bear) | " + context_info)
             return 'HOLD'
 
-    # --- RANGE ---
     elif context == 'range':
         support = low
         resistance = high
         if price < support * 1.01 and rsi < 35 and trix > 0:
-            print("🔄 BUY (Range, rebond bas + TRIX) | " + context_info)
+            print("🔄 BUY (Range) | " + context_info)
             return 'BUY'
         elif price > resistance * 0.99 and rsi > 65 and trix < 0:
-            print("🔄 SELL (Range, rebond haut + TRIX) | " + context_info)
+            print("🔄 SELL (Range) | " + context_info)
             return 'SELL'
         else:
             print("🔄 HOLD (Range) | " + context_info)
@@ -91,7 +91,8 @@ def strategy_auto(df):
 
     return 'HOLD'
 
-
+def strategy_autosoft(df):
+    return strategy_auto(df, mode='soft')
 
 def get_strategy_for_market(df):
     """
@@ -101,10 +102,10 @@ def get_strategy_for_market(df):
     context = detect_market_context(df)
 
     if context == 'bull':
-        strategy = "Trix"       # ou ta stratégie préférée en bull
+        strategy = "Trix"
     elif context == 'bear':
-        strategy = "Breakout"   # par ex. stratégie breakout agressive
+        strategy = "Breakout"
     else:
-        strategy = "Combo"      # mélange pour les marchés en range
+        strategy = "Range"  # recommandé en range
 
     return context, strategy

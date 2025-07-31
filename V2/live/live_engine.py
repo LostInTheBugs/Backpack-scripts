@@ -12,7 +12,7 @@ from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from utils.position_utils import get_real_pnl
-
+from signals.strategy_selector import strategy_auto, strategy_autosoft
 from signals.strategy_selector import get_strategy_for_market  # Ajouté
 
 INTERVAL = "1s"
@@ -30,6 +30,10 @@ def import_strategy_signal(strategy):
         from signals.trix_only_signal import get_combined_signal
     elif strategy == "Combo":
         from signals.macd_rsi_bo_trix import get_combined_signal
+    elif strategy == "Range":
+        from signals.range_signal import get_combined_signal
+    elif strategy == "AutoSoft":
+        from signals.strategy_selector import strategy_autosoft as get_combined_signal
     else:
         from signals.macd_rsi_breakout import get_combined_signal
     return get_combined_signal
