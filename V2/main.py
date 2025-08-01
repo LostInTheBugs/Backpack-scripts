@@ -11,20 +11,11 @@ import pytz
 import sys
 import subprocess
 
-from ScriptDatabase.pgsql_ohlcv import get_ohlcv_1s_sync
-from ScriptDatabase.pgsql_markets import update_markets_table
 from utils.logger import log
-from utils.position_utils import position_already_open, get_open_positions
-from utils.ohlcv_utils import get_ohlcv_df
-from utils.get_market import get_market
-from utils.public import format_table_name, check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
+from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
-from execute.open_position_usdc import open_position
-from execute.close_position_percent import close_position_percent
 from live.live_engine import handle_live_symbol
-from backtest.backtest_engine2 import run_backtest, run_backtest_async
-from utils.logger import utc_to_local
-from signals.strategy_selector import strategy_auto, detect_market_context
+from backtest.backtest_engine2 import run_backtest_async
 
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
