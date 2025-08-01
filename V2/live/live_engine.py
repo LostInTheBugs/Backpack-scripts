@@ -3,7 +3,6 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import os
 
-from utils.ohlcv_utils import get_ohlcv_df
 from utils.position_utils import position_already_open
 from utils.logger import log
 from utils.public import format_table_name, check_table_and_fresh_data
@@ -12,9 +11,8 @@ from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from utils.position_utils import get_real_pnl
-from signals.strategy_selector import strategy_auto, strategy_autosoft
 from signals.strategy_selector import get_strategy_for_market  # Ajouté
-from signals.range_soft_signal import get_combined_signal as range_soft_signal
+
 
 INTERVAL = "1s"
 POSITION_AMOUNT_USDC = 50
