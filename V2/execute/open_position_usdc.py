@@ -1,7 +1,6 @@
 from bpx.account import Account
 from bpx.public import Public
 from tabulate import tabulate
-import math
 import os
 import sys
 

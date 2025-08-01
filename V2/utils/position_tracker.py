@@ -1,5 +1,3 @@
-from datetime import datetime, timedelta
-
 class PositionTracker:
     def __init__(self, symbol, trailing_stop_pct=1.0):
         self.symbol = symbol

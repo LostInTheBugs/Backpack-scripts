@@ -5,7 +5,6 @@ import os
 import traceback
 from utils.logger import log
 from utils.position_tracker import PositionTracker
-from datetime import timedelta
 from importlib import import_module
 
 # Cette fonction charge dynamiquement la stratégie demandée

@@ -214,8 +214,6 @@ async def monitor_symbols(pool, get_symbols_func):
 
         await asyncio.sleep(60)  # vérifier toutes les minutes
 
-import asyncio
-
 def get_ohlcv_1s_sync(symbol: str, start_ts: datetime, end_ts: datetime) -> pd.DataFrame:
     """
     Wrapper synchrone qui appelle la fonction async fetch_ohlcv_1s.

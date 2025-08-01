@@ -1,5 +1,4 @@
 import os
-import aiohttp
 from bpx.account import Account
 
 public_key = os.getenv("bpx_bot_public_key")
