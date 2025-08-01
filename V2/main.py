@@ -3,13 +3,10 @@ import os
 import time
 import traceback
 import asyncio
-from datetime import datetime, timedelta, timezone
-import pandas as pd
+from datetime import datetime, timezone
 import asyncpg
 import signal
-import pytz
 import sys
-import subprocess
 
 from utils.logger import log
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
