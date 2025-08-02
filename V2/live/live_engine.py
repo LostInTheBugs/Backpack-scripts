@@ -62,12 +62,14 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
 
         # Sélection dynamique ou fixe de la stratégie
-        if args.strategie == "Auto" or args.strategie == "AutoSoft":
+        strategy_arg = args.strategie.lower()
+        if strategy_arg in ["auto", "autosoft"]:
             market_condition, selected_strategy = get_strategy_for_market(df)
             log(f"[{symbol}] 📊 Marché détecté : {market_condition.upper()} — Stratégie auto sélectionnée : {selected_strategy}")
         else:
             selected_strategy = args.strategie
             log(f"[{symbol}] 📊 Stratégie sélectionnée manuellement : {selected_strategy}")
+
 
         get_combined_signal = import_strategy_signal(selected_strategy)
 
