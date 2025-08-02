@@ -54,6 +54,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[{symbol}] ❌ Pas de données 1s récupérées depuis la BDD locale")
             return
 
+        # Préparation df (timestamps, types...)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         if df['timestamp'].dt.tz is None:
             df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
@@ -61,9 +62,9 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
 
         # Sélection dynamique ou fixe de la stratégie
-        if args.strategie == "Auto":
+        if args.strategie == "Auto" or args.strategie == "AutoSoft":
             market_condition, selected_strategy = get_strategy_for_market(df)
-            log(f"[{symbol}] 📊 Marché détecté : {market_condition.upper()} — Stratégie sélectionnée : {selected_strategy}")
+            log(f"[{symbol}] 📊 Marché détecté : {market_condition.upper()} — Stratégie auto sélectionnée : {selected_strategy}")
         else:
             selected_strategy = args.strategie
             log(f"[{symbol}] 📊 Stratégie sélectionnée manuellement : {selected_strategy}")
@@ -71,7 +72,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         get_combined_signal = import_strategy_signal(selected_strategy)
 
         signal = get_combined_signal(df)
-        log(f"[{symbol}] 🎯 Signal détecté : {signal}")
+        log(f"[{symbol}] 🎯 Signal détecté ({selected_strategy}) : {signal}")
 
         if position_already_open(symbol):
             pnl_usdc, notional_value = get_real_pnl(symbol)
