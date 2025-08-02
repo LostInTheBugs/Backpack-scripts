@@ -1,5 +1,6 @@
 import pandas as pd
 import ta
+from utils.logger import log
 
 def prepare_indicators(df):
     df['EMA20'] = df['close'].ewm(span=20).mean()
@@ -62,31 +63,31 @@ def strategy_auto(df, mode='normal'):
 
     if context == 'bull':
         if (price > high * (1 - breakout_thresh) and macd > macd_signal and rsi > rsi_buy) or (trix > trix_buy):
-            print("🐂 BUY (Bull) | " + context_info)
+            log("🐂 BUY (Bull) | " + context_info)
             return 'BUY'
         else:
-            print("🐂 HOLD (Bull) | " + context_info)
+            log("🐂 HOLD (Bull) | " + context_info)
             return 'HOLD'
 
     elif context == 'bear':
         if (price < low * (1 + breakout_thresh) and macd < macd_signal and rsi < rsi_sell) or (trix < trix_sell):
-            print("🐻 SELL (Bear) | " + context_info)
+            log("🐻 SELL (Bear) | " + context_info)
             return 'SELL'
         else:
-            print("🐻 HOLD (Bear) | " + context_info)
+            log("🐻 HOLD (Bear) | " + context_info)
             return 'HOLD'
 
     elif context == 'range':
         support = low
         resistance = high
         if price < support * 1.01 and rsi < 35 and trix > 0:
-            print("🔄 BUY (Range) | " + context_info)
+            log("🔄 BUY (Range) | " + context_info)
             return 'BUY'
         elif price > resistance * 0.99 and rsi > 65 and trix < 0:
-            print("🔄 SELL (Range) | " + context_info)
+            log("🔄 SELL (Range) | " + context_info)
             return 'SELL'
         else:
-            print("🔄 HOLD (Range) | " + context_info)
+            log("🔄 HOLD (Range) | " + context_info)
             return 'HOLD'
 
     return 'HOLD'
