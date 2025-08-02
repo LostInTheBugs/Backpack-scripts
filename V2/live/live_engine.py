@@ -13,7 +13,7 @@ from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from signals.strategy_selector import get_strategy_for_market
 
 # Import fonction sauvegarde signaux en base
-from db.signals_db import save_signal_to_db
+from utils.logger.py import save_signal_to_db
 
 
 INTERVAL = "1s"
