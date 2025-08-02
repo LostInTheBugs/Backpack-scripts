@@ -126,33 +126,41 @@ class OHLCVAggregator:
 async def subscribe_and_aggregate(symbol: str, pool, stop_event: asyncio.Event):
     ws_url = "wss://ws.backpack.exchange"
     aggregator = OHLCVAggregator(symbol, INTERVAL_SEC)
-    try:
-        async with websockets.connect(ws_url) as ws:
-            sub_msg = {
-                "method": "SUBSCRIBE",
-                "params": [f"trade.{symbol}"],
-                "id": 1,
-            }
-            await ws.send(json.dumps(sub_msg))
-            print(f"✅ Subscribed to trade.{symbol}")
 
-            while not stop_event.is_set():
-                try:
-                    message = await asyncio.wait_for(ws.recv(), timeout=10)
-                except asyncio.TimeoutError:
-                    # Ping or reconnect could be done ici si besoin
-                    continue
-                msg = json.loads(message)
-                data = msg.get("data")
-                if data and "p" in data and "q" in data and "T" in data:
-                    price = float(data["p"])
-                    size = float(data["q"])
-                    timestamp_ms = int(data["T"])
-                    await aggregator.process_trade(price, size, timestamp_ms, pool)
-    except (websockets.ConnectionClosed, asyncio.CancelledError):
-        print(f"🔴 WebSocket closed for {symbol}")
-    except Exception as e:
-        print(f"❌ Erreur websocket {symbol}: {e}")
+    while not stop_event.is_set():
+        try:
+            async with websockets.connect(ws_url) as ws:
+                sub_msg = {
+                    "method": "SUBSCRIBE",
+                    "params": [f"trade.{symbol}"],
+                    "id": 1,
+                }
+                await ws.send(json.dumps(sub_msg))
+                print(f"✅ Subscribed to trade.{symbol}")
+
+                while not stop_event.is_set():
+                    try:
+                        message = await asyncio.wait_for(ws.recv(), timeout=10)
+                    except asyncio.TimeoutError:
+                        continue
+                    msg = json.loads(message)
+                    data = msg.get("data")
+                    if data and "p" in data and "q" in data and "T" in data:
+                        price = float(data["p"])
+                        size = float(data["q"])
+                        timestamp_ms = int(data["T"])
+                        await aggregator.process_trade(price, size, timestamp_ms, pool)
+
+        except (websockets.ConnectionClosed, asyncio.CancelledError):
+            print(f"🔴 WebSocket closed for {symbol}")
+            if stop_event.is_set():
+                break
+            print(f"♻️ Tentative de reconnexion pour {symbol} dans 5 secondes...")
+            await asyncio.sleep(5)
+        except Exception as e:
+            print(f"❌ Erreur websocket {symbol}: {e}")
+            print(f"♻️ Tentative de reconnexion pour {symbol} dans 5 secondes...")
+            await asyncio.sleep(5)
 
 async def periodic_cleanup(pool, get_symbols_func, retention_days=RETENTION_DAYS):
     while True:
@@ -182,37 +190,31 @@ async def fetch_all_symbols() -> list[str]:
 
 async def monitor_symbols(pool, get_symbols_func):
     current_tasks = {}
-    current_symbols = set()
+    known_symbols = set()  # mémoriser TOUS les symboles vus
 
     while True:
-        new_symbols = set(await get_symbols_func())
+        new_api_symbols = set(await get_symbols_func())
+        # On ajoute les nouveaux symboles à known_symbols
+        known_symbols.update(new_api_symbols)
 
-        # Stop subscriptions for removed symbols
-        removed = current_symbols - new_symbols
-        for sym in removed:
-            print(f"🛑 Arrêt abonnement {sym}")
-            task, stop_event = current_tasks.pop(sym)
-            stop_event.set()
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        # Symboles à lancer (présents dans known mais pas encore abonnés)
+        to_start = known_symbols - current_tasks.keys()
 
-        # Add subscriptions for new symbols
-        added = new_symbols - current_symbols
+        # Créer tables si nécessaire
         async with pool.acquire() as conn:
-            for sym in added:
+            for sym in to_start:
                 await create_table_if_not_exists(conn, sym)
-        for sym in added:
+
+        # Démarrer abonnements pour nouveaux symboles
+        for sym in to_start:
             print(f"▶️ Démarrage abonnement {sym}")
             stop_event = asyncio.Event()
             task = asyncio.create_task(subscribe_and_aggregate(sym, pool, stop_event))
             current_tasks[sym] = (task, stop_event)
 
-        current_symbols = new_symbols
+        # Ici, pas d’arrêt d’abonnement automatique
 
-        await asyncio.sleep(60)  # vérifier toutes les minutes
+        await asyncio.sleep(60)
 
 def get_ohlcv_1s_sync(symbol: str, start_ts: datetime, end_ts: datetime) -> pd.DataFrame:
     """
