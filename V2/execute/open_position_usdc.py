@@ -61,11 +61,17 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
     tick_size = float(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
 
     raw_quantity = usdc_amount / mark_price
-    quantity = round_to_step(raw_quantity, step_size)
+    if step_size >= 1:
+        quantity = int(raw_quantity // step_size * step_size)
+    else:
+        quantity = round_to_step(raw_quantity, step_size)
 
     quantity_decimals = get_decimal_places(quantity_filter.get("stepSize", "1"))
     tick_decimals = get_decimal_places(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
-    quantity_str = f"{quantity:.{quantity_decimals}f}"
+    if step_size >= 1:
+        quantity_str = str(int(quantity))
+    else:
+        quantity_str = f"{quantity:.{quantity_decimals}f}"
 
     log(f"📊 {symbol} market info:")
     log(f"   - markPrice: {mark_price:.{tick_decimals}f}")
@@ -90,7 +96,11 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
             print(f" ➤ Prix {mark_price} ne respecte pas tickSize ({tick_size})")
             mark_price = adjust_to_step(mark_price, tick_size)
 
-        quantity_str = f"{quantity:.{quantity_decimals}f}"
+        if step_size >= 1:
+            quantity_str = str(int(quantity))
+        else:
+            quantity_str = f"{quantity:.{quantity_decimals}f}"
+
         print(f"✅ Quantité ajustée : {quantity}")
         print(f"✅ Prix ajusté      : {mark_price:.{tick_decimals}f}")
 
