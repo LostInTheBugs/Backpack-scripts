@@ -19,9 +19,11 @@ def format_log_entry(message):
     now = get_now_paris().strftime("%Y-%m-%d %H:%M:%S %Z")
     return f"[{now}] {message}"
 
-def log(message, write_to_file=True):
+def log(message, write_to_file=True, show_console=False):
     entry = format_log_entry(message)
-    print(entry)
+    
+    if show_console:
+        print(entry)
 
     if write_to_file:
         with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
