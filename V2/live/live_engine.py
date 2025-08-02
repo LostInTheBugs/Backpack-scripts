@@ -2,15 +2,18 @@ import traceback
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 import os
+import json
 
-from utils.position_utils import position_already_open
+from utils.position_utils import position_already_open, get_real_pnl
 from utils.logger import log
 from utils.public import check_table_and_fresh_data
 from execute.open_position_usdc import open_position
 from execute.close_position_percent import close_position_percent
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
-from utils.position_utils import get_real_pnl
-from signals.strategy_selector import get_strategy_for_market  # Ajouté
+from signals.strategy_selector import get_strategy_for_market
+
+# Import fonction sauvegarde signaux en base
+from db.signals_db import save_signal_to_db
 
 
 INTERVAL = "1s"
@@ -38,6 +41,7 @@ def import_strategy_signal(strategy):
         from signals.macd_rsi_breakout import get_combined_signal
     return get_combined_signal
 
+
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args):
     try:
         log(f"[{symbol}] 📈 Chargement OHLCV pour {INTERVAL}")
@@ -64,18 +68,43 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         # Sélection dynamique ou fixe de la stratégie
         strategy_arg = args.strategie.lower()
         if strategy_arg in ["auto", "autosoft"]:
-            market_condition, selected_strategy = get_strategy_for_market(df)
-            log(f"[{symbol}] 📊 Marché détecté : {market_condition.upper()} — Stratégie auto sélectionnée : {selected_strategy}")
+            market_type, selected_strategy = get_strategy_for_market(df)
+            log(f"[{symbol}] 📊 Marché détecté : {market_type.upper()} — Stratégie auto sélectionnée : {selected_strategy}")
         else:
             selected_strategy = args.strategie
+            market_type = None
             log(f"[{symbol}] 📊 Stratégie sélectionnée manuellement : {selected_strategy}")
-
 
         get_combined_signal = import_strategy_signal(selected_strategy)
 
         signal = get_combined_signal(df)
-        log(f"[{symbol}] 🎯 Signal détecté ({selected_strategy}) : {signal}")
 
+        # Récupération indicateurs pour la base
+        current_price = df['close'].iloc[-1]
+
+        rsi_value = df['rsi'].iloc[-1] if 'rsi' in df.columns else None
+        trix_value = df['trix'].iloc[-1] if 'trix' in df.columns else None
+
+        # Préparer message log pour base
+        log_message = f"Signal détecté ({selected_strategy}) : {signal} | Price={current_price} RSI={rsi_value} TRIX={trix_value}"
+
+        # Sauvegarder en base
+        save_signal_to_db(
+            symbol=symbol,
+            timestamp=datetime.utcnow(),
+            market_type=market_type,
+            strategy=selected_strategy,
+            signal=signal,
+            price=current_price,
+            rsi=rsi_value,
+            trix=trix_value,
+            raw_data={"msg": log_message}
+        )
+
+        # Ne PAS logger ce signal à la console pour éviter de spammer
+        # log(f"[{symbol}] 🎯 {log_message}")
+
+        # Gestion position ouverte + trailing stop
         if position_already_open(symbol):
             pnl_usdc, notional_value = get_real_pnl(symbol)
             pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100
@@ -100,6 +129,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[{symbol}] ⚠️ Position déjà ouverte — Ignorée (sauf stop suiveur)")
             return
 
+        # Ouverture position selon signal BUY/SELL
         if signal in ["BUY", "SELL"]:
             direction = "long" if signal == "BUY" else "short"
             if dry_run:
