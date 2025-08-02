@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from utils.position_utils import get_open_positions
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
+from utils.logger import log
 
 PG_DSN = os.environ.get("PG_DSN")
 if not PG_DSN:
@@ -29,7 +30,7 @@ async def get_market(symbol: str):
         """, symbol)
 
     if not row:
-        print(f"⚠️ Marché {symbol} non trouvé en base locale")
+        log(f"⚠️ Marché {symbol} non trouvé en base locale")
         return None
 
     result = dict(row)

@@ -1,5 +1,6 @@
 import os
 from bpx.account import Account
+from utils.logger import log
 
 public_key = os.getenv("bpx_bot_public_key")
 secret_key = os.getenv("bpx_bot_secret_key")
@@ -19,7 +20,7 @@ def position_already_open(symbol: str) -> bool:
                 return True
         return False
     except Exception as e:
-        print(f"Erreur vérif position ouverte : {e}")
+        log(f"Erreur vérif position ouverte : {e}")
         return False
 
 async def get_open_positions():
@@ -37,7 +38,7 @@ async def get_open_positions():
                 }
         return positions
     except Exception as e:
-        print(f"⚠️ Erreur get_open_positions(): {e}")
+        log(f"⚠️ Erreur get_open_positions(): {e}")
         return {}
 
 from utils.get_market import get_market  # tu dois avoir une fonction async pour ça

@@ -1,3 +1,5 @@
+from utils.logger import log
+
 class PositionTracker:
     def __init__(self, symbol, trailing_stop_pct=1.0):
         self.symbol = symbol
@@ -18,7 +20,7 @@ class PositionTracker:
             self.trailing_stop = price * (1 - self.trailing_stop_pct)
         else:
             self.trailing_stop = price * (1 + self.trailing_stop_pct)
-        print(f"[{self.symbol}] 🟢 Position ouverte {direction} à {price:.4f} ({timestamp})")
+        log(f"[{self.symbol}] 🟢 Position ouverte {direction} à {price:.4f} ({timestamp})")
 
     def update_trailing_stop(self, price, timestamp):
         if not self.is_open():
@@ -53,7 +55,7 @@ class PositionTracker:
         elif self.direction == "SELL":
             pnl_pct = ((self.entry_price - price) / self.entry_price) * 100
 
-        print(f"[{self.symbol}] 🔴 Fermeture position {self.direction} à {price:.4f} ({timestamp}) | PnL: {pnl_pct:.2f}%")
+        log(f"[{self.symbol}] 🔴 Fermeture position {self.direction} à {price:.4f} ({timestamp}) | PnL: {pnl_pct:.2f}%")
 
         self.entry_price = None
         self.direction = None
