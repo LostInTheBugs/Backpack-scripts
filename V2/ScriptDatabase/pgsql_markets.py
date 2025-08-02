@@ -21,17 +21,28 @@ async def update_markets_table(pool):
                 created_at_dt = datetime.fromisoformat(m["createdAt"])
                 raw_json_str = json.dumps(m)  # <-- convertir dict en JSON string
 
+                step_size = float(m.get("quantityIncrement", 0))
+                tick_size = float(m.get("priceIncrement", 0))
+                min_qty = float(m.get("minQuantity", 0))
+
                 await conn.execute("""
-                    INSERT INTO backpack_markets (symbol, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt, raw_json)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    INSERT INTO backpack_markets (
+                        symbol, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt,
+                        raw_json, stepSize, tickSize, minQty
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     ON CONFLICT (symbol) DO UPDATE SET
                         baseSymbol = EXCLUDED.baseSymbol,
                         quoteSymbol = EXCLUDED.quoteSymbol,
                         marketType = EXCLUDED.marketType,
                         orderBookState = EXCLUDED.orderBookState,
                         createdAt = EXCLUDED.createdAt,
-                        raw_json = EXCLUDED.raw_json
-                """, m["symbol"], m["baseSymbol"], m["quoteSymbol"], m["marketType"], m["orderBookState"], created_at_dt, raw_json_str)
+                        raw_json = EXCLUDED.raw_json,
+                        stepSize = EXCLUDED.stepSize,
+                        tickSize = EXCLUDED.tickSize,
+                        minQty = EXCLUDED.minQty
+                """, m["symbol"], m["baseSymbol"], m["quoteSymbol"], m["marketType"], m["orderBookState"],
+                     created_at_dt, raw_json_str, step_size, tick_size, min_qty)
                 
 async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)

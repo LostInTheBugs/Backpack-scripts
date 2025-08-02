@@ -3,15 +3,20 @@ from bpx.public import Public
 from tabulate import tabulate
 import os
 import sys
+import math
 
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
-def get_step_size_decimals(market_info):
-    step_size = market_info.get("filters", {}).get("quantity", {}).get("stepSize", "1")
-    if '.' in step_size:
-        return len(step_size.split(".")[1].rstrip("0"))
-    return 0
+def round_to_step(value: float, step: float) -> float:
+    """Arrondit vers le bas à la précision du step donné"""
+    return math.floor(value / step) * step
+
+def get_decimal_places(number_str):
+    """Retourne le nombre de décimales significatives dans une string"""
+    if "." not in number_str:
+        return 0
+    return len(number_str.split(".")[1].rstrip("0"))
 
 def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool = False):
     if direction.lower() not in ["long", "short"]:
@@ -28,17 +33,18 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
     headers = ["Symbol", "Order type", "Quantity Executed/Ordered", "Amount Executed/Ordered", "Status"]
     table = []
 
-    # Check if symbol exists
+    # Récupération des marchés
     markets = public.get_markets()
     if not isinstance(markets, list):
         print("❌ Failed to retrieve market list.")
         return
 
-    if not any(m.get("symbol") == symbol for m in markets):
-        print(f"❌ Symbol '{symbol}' not found in market list.")
+    market_info = next((m for m in markets if m.get("symbol") == symbol), None)
+    if not market_info:
+        print(f"❌ Symbol '{symbol}' not found.")
         return
 
-    # Get ticker for mark price
+    # Récupération du mark price
     ticker = public.get_ticker(symbol)
     if not isinstance(ticker, dict):
         print("❌ Failed to retrieve ticker data.")
@@ -49,34 +55,24 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
         print("❌ Invalid mark price from ticker.")
         return
 
-    market_info = next((m for m in markets if m.get("symbol") == symbol), None)
-    if not market_info:
-        print(f"❌ Symbol '{symbol}' not found.")
-        return 
+    # Paramètres de precision
+    quantity_filter = market_info.get("filters", {}).get("quantity", {})
+    step_size = float(quantity_filter.get("stepSize", "1"))
+    min_qty = float(quantity_filter.get("minQty", "0.000001"))
 
-    step_size_str = market_info.get("filters", {}).get("quantity", {}).get("stepSize", "1")
-    step_size = float(step_size_str)
+    tick_size = float(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
 
+    # Calcul de la quantité
     raw_quantity = usdc_amount / mark_price
+    quantity = round_to_step(raw_quantity, step_size)
 
-    def round_quantity_to_step(quantity: float, step_size: float) -> float:
-        return (quantity // step_size) * step_size
-
-    quantity = round_quantity_to_step(raw_quantity, step_size)
-
-    # Nombre de décimales à afficher selon step_size
-    if '.' in step_size_str:
-        step_size_decimals = len(step_size_str.split('.')[1].rstrip('0'))
-    else:
-        step_size_decimals = 0
-
-    quantity_str = f"{quantity:.{step_size_decimals}f}"
-
-    min_qty = float(market_info.get("filters", {}).get("quantity", {}).get("minQty", "0.00001"))
-    step_size = market_info.get("filters", {}).get("quantity", {}).get("stepSize", "N/A")
+    # Formatage lisible
+    quantity_decimals = get_decimal_places(quantity_filter.get("stepSize", "1"))
+    tick_decimals = get_decimal_places(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
+    quantity_str = f"{quantity:.{quantity_decimals}f}"
 
     print(f"📊 {symbol} market info:")
-    print(f"   - markPrice: {mark_price}")
+    print(f"   - markPrice: {mark_price:.{tick_decimals}f}")
     print(f"   - stepSize: {step_size}")
     print(f"   - minQty: {min_qty}")
     print(f"   - targetQuantity: {quantity_str}")
@@ -110,7 +106,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
     status = response.get("status", "UNKNOWN")
     executed_quantity = float(response.get("executedQuantity", 0))
     executed_quote_quantity = float(response.get("executedQuoteQuantity", 0))
-    quote_quantity = usdc_amount  # montant USDC initial utilisé
+    quote_quantity = usdc_amount  # montant initial prévu
 
     table.append([
         symbol,
