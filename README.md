@@ -4,7 +4,7 @@ To Do
 
 Short term
 * Configuration by yaml file
-* Multi-language
+* Multi-language capability
 
 Medium term
 * Restore positions after restarting
