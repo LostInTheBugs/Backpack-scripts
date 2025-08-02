@@ -1,5 +1,6 @@
 import pandas as pd
 from indicators.range_indicators import compute_range_indicators
+from utils.logger import log
 
 def get_combined_signal(df):
     df = compute_range_indicators(df)
@@ -17,13 +18,13 @@ def get_combined_signal(df):
     trix_sell_threshold = 0.05
 
     if price < support * (1 + breakout_buffer) and rsi < rsi_low_threshold and trix > trix_buy_threshold:
-        print(f"🟢 BUY (RangeSoft, rebond support souple) | Price={price:.4f} Support={support:.4f} RSI={rsi:.2f} TRIX={trix:.4f}")
+        log(f"🟢 BUY (RangeSoft, rebond support souple) | Price={price:.4f} Support={support:.4f} RSI={rsi:.2f} TRIX={trix:.4f}")
         return "BUY"
 
     elif price > resistance * (1 - breakout_buffer) and rsi > rsi_high_threshold and trix < trix_sell_threshold:
-        print(f"🔴 SELL (RangeSoft, rejet resistance souple) | Price={price:.4f} Resistance={resistance:.4f} RSI={rsi:.2f} TRIX={trix:.4f}")
+        log(f"🔴 SELL (RangeSoft, rejet resistance souple) | Price={price:.4f} Resistance={resistance:.4f} RSI={rsi:.2f} TRIX={trix:.4f}")
         return "SELL"
 
     else:
-        print(f"⚪ HOLD (RangeSoft) | Price={price:.4f} RSI={rsi:.2f} TRIX={trix:.4f}")
+        log(f"⚪ HOLD (RangeSoft) | Price={price:.4f} RSI={rsi:.2f} TRIX={trix:.4f}")
         return "HOLD"
