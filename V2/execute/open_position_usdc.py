@@ -4,16 +4,18 @@ from tabulate import tabulate
 import os
 import sys
 import math
+from decimal import Decimal, ROUND_DOWN
+from utils.logger import log
+from utils.order_validator import is_order_valid_for_market, adjust_to_step
+
 
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
 
 def round_to_step(value: float, step: float) -> float:
-    """Arrondit vers le bas à la précision du step donné"""
     return math.floor(value / step) * step
 
 def get_decimal_places(number_str):
-    """Retourne le nombre de décimales significatives dans une string"""
     if "." not in number_str:
         return 0
     return len(number_str.split(".")[1].rstrip("0"))
@@ -33,7 +35,6 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
     headers = ["Symbol", "Order type", "Quantity Executed/Ordered", "Amount Executed/Ordered", "Status"]
     table = []
 
-    # Récupération des marchés
     markets = public.get_markets()
     if not isinstance(markets, list):
         print("❌ Failed to retrieve market list.")
@@ -44,7 +45,6 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
         print(f"❌ Symbol '{symbol}' not found.")
         return
 
-    # Récupération du mark price
     ticker = public.get_ticker(symbol)
     if not isinstance(ticker, dict):
         print("❌ Failed to retrieve ticker data.")
@@ -55,32 +55,44 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
         print("❌ Invalid mark price from ticker.")
         return
 
-    # Paramètres de precision
     quantity_filter = market_info.get("filters", {}).get("quantity", {})
     step_size = float(quantity_filter.get("stepSize", "1"))
     min_qty = float(quantity_filter.get("minQty", "0.000001"))
-
     tick_size = float(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
 
-    # Calcul de la quantité
     raw_quantity = usdc_amount / mark_price
     quantity = round_to_step(raw_quantity, step_size)
 
-    # Formatage lisible
     quantity_decimals = get_decimal_places(quantity_filter.get("stepSize", "1"))
     tick_decimals = get_decimal_places(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
     quantity_str = f"{quantity:.{quantity_decimals}f}"
 
-    print(f"📊 {symbol} market info:")
-    print(f"   - markPrice: {mark_price:.{tick_decimals}f}")
-    print(f"   - stepSize: {step_size}")
-    print(f"   - minQty: {min_qty}")
-    print(f"   - targetQuantity: {quantity_str}")
+    log(f"📊 {symbol} market info:")
+    log(f"   - markPrice: {mark_price:.{tick_decimals}f}")
+    log(f"   - stepSize: {step_size}")
+    log(f"   - minQty: {min_qty}")
+    log(f"   - targetQuantity: {quantity_str}")
 
     if quantity < min_qty:
         print(f"❌ Order quantity {quantity_str} is below the minimum allowed ({min_qty}) for {symbol}.")
         print(f"➡️ Increase your USDC amount or choose another symbol.")
         return
+
+    # ✅ Vérification de la conformité (stepSize + tickSize)
+    valid_qty, valid_price = is_order_valid_for_market(quantity, mark_price, step_size, tick_size)
+
+    if not valid_qty or not valid_price:
+        print("⚠️ Quantité ou prix non valides pour ce marché.")
+        if not valid_qty:
+            print(f" ➤ Quantité {quantity} ne respecte pas stepSize ({step_size})")
+            quantity = adjust_to_step(quantity, step_size)
+        if not valid_price:
+            print(f" ➤ Prix {mark_price} ne respecte pas tickSize ({tick_size})")
+            mark_price = adjust_to_step(mark_price, tick_size)
+
+        quantity_str = f"{quantity:.{quantity_decimals}f}"
+        print(f"✅ Quantité ajustée : {quantity}")
+        print(f"✅ Prix ajusté      : {mark_price:.{tick_decimals}f}")
 
     side = "Bid" if direction.lower() == "long" else "Ask"
     order_type = "Market"
@@ -106,7 +118,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
     status = response.get("status", "UNKNOWN")
     executed_quantity = float(response.get("executedQuantity", 0))
     executed_quote_quantity = float(response.get("executedQuoteQuantity", 0))
-    quote_quantity = usdc_amount  # montant initial prévu
+    quote_quantity = usdc_amount
 
     table.append([
         symbol,
@@ -121,7 +133,6 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
 
 if __name__ == "__main__":
     dry_run = False
-
     args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
     flags = [arg for arg in sys.argv[1:] if arg.startswith("--")]
 
