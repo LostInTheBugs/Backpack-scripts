@@ -9,6 +9,8 @@ import signal
 import sys
 
 from utils.logger import log
+from utils.i18n import t, set_locale, get_available_locales  # Import i18n
+from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
 from live.live_engine import handle_live_symbol
@@ -24,9 +26,9 @@ async def update_symbols_periodically(symbols_container: dict, n: int = 10, inte
             new_symbols = fetch_top_n_volatility_volume(n=n)
             if new_symbols:
                 symbols_container['list'] = new_symbols
-                log(f"🔄 Mise à jour symboles auto : {new_symbols}")
+                log(t("symbols.update_auto", new_symbols))  # Traduction
         except Exception as e:
-            log(f"❌ Erreur maj symboles auto: {e}")
+            log(t("symbols.update_error", e))  # Traduction
         await asyncio.sleep(interval_sec)
 
 
@@ -46,26 +48,26 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                 ignored_symbols.append(symbol)
 
         if active_symbols:
-            log(f"✅ Symboles actifs ({len(active_symbols)}) : {active_symbols}")
+            log(t("symbols.active", len(active_symbols), active_symbols))
 
         ignored_details = []
         if ignored_symbols:
             for sym in ignored_symbols:
                 last_ts = await get_last_timestamp(pool, sym)
                 if last_ts is None:
-                    ignored_details.append(f"{sym} (table absente)")
+                    ignored_details.append(t("symbols.table_missing", sym))
                 else:
                     now = datetime.now(timezone.utc)
                     delay = now - last_ts
                     seconds = int(delay.total_seconds())
-                    human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
-                    ignored_details.append(f"{sym} (inactif depuis {human_delay})")
+                    human_delay = t("time.seconds", seconds) if seconds < 120 else t("time.minutes", seconds // 60)
+                    ignored_details.append(t("symbols.inactive_since", sym, human_delay))
 
             if ignored_details:
-                log(f"⛔ Symboles ignorés ({len(ignored_details)}) : {ignored_details}")
+                log(t("symbols.ignored", len(ignored_details), ignored_details))
 
         if not active_symbols:
-            log("⚠️ Aucun symbole actif pour cette itération.")
+            log(t("symbols.no_active"))
 
         await asyncio.sleep(1)
 
@@ -143,14 +145,23 @@ async def async_main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bot for Backpack Exchange")
-    parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
+    parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles")
     parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
-    parser.add_argument("--dry-run", action="store_true", help="Mode simulation sans exécuter de trade")
-    parser.add_argument("--backtest", type=int, help="Durée du backtest en heures (ex: 1, 2, 24)")
-    parser.add_argument("--auto-select", action="store_true", help="Sélection automatique des symboles les plus volatils")
-    parser.add_argument('--strategie', type=str, default='Default', help='Nom de la stratégie (Default, Trix, Combo, Auto, Range, RangeSoft, etc.)')
-    parser.add_argument("--no-limit", action="store_true", help="Désactive la limite du nombre de symboles")
+    parser.add_argument("--dry-run", action="store_true", help="Mode simulation")
+    parser.add_argument("--backtest", type=int, help="Durée du backtest en heures")
+    parser.add_argument("--auto-select", action="store_true", help="Sélection automatique")
+    parser.add_argument('--strategie', type=str, default='Default', help='Nom de la stratégie')
+    parser.add_argument("--no-limit", action="store_true", help="Désactive la limite")
+    
+    # Nouveau argument pour la langue
+    parser.add_argument('--lang', '--locale', type=str, default='fr', 
+                       choices=get_available_locales(),
+                       help='Langue d\'interface (fr, en, es...)')
+    
     args = parser.parse_args()
+    
+    # Configuration de la langue
+    set_locale(args.lang)
 
     try:
         if args.strategie == "Trix":
@@ -170,7 +181,7 @@ if __name__ == "__main__":
 
         asyncio.run(async_main(args))
     except KeyboardInterrupt:
-        print("🛑 Arrêt manuel demandé via KeyboardInterrupt, fermeture propre...")
+        print("clean_shutdown")
         sys.exit(0)
     except Exception:
         traceback.print_exc()

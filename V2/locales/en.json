@@ -1,0 +1,26 @@
+{
+    "symbols": {
+        "update_auto": "🔄 Auto symbols update: {}",
+        "update_error": "❌ Auto symbols update error: {}",
+        "active": "✅ Active symbols ({}) : {}",
+        "ignored": "⛔ Ignored symbols ({}) : {}",
+        "no_active": "⚠️ No active symbols for this iteration.",
+        "file_reloaded": "🔁 symbol.lst reloaded: {}",
+        "table_missing": "{} (missing table)",
+        "inactive_since": "{} (inactive since {})"
+    },
+    "system": {
+        "manual_stop": "🛑 Manual stop requested",
+        "manual_stop_ctrl_c": "🛑 Manual stop requested (Ctrl+C)",
+        "watcher_error": "💥 Watcher error: {}",
+        "pool_closed": "Connection pool closed, program ended.",
+        "clean_shutdown": "🛑 Manual stop requested via KeyboardInterrupt, clean shutdown..."
+    },
+    "backtest": {
+        "launch": "[{}] 🧪 Launching {}h backtest with {} strategy"
+    },
+    "time": {
+        "seconds": "{}s",
+        "minutes": "{}min"
+    }
+}

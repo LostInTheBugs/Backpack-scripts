@@ -1,0 +1,26 @@
+{
+    "symbols": {
+        "update_auto": "🔄 Mise à jour symboles auto : {}",
+        "update_error": "❌ Erreur maj symboles auto: {}",
+        "active": "✅ Symboles actifs ({}) : {}",
+        "ignored": "⛔ Symboles ignorés ({}) : {}",
+        "no_active": "⚠️ Aucun symbole actif pour cette itération.",
+        "file_reloaded": "🔁 symbol.lst rechargé : {}",
+        "table_missing": "{} (table absente)",
+        "inactive_since": "{} (inactif depuis {})"
+    },
+    "system": {
+        "manual_stop": "🛑 Arrêt manuel demandé",
+        "manual_stop_ctrl_c": "🛑 Arrêt manuel demandé (Ctrl+C)",
+        "watcher_error": "💥 Erreur dans le watcher : {}",
+        "pool_closed": "Pool de connexion fermé, fin du programme.",
+        "clean_shutdown": "🛑 Arrêt manuel demandé via KeyboardInterrupt, fermeture propre..."
+    },
+    "backtest": {
+        "launch": "[{}] 🧪 Lancement du backtest {}h avec stratégie {}"
+    },
+    "time": {
+        "seconds": "{}s",
+        "minutes": "{}min"
+    }
+}
