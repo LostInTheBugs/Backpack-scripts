@@ -1,6 +1,5 @@
 import argparse
 import os
-import time
 import traceback
 import asyncio
 from datetime import datetime, timezone
@@ -9,30 +8,37 @@ import signal
 import sys
 
 from utils.logger import log
-from utils.i18n import t, set_locale, get_available_locales  # Import i18n
-from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
 from live.live_engine import handle_live_symbol
 from backtest.backtest_engine2 import run_backtest_async
+from config.settings import load_config, get_config
 
-public_key = os.getenv("bpx_bot_public_key")
-secret_key = os.getenv("bpx_bot_secret_key")
+# Load configuration at startup
+config = load_config()
 
+public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
+secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-async def update_symbols_periodically(symbols_container: dict, n: int = 10, interval_sec: int = 300):
+async def update_symbols_periodically(symbols_container: dict, n: int = None, interval_sec: int = None):
+    """Update symbols automatically based on volatility and volume"""
+    if n is None:
+        n = config.strategy.auto_select_top_n
+    if interval_sec is None:
+        interval_sec = config.strategy.auto_select_update_interval
+        
     while True:
         try:
             new_symbols = fetch_top_n_volatility_volume(n=n)
             if new_symbols:
                 symbols_container['list'] = new_symbols
-                log(t("symbols.update_auto", new_symbols))  # Traduction
+                log(f"Symbol auto-update: {new_symbols}")
         except Exception as e:
-            log(t("symbols.update_error", e))  # Traduction
+            log(f"Error updating symbols automatically: {e}")
         await asyncio.sleep(interval_sec)
 
-
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
+    """Main trading loop"""
     while True:
         if auto_select and symbols_container:
             symbols = symbols_container.get('list', [])
@@ -41,38 +47,38 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         ignored_symbols = []
 
         for symbol in symbols:
-            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=600):
+            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
                 active_symbols.append(symbol)
                 await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
             else:
                 ignored_symbols.append(symbol)
 
         if active_symbols:
-            log(t("symbols.active", len(active_symbols), active_symbols))
+            log(f"Active symbols ({len(active_symbols)}): {active_symbols}")
 
         ignored_details = []
         if ignored_symbols:
             for sym in ignored_symbols:
                 last_ts = await get_last_timestamp(pool, sym)
                 if last_ts is None:
-                    ignored_details.append(t("symbols.table_missing", sym))
+                    ignored_details.append(f"{sym} (table missing)")
                 else:
                     now = datetime.now(timezone.utc)
                     delay = now - last_ts
                     seconds = int(delay.total_seconds())
-                    human_delay = t("time.seconds", seconds) if seconds < 120 else t("time.minutes", seconds // 60)
-                    ignored_details.append(t("symbols.inactive_since", sym, human_delay))
+                    human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
+                    ignored_details.append(f"{sym} (inactive for {human_delay})")
 
             if ignored_details:
-                log(t("symbols.ignored", len(ignored_details), ignored_details))
+                log(f"Ignored symbols ({len(ignored_details)}): {ignored_details}")
 
         if not active_symbols:
-            log(t("symbols.no_active"))
+            log("No active symbols for this iteration")
 
         await asyncio.sleep(1)
 
-
 async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
+    """Watch symbol file for changes and reload automatically"""
     last_modified = None
     symbols = []
 
@@ -81,28 +87,35 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
             current_modified = os.path.getmtime(filepath)
             if current_modified != last_modified:
                 symbols = load_symbols_from_file(filepath)
-                log(f"🔁 symbol.lst rechargé : {symbols}")
+                log(f"Symbol file reloaded: {symbols}")
                 last_modified = current_modified
 
             await main_loop(symbols, pool, real_run=real_run, dry_run=dry_run)
         except KeyboardInterrupt:
-            log("🛑 Arrêt manuel demandé")
+            log("Manual stop requested")
             break
         except Exception as e:
-            log(f"💥 Erreur dans le watcher : {e}")
+            log(f"Error in watcher: {e}")
             traceback.print_exc()
 
         await asyncio.sleep(1)
 
-
 async def async_main(args):
-    pool = await asyncpg.create_pool(dsn=os.environ.get("PG_DSN"))
+    """Main async function"""
+    db_config = config.database
+    pg_dsn = config.pg_dsn or os.environ.get("PG_DSN")
+    
+    pool = await asyncpg.create_pool(
+        dsn=pg_dsn,
+        min_size=db_config.pool_min_size,
+        max_size=db_config.pool_max_size
+    )
 
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
     def shutdown():
-        print("🛑 Arrêt manuel demandé (Ctrl+C)")
+        print("Manual stop requested (Ctrl+C)")
         stop_event.set()
 
     loop.add_signal_handler(signal.SIGINT, shutdown)
@@ -115,12 +128,13 @@ async def async_main(args):
             else:
                 symbols = load_symbols_from_file()
             for symbol in symbols:
-                log(f"[{symbol}] 🧪 Lancement du backtest {args.backtest}h avec stratégie {args.strategie}")
-                await run_backtest_async(symbol, args.backtest, os.environ.get("PG_DSN"), args.strategie)
+                log(f"[{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy")
+                await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
         else:
             if args.auto_select:
-                symbols_container = {'list': fetch_top_n_volatility_volume(n=10 if not args.no_limit else None)}
-                updater_task = asyncio.create_task(update_symbols_periodically(symbols_container, n=10 if not args.no_limit else None))
+                top_n = config.strategy.auto_select_top_n if not args.no_limit else None
+                symbols_container = {'list': fetch_top_n_volatility_volume(n=top_n)}
+                updater_task = asyncio.create_task(update_symbols_periodically(symbols_container, n=top_n))
                 task = asyncio.create_task(
                     main_loop([], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container)
                 )
@@ -140,28 +154,27 @@ async def async_main(args):
         traceback.print_exc()
     finally:
         await pool.close()
-        print("Pool de connexion fermé, fin du programme.")
-
+        print("Connection pool closed, program terminated")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bot for Backpack Exchange")
-    parser.add_argument("symbols", nargs="?", default="", help="Liste des symboles")
-    parser.add_argument("--real-run", action="store_true", help="Activer l'exécution réelle")
-    parser.add_argument("--dry-run", action="store_true", help="Mode simulation")
-    parser.add_argument("--backtest", type=int, help="Durée du backtest en heures")
-    parser.add_argument("--auto-select", action="store_true", help="Sélection automatique")
-    parser.add_argument('--strategie', type=str, default='Default', help='Nom de la stratégie')
-    parser.add_argument("--no-limit", action="store_true", help="Désactive la limite")
-    
-    # Nouveau argument pour la langue
-    parser.add_argument('--lang', '--locale', type=str, default='fr', 
-                       choices=get_available_locales(),
-                       help='Langue d\'interface (fr, en, es...)')
-    
+    parser.add_argument("symbols", nargs="?", default="", help="Symbol list (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
+    parser.add_argument("--real-run", action="store_true", help="Enable real execution")
+    parser.add_argument("--dry-run", action="store_true", help="Simulation mode without executing trades")
+    parser.add_argument("--backtest", type=int, help="Backtest duration in hours (ex: 1, 2, 24)")
+    parser.add_argument("--auto-select", action="store_true", help="Automatic selection of most volatile symbols")
+    parser.add_argument('--strategie', type=str, default=None, help='Strategy name (Default, Trix, Combo, Auto, Range, RangeSoft, etc.)')
+    parser.add_argument("--no-limit", action="store_true", help="Disable symbol count limit")
+    parser.add_argument("--config", type=str, default="config/settings.yaml", help="Configuration file path")
     args = parser.parse_args()
-    
-    # Configuration de la langue
-    set_locale(args.lang)
+
+    # Load config with custom path if provided
+    if args.config != "config/settings.yaml":
+        config = load_config(args.config)
+
+    # Use strategy from config if not provided via CLI
+    if args.strategie is None:
+        args.strategie = config.strategy.default_strategy
 
     try:
         if args.strategie == "Trix":
@@ -181,7 +194,7 @@ if __name__ == "__main__":
 
         asyncio.run(async_main(args))
     except KeyboardInterrupt:
-        print("clean_shutdown")
+        print("Manual stop requested via KeyboardInterrupt, clean shutdown...")
         sys.exit(0)
     except Exception:
         traceback.print_exc()

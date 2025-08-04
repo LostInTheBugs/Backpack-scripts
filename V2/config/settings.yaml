@@ -1,0 +1,44 @@
+# config/settings.yaml
+# Trading Bot Configuration File
+
+trading:
+  position_amount_usdc: 50.0      # Position size in USDC
+  leverage: 1                     # Trading leverage
+  trailing_stop_trigger: 0.5      # Trailing stop trigger in %
+  max_positions: 10               # Maximum simultaneous positions
+  min_pnl_for_trailing: 0.3       # Minimum PnL % before activating trailing stop
+
+database:
+  retention_days: 90              # Data retention in days
+  pool_min_size: 5                # Minimum pool connections
+  pool_max_size: 20               # Maximum pool connections
+  max_age_seconds: 600            # Max age for fresh data in seconds
+
+strategy:
+  default_strategy: "Default"     # Default trading strategy
+  auto_select_update_interval: 300 # Auto symbol update interval in seconds
+  auto_select_top_n: 10           # Number of top symbols to select
+  
+  # Technical indicators parameters
+  rsi_period: 14
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  trix_period: 15
+  ema_periods:
+    short: 20
+    medium: 50
+    long: 200
+
+risk:
+  max_daily_loss_pct: 10.0        # Maximum daily loss percentage
+  max_correlation: 0.7            # Maximum correlation between positions
+  position_sizing_method: "fixed" # Position sizing: fixed, percentage, kelly
+  risk_per_trade_pct: 2.0         # Risk per trade as % of capital
+
+logging:
+  log_level: "INFO"               # DEBUG, INFO, WARNING, ERROR
+  log_file_path: "logs/trading.log"
+  max_log_file_size_mb: 50
+  log_backup_count: 5
+  timezone: "Europe/Paris"
