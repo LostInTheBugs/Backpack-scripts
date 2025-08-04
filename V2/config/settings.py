@@ -1,5 +1,6 @@
 # config/settings.py
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
+from pydantic import Field
 from typing import Dict, List, Optional
 import yaml
 import os
