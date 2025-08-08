@@ -17,10 +17,41 @@
         "clean_shutdown": "🛑 Arrêt manuel demandé via KeyboardInterrupt, fermeture propre..."
     },
     "backtest": {
-        "launch": "[{}] 🧪 Lancement du backtest {}h avec stratégie {}"
+        "launch": "[{}] 🧪 Lancement du backtest {}h avec stratégie {}",
+        "no_ohlcv_data": "❌ Pas de données OHLCV en base pour backtest",
+        "error_fetch_ohlcv": "❌ Erreur fetch OHLCV backtest: {}",
+        "no_data": "❌ Pas de données OHLCV",
+        "start": "✅ Début du backtest avec {} bougies",
+        "end": "🔚 Backtest terminé",
+        "stats_positions": "📊 Positions: {} | Gagnantes: {} | Perdantes: {}",
+        "stats_pnl": "📈 PnL total: {:.2f}% | moyen: {:.2f}% | médian: {:.2f}% | taux de succès: {:.2f}%",
+        "no_positions": "⚠️ Aucune position prise",
+        "exception": "💥 Exception dans le backtest complet: {}"
     },
     "time": {
         "seconds": "{}s",
         "minutes": "{}min"
+    }
+    "order": {
+        "invalid_direction": "❌ Direction invalide. Utilisez 'long' ou 'short'.",
+        "invalid_amount": "❌ Le montant en USDC doit être supérieur à zéro.",
+        "market_list_failed": "❌ Échec de récupération de la liste des marchés.",
+        "symbol_not_found": "❌ Symbole '{}' introuvable.",
+        "ticker_failed": "❌ Échec de récupération des données du ticker.",
+        "invalid_price": "❌ Prix invalide renvoyé par le ticker.",
+        "below_min_qty": "❌ La quantité {0} est inférieure au minimum autorisé ({1}) pour {2}.",
+        "increase_amount": "➡️ Augmentez votre montant en USDC ou choisissez un autre symbole.",
+        "invalid_qty_or_price": "⚠️ Quantité ou prix non valides pour ce marché.",
+        "step_error": " ➤ La quantité {0} ne respecte pas le stepSize ({1})",
+        "tick_error": " ➤ Le prix {0} ne respecte pas le tickSize ({1})",
+        "adjusted_qty": "✅ Quantité ajustée : {0}",
+        "adjusted_price": "✅ Prix ajusté      : {0:.{1}f}",
+        "dry_run": "[DRY RUN] Ordre {0} {1} sur {2} pour {3:.2f} USDC ≈ {4} unités (simulation)",
+        "submitting": "🚀 Envoi de l'ordre {0} {1} sur {2} pour {3:.2f} USDC ≈ {4} unités",
+        "invalid_response": "❌ Réponse invalide de l'exécution d'ordre.",
+        "response": "✅ Réponse de l'ordre :",
+        "usage": "Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> [--dry-run]\nExemple: python open_position_usdc.py SOL_USDC_PERP 25 long --dry-run",
+        "amount_must_be_number": "❌ Le montant USDC doit être un nombre.",
+        "market_info": "📊 Données marché pour {0} :"
     }
 }

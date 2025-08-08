@@ -5,9 +5,10 @@ import os
 import sys
 import math
 from decimal import Decimal, ROUND_DOWN
+
 from utils.logger import log
 from utils.order_validator import is_order_valid_for_market, adjust_to_step
-
+from utils.i18n import t
 
 public_key = os.environ.get("bpx_bot_public_key")
 secret_key = os.environ.get("bpx_bot_secret_key")
@@ -22,11 +23,11 @@ def get_decimal_places(number_str):
 
 def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool = False):
     if direction.lower() not in ["long", "short"]:
-        print("❌ Invalid direction. Use 'long' or 'short'.")
+        print(t("order.invalid_direction"))
         return
 
     if usdc_amount <= 0:
-        print("❌ USDC amount must be greater than zero.")
+        print(t("order.invalid_amount"))
         return
 
     account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
@@ -37,22 +38,22 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
 
     markets = public.get_markets()
     if not isinstance(markets, list):
-        print("❌ Failed to retrieve market list.")
+        print(t("order.market_list_failed"))
         return
 
     market_info = next((m for m in markets if m.get("symbol") == symbol), None)
     if not market_info:
-        print(f"❌ Symbol '{symbol}' not found.")
+        print(t("order.symbol_not_found", symbol))
         return
 
     ticker = public.get_ticker(symbol)
     if not isinstance(ticker, dict):
-        print("❌ Failed to retrieve ticker data.")
+        print(t("order.ticker_failed"))
         return
 
     mark_price = float(ticker.get("lastPrice", "0"))
     if mark_price == 0:
-        print("❌ Invalid mark price from ticker.")
+        print(t("order.invalid_price"))
         return
 
     quantity_filter = market_info.get("filters", {}).get("quantity", {})
@@ -73,27 +74,27 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
     else:
         quantity_str = f"{quantity:.{quantity_decimals}f}"
 
-    log(f"📊 {symbol} market info:")
+    log(t("order.market_info", symbol))
     log(f"   - markPrice: {mark_price:.{tick_decimals}f}")
     log(f"   - stepSize: {step_size}")
     log(f"   - minQty: {min_qty}")
     log(f"   - targetQuantity: {quantity_str}")
 
     if quantity < min_qty:
-        print(f"❌ Order quantity {quantity_str} is below the minimum allowed ({min_qty}) for {symbol}.")
-        print(f"➡️ Increase your USDC amount or choose another symbol.")
+        print(t("order.below_min_qty", quantity_str, min_qty, symbol))
+        print(t("order.increase_amount"))
         return
 
     # ✅ Vérification de la conformité (stepSize + tickSize)
     valid_qty, valid_price = is_order_valid_for_market(quantity, mark_price, step_size, tick_size)
 
     if not valid_qty or not valid_price:
-        print("⚠️ Quantité ou prix non valides pour ce marché.")
+        print(t("order.invalid_qty_or_price"))
         if not valid_qty:
-            print(f" ➤ Quantité {quantity} ne respecte pas stepSize ({step_size})")
+            print(t("order.step_error", quantity, step_size))
             quantity = adjust_to_step(quantity, step_size)
         if not valid_price:
-            print(f" ➤ Prix {mark_price} ne respecte pas tickSize ({tick_size})")
+            print(t("order.tick_error", mark_price, tick_size))
             mark_price = adjust_to_step(mark_price, tick_size)
 
         if step_size >= 1:
@@ -101,17 +102,17 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
         else:
             quantity_str = f"{quantity:.{quantity_decimals}f}"
 
-        print(f"✅ Quantité ajustée : {quantity}")
-        print(f"✅ Prix ajusté      : {mark_price:.{tick_decimals}f}")
+        print(t("order.adjusted_qty", quantity))
+        print(t("order.adjusted_price", mark_price, tick_decimals))
 
     side = "Bid" if direction.lower() == "long" else "Ask"
     order_type = "Market"
 
     if dry_run:
-        print(f"[DRY RUN] Would submit {order_type} {side} order on {symbol} using {usdc_amount:.2f} USDC ≈ {quantity_str} units")
+        print(t("order.dry_run", order_type, side, symbol, usdc_amount, quantity_str))
         return
 
-    print(f"🚀 Submitting {order_type} {side} order on {symbol} using {usdc_amount:.2f} USDC ≈ {quantity_str} units")
+    print(t("order.submitting", order_type, side, symbol, usdc_amount, quantity_str))
 
     response = account.execute_order(
         symbol=symbol,
@@ -122,7 +123,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
     )
 
     if not isinstance(response, dict):
-        print("❌ Invalid response from order execution.")
+        print(t("order.invalid_response"))
         return
 
     status = response.get("status", "UNKNOWN")
@@ -138,7 +139,7 @@ def open_position(symbol: str, usdc_amount: float, direction: str, dry_run: bool
         status,
     ])
 
-    print("✅ Order response:")
+    print(t("order.response"))
     print(tabulate(table, headers=headers, tablefmt="grid"))
 
 if __name__ == "__main__":
@@ -150,15 +151,14 @@ if __name__ == "__main__":
         dry_run = True
 
     if len(args) != 3:
-        print("Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> [--dry-run]")
-        print("Example: python open_position_usdc.py SOL_USDC_PERP 25 long --dry-run")
+        print(t("order.usage"))
         sys.exit(1)
 
     symbol = args[0]
     try:
         usdc_amount = float(args[1])
     except ValueError:
-        print("❌ USDC amount must be a number.")
+        print(t("order.amount_must_be_number"))
         sys.exit(1)
 
     direction = args[2]

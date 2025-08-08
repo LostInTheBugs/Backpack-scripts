@@ -17,10 +17,41 @@
         "clean_shutdown": "🛑 Manual stop requested via KeyboardInterrupt, clean shutdown..."
     },
     "backtest": {
-        "launch": "[{}] 🧪 Launching {}h backtest with {} strategy"
+        "launch": "[{}] 🧪 Launching {}h backtest with {} strategy",
+        "no_ohlcv_data": "❌ No OHLCV data in database for backtest",
+        "error_fetch_ohlcv": "❌ Error fetching OHLCV backtest data: {}",
+        "no_data": "❌ No OHLCV data available",
+        "start": "✅ Starting backtest with {} candles",
+        "end": "🔚 Backtest completed",
+        "stats_positions": "📊 Positions: {} | Winning: {} | Losing: {}",
+        "stats_pnl": "📈 Total PnL: {:.2f}% | Average: {:.2f}% | Median: {:.2f}% | Win rate: {:.2f}%",
+        "no_positions": "⚠️ No positions taken",
+        "exception": "💥 Exception in complete backtest: {}"
     },
     "time": {
         "seconds": "{}s",
         "minutes": "{}min"
+    }
+    "order": {
+        "invalid_direction": "❌ Invalid direction. Use 'long' or 'short'.",
+        "invalid_amount": "❌ USDC amount must be greater than zero.",
+        "market_list_failed": "❌ Failed to retrieve market list.",
+        "symbol_not_found": "❌ Symbol '{}' not found.",
+        "ticker_failed": "❌ Failed to retrieve ticker data.",
+        "invalid_price": "❌ Invalid mark price from ticker.",
+        "below_min_qty": "❌ Order quantity {0} is below the minimum allowed ({1}) for {2}.",
+        "increase_amount": "➡️ Increase your USDC amount or choose another symbol.",
+        "invalid_qty_or_price": "⚠️ Quantity or price not valid for this market.",
+        "step_error": " ➤ Quantity {0} does not respect stepSize ({1})",
+        "tick_error": " ➤ Price {0} does not respect tickSize ({1})",
+        "adjusted_qty": "✅ Adjusted quantity: {0}",
+        "adjusted_price": "✅ Adjusted price   : {0:.{1}f}",
+        "dry_run": "[DRY RUN] Would submit {0} {1} order on {2} using {3:.2f} USDC ≈ {4} units",
+        "submitting": "🚀 Submitting {0} {1} order on {2} using {3:.2f} USDC ≈ {4} units",
+        "invalid_response": "❌ Invalid response from order execution.",
+        "response": "✅ Order response:",
+        "usage": "Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> [--dry-run]\nExample: python open_position_usdc.py SOL_USDC_PERP 25 long --dry-run",
+        "amount_must_be_number": "❌ USDC amount must be a number.",
+        "market_info": "📊 {0} market info:"
     }
 }
