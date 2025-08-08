@@ -17,7 +17,7 @@ database:
 strategy:
   default_strategy: "Default"     # Default trading strategy
   auto_select_update_interval: 300 # Auto symbol update interval in seconds
-  auto_select_top_n: 10           # Number of top symbols to select
+  auto_select_top_n: 20           # Number of top symbols to select
   
   # Technical indicators parameters
   rsi_period: 14
