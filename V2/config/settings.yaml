@@ -6,7 +6,7 @@ trading:
   leverage: 1                     # Trading leverage
   trailing_stop_trigger: 0.5      # Trailing stop trigger in %
   max_positions: 10               # Maximum simultaneous positions
-  min_pnl_for_trailing: 0.3       # Minimum PnL % before activating trailing stop
+  min_pnl_for_trailing: 1.0       # Minimum PnL % before activating trailing stop
 
 database:
   retention_days: 90              # Data retention in days
