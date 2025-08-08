@@ -31,7 +31,7 @@
     "time": {
         "seconds": "{}s",
         "minutes": "{}min"
-    }
+    },
     "order": {
         "invalid_direction": "❌ Direction invalide. Utilisez 'long' ou 'short'.",
         "invalid_amount": "❌ Le montant en USDC doit être supérieur à zéro.",
