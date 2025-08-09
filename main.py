@@ -165,23 +165,33 @@ async def async_main(args):
 
     try:
         if args.backtest:
+            log(f"[DEBUG] Backtest demandé avec valeur: {args.backtest}", level="DEBUG")
             if args.symbols:
                 symbols = args.symbols.split(",")
+                log(f"[DEBUG] Symboles passés en argument: {symbols}", level="DEBUG")
             else:
                 symbols = load_symbols_from_file()
-                
+                log(f"[DEBUG] Symboles chargés depuis fichier: {symbols}", level="DEBUG")
+
+            if not symbols:
+                 log("[ERROR] Liste de symboles vide, backtest annulé", level="ERROR")
+            return
+
             if isinstance(args.backtest, tuple):
                 # Plage de dates
                 start_dt, end_dt = args.backtest
                 for symbol in symbols:
                     log(f"[{symbol}] Starting backtest from {start_dt.date()} to {end_dt.date()} with {args.strategie} strategy")
+                    log(f"[DEBUG] Lancement backtest {symbol} de {start_dt.date()} à {end_dt.date()}", level="DEBUG")
                     await run_backtest_async(symbol, (start_dt, end_dt), pg_dsn, args.strategie)
             else:
                 # Durée en heures
                 for symbol in symbols:
                     log(f"[{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy")
+                    log(f"[DEBUG] Lancement backtest {symbol} pendant {args.backtest} heures", level="DEBUG")
                     await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
         else:
+            log("[DEBUG] Mode live (pas de backtest)", level="DEBUG")
             if args.auto_select:
                 top_n = config.strategy.auto_select_top_n if not args.no_limit else None
                 symbols_container = {'list': fetch_top_n_volatility_volume(n=top_n)}

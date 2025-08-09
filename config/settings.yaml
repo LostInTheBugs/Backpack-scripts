@@ -37,7 +37,7 @@ risk:
   risk_per_trade_pct: 2.0         # Risk per trade as % of capital
 
 logging:
-  log_level: "INFO"               # DEBUG, INFO, WARNING, ERROR
+  log_level: "DEBUG"               # DEBUG, INFO, WARNING, ERROR
   log_file_path: "logs/trading.log"
   max_log_file_size_mb: 50
   log_backup_count: 5
