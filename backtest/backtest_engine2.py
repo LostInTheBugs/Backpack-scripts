@@ -8,7 +8,7 @@ from utils.logger import log
 from utils.position_tracker import PositionTracker
 from importlib import import_module
 from datetime import datetime, timedelta, timezone
-from utils.logger import log_level
+from utils.logger import log
 
 class BacktestTranslator:
     def __init__(self, language='fr'):
