@@ -165,6 +165,7 @@ async def async_main(args):
 
     try:
         if args.backtest:
+            log("[DEBUG] Mode backtest activé", level="DEBUG")
             log(f"[DEBUG] Backtest demandé avec valeur: {args.backtest}", level="DEBUG")
             if args.symbols:
                 symbols = args.symbols.split(",")
