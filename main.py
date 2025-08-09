@@ -176,8 +176,8 @@ async def async_main(args):
 
             if not symbols:
                  log("[ERROR] Liste de symboles vide, backtest annulé", level="ERROR")
-            return
-
+                 return
+            
             if isinstance(args.backtest, tuple):
                 # Plage de dates
                 start_dt, end_dt = args.backtest
