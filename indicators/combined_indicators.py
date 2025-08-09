@@ -33,6 +33,7 @@ def compute_all(df):
     """
     Calcule tous les indicateurs nécessaires une seule fois.
     """
+    df = df.copy()
     df = calculate_macd(df)
     df = calculate_rsi(df)
     df = calculate_trix(df)
