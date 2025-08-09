@@ -26,7 +26,10 @@
         "stats_positions": "📊 Positions: {} | Winning: {} | Losing: {}",
         "stats_pnl": "📈 Total PnL: {:.2f}% | Average: {:.2f}% | Median: {:.2f}% | Win rate: {:.2f}%",
         "no_positions": "⚠️ No positions taken",
-        "exception": "💥 Exception in complete backtest: {}"
+        "exception": "💥 Exception in complete backtest: {}",
+        "info_filter_duration": "🔎 Filtering data for the last {:.2f} hours",
+        "info_filter_dates": "🔎 Filtering data between {} and {}",
+        "no_data_after_filter": "❌ No data after filtering"
     },
     "time": {
         "seconds": "{}s",

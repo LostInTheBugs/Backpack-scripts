@@ -7,6 +7,7 @@ import traceback
 from utils.logger import log
 from utils.position_tracker import PositionTracker
 from importlib import import_module
+from datetime import datetime, timedelta, timezone
 
 class BacktestTranslator:
     def __init__(self, language='fr'):
@@ -120,7 +121,7 @@ async def fetch_ohlcv_from_db(pool, symbol):
             traceback.print_exc()
             return pd.DataFrame()
 
-async def run_backtest_async(symbol: str, interval: str, dsn: str, strategy_name: str, language: str = 'fr'):
+async def run_backtest_async(symbol: str, interval, dsn: str, strategy_name: str, language: str = 'fr'):
     # Configure la langue pour ce backtest
     bt_translator.set_language(language)
     
@@ -131,6 +132,28 @@ async def run_backtest_async(symbol: str, interval: str, dsn: str, strategy_name
 
         if df.empty:
             log(f"[{symbol}] {bt_translator.t('backtest', 'no_data')}")
+            return
+        
+        # --- Filtrage des données selon interval ---
+        if isinstance(interval, (int, float)):
+            # interval en heures, on prend les dernières interval heures
+            end_time = df.index[-1]
+            start_time = end_time - timedelta(hours=interval)
+            df = df.loc[start_time:end_time]
+            log(f"[{symbol}] {bt_translator.t('backtest', 'info_filter_duration', interval)}")
+        elif isinstance(interval, tuple) and len(interval) == 2:
+            start_time, end_time = interval
+            # Assurer que start_time et end_time ont le bon timezone (UTC)
+            # Si ce sont des datetime naïfs, on les localise en UTC
+            if start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+            df = df.loc[start_time:end_time]
+            log(f"[{symbol}] {bt_translator.t('backtest', 'info_filter_dates', start_time, end_time)}")
+
+        if df.empty:
+            log(f"[{symbol}] {bt_translator.t('backtest', 'no_data_after_filter')}")
             return
 
         log(f"[{symbol}] {bt_translator.t('backtest', 'start', len(df))}")

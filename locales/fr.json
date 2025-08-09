@@ -26,7 +26,10 @@
         "stats_positions": "📊 Positions: {} | Gagnantes: {} | Perdantes: {}",
         "stats_pnl": "📈 PnL total: {:.2f}% | moyen: {:.2f}% | médian: {:.2f}% | taux de succès: {:.2f}%",
         "no_positions": "⚠️ Aucune position prise",
-        "exception": "💥 Exception dans le backtest complet: {}"
+        "exception": "💥 Exception dans le backtest complet: {}",
+        "info_filter_duration": "🔎 Filtrage des données sur les dernières {:.2f} heures",
+        "info_filter_dates": "🔎 Filtrage des données entre {} et {}",
+        "no_data_after_filter": "❌ Pas de données après filtrage"
     },
     "time": {
         "seconds": "{}s",
@@ -53,5 +56,17 @@
         "usage": "Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> [--dry-run]\nExemple: python open_position_usdc.py SOL_USDC_PERP 25 long --dry-run",
         "amount_must_be_number": "❌ Le montant USDC doit être un nombre.",
         "market_info": "📊 Données marché pour {0} :"
+    },
+    "config": {
+        "loaded": "✅ Configuration chargée depuis {}",
+        "error": "❌ Erreur de chargement de la configuration : {}",
+        "missing_file": "❌ Fichier de configuration manquant : {}",
+        "invalid_format": "❌ Format de configuration invalide : {}"
+    },
+    "general": {
+        "starting": "🚀 Démarrage du script...",
+        "stopping": "🛑 Arrêt du script...",
+        "error": "💥 Erreur : {}",
+        "success": "✅ Succès : {}"
     }
 }
