@@ -8,7 +8,6 @@ from utils.logger import log
 from utils.position_tracker import PositionTracker
 from importlib import import_module
 from datetime import datetime, timedelta, timezone
-from utils.logger import log
 
 class BacktestTranslator:
     def __init__(self, language='fr'):
@@ -175,16 +174,10 @@ async def run_backtest_async(symbol: str, interval, dsn: str, strategy_name: str
             else:
                 signal = result
                 indicators = {}
-            if log_level.upper() == "DEBUG":
-                debug_msg = (
-                    f"[DEBUG] {symbol} | {current_time} | Signal={signal} "
-                    f"| Prix={current_df.iloc[-1]['close']}"
-                )
-                if indicators:
-                    debug_msg += " | " + " | ".join(f"{k}={v:.2f}" for k, v in indicators.items())
-                log(debug_msg)
-
-
+            debug_msg = f"[DEBUG] {symbol} | {current_time} | Signal={signal} | Prix={current_df.iloc[-1]['close']}"
+            if indicators:
+                debug_msg += " | " + " | ".join(f"{k}={v:.2f}" for k, v in indicators.items())
+            log(debug_msg, level="DEBUG")
 
             current_price = current_df.iloc[-1]["close"]
 
