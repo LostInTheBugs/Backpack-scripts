@@ -1,14 +1,22 @@
 from indicators.combined_indicators import compute_all
+import pandas as pd
 
 def get_combined_signal(df):
     df = df.copy()
     df = compute_all(df)
 
-    if len(df) < 2:
+    if len(df) < 50:  # besoin d'au moins 50 données pour EMA50
         return None, {}
+
+    # Calcul EMA50
+    df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
+
+    # Filtre tendance
+    price_above_ema = last['close'] > last['ema50']
+    price_below_ema = last['close'] < last['ema50']
 
     # Détection des signaux
     macd_buy = prev['macd'] < prev['signal'] and last['macd'] > last['signal']
@@ -23,15 +31,14 @@ def get_combined_signal(df):
     trix_buy = prev['trix'] < 0 and last['trix'] > 0
     trix_sell = prev['trix'] > 0 and last['trix'] < 0
 
-    # Détermine le signal
-    if macd_buy and rsi_buy and breakout_buy and trix_buy:
+    # Détermine le signal avec filtre EMA50
+    if price_above_ema and macd_buy and rsi_buy and breakout_buy and trix_buy:
         signal = "BUY"
-    elif macd_sell and rsi_sell and breakout_sell and trix_sell:
+    elif price_below_ema and macd_sell and rsi_sell and breakout_sell and trix_sell:
         signal = "SELL"
     else:
         signal = None
 
-    # Retourne aussi les valeurs d’indicateurs pour le debug
     indicators = {
         "MACD": last['macd'],
         "MACD_signal": last['signal'],
@@ -39,7 +46,8 @@ def get_combined_signal(df):
         "TRIX": last['trix'],
         "HighBreakout": df['high_breakout'][-20:-1].max(),
         "LowBreakout": df['low_breakout'][-20:-1].min(),
-        "Close": last['close']
+        "Close": last['close'],
+        "EMA50": last['ema50']
     }
 
     return signal, indicators
