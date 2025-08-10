@@ -15,7 +15,7 @@ from live.live_engine import handle_live_symbol
 from backtest.backtest_engine2 import run_backtest_async
 from config.settings import load_config, get_config
 from utils.symbol_filter import filter_symbols_by_config
-from utils.symbol_updater import start_symbol_updater
+#from utils.update_symbols_periodically import start_symbol_updater  
 
 
 # Load configuration at startup
@@ -24,7 +24,7 @@ config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-start_symbol_updater()
+#start_symbol_updater()
 
 
 def parse_backtest(value):
