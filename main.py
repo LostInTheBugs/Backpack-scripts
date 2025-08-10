@@ -15,7 +15,7 @@ from live.live_engine import handle_live_symbol
 from backtest.backtest_engine2 import run_backtest_async
 from config.settings import load_config, get_config
 from utils.symbol_filter import filter_symbols_by_config
-from utils.update_symbols_periodically import start_symbol_updater  # 👈 Import correct
+from utils.update_symbols_periodically import start_symbol_updater  # Import correct
 
 
 # Charge la config au démarrage
@@ -24,8 +24,12 @@ config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
+# Container mutable partagé pour stocker les symboles mis à jour par le thread
+symbols_container = {'list': []}
+
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
-start_symbol_updater()
+start_symbol_updater(symbols_container)
+
 
 def parse_backtest(value):
     """
@@ -33,7 +37,6 @@ def parse_backtest(value):
     - Durée: 10m, 2h, 3d, 1w, ou juste un nombre (minutes par défaut) → retourne nombre d'heures (float)
     - Plage de dates: YYYY-MM-DD:YYYY-MM-DD → retourne tuple (datetime_start, datetime_end)
     """
-    # Test si c'est une plage de dates
     if ":" in value and re.match(r"^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$", value):
         start_str, end_str = value.split(":")
         from datetime import datetime
@@ -43,7 +46,6 @@ def parse_backtest(value):
             raise argparse.ArgumentTypeError("La date de début doit être avant la date de fin.")
         return (start_dt, end_dt)
 
-    # Sinon, on considère que c'est une durée
     match = re.match(r"^(\d+)([smhdw]?)$", value.lower())
     if not match:
         raise argparse.ArgumentTypeError(
@@ -53,15 +55,14 @@ def parse_backtest(value):
     amount, unit = match.groups()
     amount = int(amount)
     multipliers_in_hours = {
-        "": 1/60,     # nombre seul → minutes
-        "s": 1/3600,  # secondes
-        "m": 1/60,    # minutes
-        "h": 1,       # heures
-        "d": 24,      # jours
-        "w": 168      # semaines
+        "": 1/60,     # minutes par défaut
+        "s": 1/3600,
+        "m": 1/60,
+        "h": 1,
+        "d": 24,
+        "w": 168
     }
     return amount * multipliers_in_hours[unit]
-
 
 
 async def update_symbols_periodically(symbols_container: dict, n: int = None, interval_sec: int = None):
@@ -75,7 +76,6 @@ async def update_symbols_periodically(symbols_container: dict, n: int = None, in
         try:
             new_symbols = fetch_top_n_volatility_volume(n=n)
             if new_symbols:
-                # Appliquer filtre include/exclude
                 filtered = filter_symbols_by_config(new_symbols)
                 if filtered:
                     symbols_container['list'] = filtered
@@ -157,7 +157,7 @@ async def async_main(args):
     """Main async function"""
     db_config = config.database
     pg_dsn = config.pg_dsn or os.environ.get("PG_DSN")
-    
+
     pool = await asyncpg.create_pool(
         dsn=pg_dsn,
         min_size=db_config.pool_min_size,
@@ -186,9 +186,9 @@ async def async_main(args):
                 log(f"[DEBUG] Symboles chargés depuis fichier: {symbols}", level="DEBUG")
 
             if not symbols:
-                 log("[ERROR] Liste de symboles vide, backtest annulé", level="ERROR")
-                 return
-            
+                log("[ERROR] Liste de symboles vide, backtest annulé", level="ERROR")
+                return
+
             if isinstance(args.backtest, tuple):
                 # Plage de dates
                 start_dt, end_dt = args.backtest
@@ -206,7 +206,7 @@ async def async_main(args):
             log("[DEBUG] Mode live (pas de backtest)", level="DEBUG")
             if args.auto_select:
                 top_n = config.strategy.auto_select_top_n if not args.no_limit else None
-                symbols_container = {'list': fetch_top_n_volatility_volume(n=top_n)}
+                symbols_container['list'] = fetch_top_n_volatility_volume(n=top_n)
                 updater_task = asyncio.create_task(update_symbols_periodically(symbols_container, n=top_n))
                 task = asyncio.create_task(
                     main_loop([], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container)

@@ -3,7 +3,6 @@ import threading
 from utils.logger import log
 from config.settings import get_config
 
-
 config = get_config()
 
 def filter_symbols_by_config(symbols: list) -> list:
@@ -24,7 +23,7 @@ def filter_symbols_by_config(symbols: list) -> list:
     filtered = [s for s in filtered if s.upper() not in exclude_list]
     return filtered
 
-def update_symbols_periodically():
+def update_symbols_periodically(symbols_container: dict):
     from utils.symbols import get_top_symbols
     interval = getattr(config.strategy, "auto_select_update_interval", 300)
 
@@ -33,13 +32,13 @@ def update_symbols_periodically():
             log("🔄 Mise à jour des symboles...")
             symbols = get_top_symbols(top_n=config.strategy.auto_select_top_n)
             symbols = filter_symbols_by_config(symbols)
-            config.current_symbols = symbols
+            symbols_container['list'] = symbols  # Mise à jour dans le dict partagé
             log(f"✅ Symboles mis à jour : {symbols}")
         except Exception as e:
             log(f"❌ Erreur mise à jour symboles : {e}")
         time.sleep(interval)
 
-def start_symbol_updater():
-    t = threading.Thread(target=update_symbols_periodically, daemon=True)
+def start_symbol_updater(symbols_container: dict):
+    t = threading.Thread(target=update_symbols_periodically, args=(symbols_container,), daemon=True)
     t.start()
     log("🚀 Thread de mise à jour des symboles démarré")
