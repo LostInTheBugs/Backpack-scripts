@@ -17,20 +17,31 @@ from config.settings import load_config, get_config
 from utils.symbol_filter import filter_symbols_by_config
 from utils.update_symbols_periodically import start_symbol_updater  # Import thread
 
+
+
 # Charge la config au démarrage
 config = load_config()
 
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-# Liste auto-select
 auto_symbols = fetch_top_n_volatility_volume(n=config.strategy.auto_select_top_n)
 
-# On fusionne avec include
-all_symbols = list(set(auto_symbols + config.strategy.include))
+# Vérifier si include et exclude existent dans la config
+include_symbols = getattr(config.strategy, 'include', [])
+exclude_symbols = getattr(config.strategy, 'exclude', [])
 
-# On applique le filtre exclude
-final_symbols = [s for s in all_symbols if s not in config.strategy.exclude]
+print(f"[DEBUG] Auto symbols: {auto_symbols}")
+print(f"[DEBUG] Include symbols: {include_symbols}")  
+print(f"[DEBUG] Exclude symbols: {exclude_symbols}")
+
+# On fusionne avec include (ajoute les symboles forcés)
+all_symbols = list(set(auto_symbols + include_symbols))
+
+# On applique le filtre exclude (retire les symboles interdits)
+final_symbols = [s for s in all_symbols if s not in exclude_symbols]
+
+print(f"[DEBUG] Final symbols: {final_symbols}")
 
 symbols_container = {'list': final_symbols}
 
