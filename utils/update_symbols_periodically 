@@ -1,21 +1,17 @@
 import time
 import threading
 from utils.logger import log
-from config import settings
+from config.settings import get_config
+
+config = get_config()
 
 def filter_symbols_by_config(symbols: list) -> list:
-    """
-    Filtre les symboles selon le settings.yaml :
-    - include : ajoute ou garde certains symboles
-    - exclude : supprime définitivement certains symboles
-    """
-    include_list = getattr(settings.symbols, "include", [])
-    exclude_list = getattr(settings.symbols, "exclude", [])
+    include_list = getattr(config.symbols, "include", [])
+    exclude_list = getattr(config.symbols, "exclude", [])
 
     include_list = [s.upper() for s in include_list]
     exclude_list = [s.upper() for s in exclude_list]
 
-    # Si include défini → on garde seulement ceux de la liste, et on ajoute s’ils ne sont pas déjà dedans
     if include_list:
         filtered = [s for s in symbols if s.upper() in include_list]
         for s in include_list:
@@ -24,37 +20,25 @@ def filter_symbols_by_config(symbols: list) -> list:
     else:
         filtered = symbols.copy()
 
-    # Retirer ceux en exclude
     filtered = [s for s in filtered if s.upper() not in exclude_list]
-
     return filtered
 
-
 def update_symbols_periodically():
-    """
-    Met à jour la liste des symboles à trader toutes les X secondes
-    en tenant compte de settings.symbols.include et exclude.
-    """
-    from data.symbols import get_top_symbols  # doit exister dans ton projet
-    interval = getattr(settings.strategy, "auto_select_update_interval", 300)
+    from data.symbols import get_top_symbols
+    interval = getattr(config.strategy, "auto_select_update_interval", 300)
 
     while True:
         try:
             log("🔄 Mise à jour des symboles...")
-            symbols = get_top_symbols(top_n=settings.strategy.auto_select_top_n)
+            symbols = get_top_symbols(top_n=config.strategy.auto_select_top_n)
             symbols = filter_symbols_by_config(symbols)
-            settings.current_symbols = symbols
+            config.current_symbols = symbols
             log(f"✅ Symboles mis à jour : {symbols}")
         except Exception as e:
             log(f"❌ Erreur mise à jour symboles : {e}")
-
         time.sleep(interval)
 
-
 def start_symbol_updater():
-    """
-    Lance la mise à jour des symboles en arrière-plan.
-    """
     t = threading.Thread(target=update_symbols_periodically, daemon=True)
     t.start()
     log("🚀 Thread de mise à jour des symboles démarré")

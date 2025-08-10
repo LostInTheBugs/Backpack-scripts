@@ -15,17 +15,17 @@ from live.live_engine import handle_live_symbol
 from backtest.backtest_engine2 import run_backtest_async
 from config.settings import load_config, get_config
 from utils.symbol_filter import filter_symbols_by_config
-#from utils.update_symbols_periodically import start_symbol_updater  
+from utils.update_symbols_periodically import start_symbol_updater  # 👈 Import correct
 
 
-# Load configuration at startup
+# Charge la config au démarrage
 config = load_config()
 
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-#start_symbol_updater()
-
+# Lance le thread de mise à jour périodique des symboles (thread daemon)
+start_symbol_updater()
 
 def parse_backtest(value):
     """
@@ -242,11 +242,11 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, default="config/settings.yaml", help="Configuration file path")
     args = parser.parse_args()
 
-    # Load config with custom path if provided
+    # Recharge config si chemin personnalisé
     if args.config != "config/settings.yaml":
         config = load_config(args.config)
 
-    # Use strategy from config if not provided via CLI
+    # Utilise la stratégie par défaut si non passée en CLI
     if args.strategie is None:
         args.strategie = config.strategy.default_strategy
 
