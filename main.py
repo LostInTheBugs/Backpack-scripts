@@ -249,6 +249,12 @@ if __name__ == "__main__":
         elif args.strategie == "RangeSoft":
             from signals.range_soft_signal import get_combined_signal
             args.get_combined_signal = get_combined_signal
+        elif args.strategie == "ThreeOutOfFour":
+            from signals.three_out_of_four_conditions import get_combined_signal
+            args.get_combined_signal = get_combined_signal
+        elif args.strategie == "TwoOutOfFourScalp":
+            from signals.two_out_of_four_scalp import get_combined_signal
+            args.get_combined_signal = get_combined_signal
         elif args.strategie in ["Auto", "AutoSoft", "Range"]:
             args.get_combined_signal = None
         else:
