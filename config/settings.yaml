@@ -37,7 +37,7 @@ strategy:
     stop_loss_pct: 0.5      # Stop loss plus serré à 0.5%
     take_profit_pct: 1.0    # Take profit plus petit à 1%
 
-    
+
 risk:
   max_daily_loss_pct: 10.0        # Maximum daily loss percentage
   max_correlation: 0.7            # Maximum correlation between positions
@@ -45,7 +45,7 @@ risk:
   risk_per_trade_pct: 2.0         # Risk per trade as % of capital
 
 logging:
-  log_level: "DEBUG"               # DEBUG, INFO, WARNING, ERROR
+  log_level: "ERROR"               # DEBUG, INFO, WARNING, ERROR
   log_file_path: "logs/trading.log"
   max_log_file_size_mb: 50
   log_backup_count: 5
