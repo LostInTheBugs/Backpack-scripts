@@ -1,4 +1,4 @@
-from config.settings import config
+from config.settings import get_config
 
 def filter_symbols(symbols: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
     filtered = symbols
