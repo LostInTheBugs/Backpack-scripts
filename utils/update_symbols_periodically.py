@@ -3,6 +3,7 @@ import threading
 from utils.logger import log
 from config.settings import get_config
 
+
 config = get_config()
 
 def filter_symbols_by_config(symbols: list) -> list:
@@ -24,7 +25,7 @@ def filter_symbols_by_config(symbols: list) -> list:
     return filtered
 
 def update_symbols_periodically():
-    from data.symbols import get_top_symbols
+    from utils.symbols import get_top_symbols
     interval = getattr(config.strategy, "auto_select_update_interval", 300)
 
     while True:
