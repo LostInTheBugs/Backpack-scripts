@@ -15,8 +15,7 @@ from live.live_engine import handle_live_symbol
 from backtest.backtest_engine2 import run_backtest_async
 from config.settings import load_config, get_config
 from utils.symbol_filter import filter_symbols_by_config
-from utils.update_symbols_periodically import start_symbol_updater  # Import correct
-
+from utils.update_symbols_periodically import start_symbol_updater  # Import thread
 
 # Charge la config au démarrage
 config = load_config()
@@ -25,18 +24,13 @@ public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
 # Container mutable partagé pour stocker les symboles mis à jour par le thread
-symbols_container = {'list': []}
+symbols_container = {'list': fetch_top_n_volatility_volume(n=config.strategy.auto_select_top_n)}
 
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 start_symbol_updater(symbols_container)
 
 
 def parse_backtest(value):
-    """
-    Parse le format du backtest:
-    - Durée: 10m, 2h, 3d, 1w, ou juste un nombre (minutes par défaut) → retourne nombre d'heures (float)
-    - Plage de dates: YYYY-MM-DD:YYYY-MM-DD → retourne tuple (datetime_start, datetime_end)
-    """
     if ":" in value and re.match(r"^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$", value):
         start_str, end_str = value.split(":")
         from datetime import datetime
@@ -55,7 +49,7 @@ def parse_backtest(value):
     amount, unit = match.groups()
     amount = int(amount)
     multipliers_in_hours = {
-        "": 1/60,     # minutes par défaut
+        "": 1/60,  # minutes par défaut
         "s": 1/3600,
         "m": 1/60,
         "h": 1,
@@ -65,33 +59,11 @@ def parse_backtest(value):
     return amount * multipliers_in_hours[unit]
 
 
-async def update_symbols_periodically(symbols_container: dict, n: int = None, interval_sec: int = None):
-    """Met à jour automatiquement la liste des symbols filtrés par volatilité, volume, include/exclude"""
-    if n is None:
-        n = config.strategy.auto_select_top_n
-    if interval_sec is None:
-        interval_sec = config.strategy.auto_select_update_interval
-
-    while True:
-        try:
-            new_symbols = fetch_top_n_volatility_volume(n=n)
-            if new_symbols:
-                filtered = filter_symbols_by_config(new_symbols)
-                if filtered:
-                    symbols_container['list'] = filtered
-                    log(f"Symbol auto-update filtered: {filtered}")
-                else:
-                    log("Symbol auto-update: après filtrage, aucun symbole retenu")
-        except Exception as e:
-            log(f"Erreur lors de la mise à jour automatique des symbols : {e}")
-        await asyncio.sleep(interval_sec)
-
-
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
-    """Main trading loop"""
     while True:
         if auto_select and symbols_container:
             symbols = symbols_container.get('list', [])
+            log(f"[DEBUG] Symbols list updated in main_loop: {symbols}")
 
         active_symbols = []
         ignored_symbols = []
@@ -129,7 +101,6 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 
 async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
-    """Watch symbol file for changes and reload automatically"""
     last_modified = None
     symbols = []
 
@@ -154,7 +125,6 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
 
 async def async_main(args):
-    """Main async function"""
     db_config = config.database
     pg_dsn = config.pg_dsn or os.environ.get("PG_DSN")
 
@@ -190,14 +160,12 @@ async def async_main(args):
                 return
 
             if isinstance(args.backtest, tuple):
-                # Plage de dates
                 start_dt, end_dt = args.backtest
                 for symbol in symbols:
                     log(f"[{symbol}] Starting backtest from {start_dt.date()} to {end_dt.date()} with {args.strategie} strategy")
                     log(f"[DEBUG] Lancement backtest {symbol} de {start_dt.date()} à {end_dt.date()}", level="DEBUG")
                     await run_backtest_async(symbol, (start_dt, end_dt), pg_dsn, args.strategie)
             else:
-                # Durée en heures
                 for symbol in symbols:
                     log(f"[{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy")
                     log(f"[DEBUG] Lancement backtest {symbol} pendant {args.backtest} heures", level="DEBUG")
@@ -205,9 +173,7 @@ async def async_main(args):
         else:
             log("[DEBUG] Mode live (pas de backtest)", level="DEBUG")
             if args.auto_select:
-                top_n = config.strategy.auto_select_top_n if not args.no_limit else None
-                symbols_container['list'] = fetch_top_n_volatility_volume(n=top_n)
-                updater_task = asyncio.create_task(update_symbols_periodically(symbols_container, n=top_n))
+                # Ne lance PAS update_symbols_periodically ici car thread déjà lancé
                 task = asyncio.create_task(
                     main_loop([], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container)
                 )
