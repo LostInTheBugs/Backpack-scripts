@@ -226,7 +226,7 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="Simulation mode without executing trades")
     parser.add_argument("--backtest", type=parse_backtest, help="Backtest duration (ex: 10m, 2h, 3d, 1w, or just a number = minutes)")
     parser.add_argument("--auto-select", action="store_true", help="Automatic selection of most volatile symbols")
-    parser.add_argument('--strategie', type=str, default=None, help='Strategy name (Default, Trix, Combo, Auto, Range, RangeSoft, ThreeOutOfFour and TwoOutOfFourScalp.)')
+    parser.add_argument('--strategie', type=str, default=None, help='Strategy name (Default, Trix, Combo, Auto, Range, RangeSoft, ThreeOutOfFour, TwoOutOfFourScalp and DynamicThreeTwo.)')
     parser.add_argument("--no-limit", action="store_true", help="Disable symbol count limit")
     parser.add_argument("--config", type=str, default="config/settings.yaml", help="Configuration file path")
     args = parser.parse_args()
@@ -254,6 +254,9 @@ if __name__ == "__main__":
             args.get_combined_signal = get_combined_signal
         elif args.strategie == "TwoOutOfFourScalp":
             from signals.two_out_of_four_scalp import get_combined_signal
+            args.get_combined_signal = get_combined_signal
+        elif args.strategie == "DynamicThreeTwo":
+            from signals.dynamic_three_two_selector import get_combined_signal
             args.get_combined_signal = get_combined_signal
         elif args.strategie in ["Auto", "AutoSoft", "Range"]:
             args.get_combined_signal = None
