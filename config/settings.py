@@ -63,6 +63,10 @@ class LoggingConfig(BaseSettings):
     log_backup_count: int = Field(5, description="Number of log backup files")
     timezone: str = Field("Europe/Paris", description="Logging timezone")
 
+class SymbolsConfig(BaseSettings):
+    include: Optional[List[str]] = None
+    exclude: Optional[List[str]] = None
+
 class Config(BaseSettings):
     """Main configuration class"""
     trading: TradingConfig = TradingConfig()
@@ -70,8 +74,8 @@ class Config(BaseSettings):
     strategy: StrategyConfig = StrategyConfig()
     risk: RiskConfig = RiskConfig()
     logging: LoggingConfig = LoggingConfig()
+    symbols: SymbolsConfig = SymbolsConfig()
     
-    # Environment variables
     bpx_bot_public_key: Optional[str] = Field(None, env="bpx_bot_public_key")
     bpx_bot_secret_key: Optional[str] = Field(None, env="bpx_bot_secret_key")
     pg_dsn: Optional[str] = Field(None, env="PG_DSN")

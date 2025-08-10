@@ -37,6 +37,13 @@ strategy:
     stop_loss_pct: 0.5      # Stop loss plus serré à 0.5%
     take_profit_pct: 1.0    # Take profit plus petit à 1%
 
+symbols:
+  include:
+    - BTC_USDC_PERP
+    - ETH_USDC_PERP
+    - SOL_USDC_PERP
+  exclude:
+    - SHIB_USDC_PERP
 
 risk:
   max_daily_loss_pct: 10.0        # Maximum daily loss percentage

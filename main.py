@@ -14,12 +14,17 @@ from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
 from live.live_engine import handle_live_symbol
 from backtest.backtest_engine2 import run_backtest_async
 from config.settings import load_config, get_config
+from utils.symbol_filter import filter_symbols_by_config
+from utils.symbol_updater import start_symbol_updater
+
 
 # Load configuration at startup
 config = load_config()
 
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
+
+start_symbol_updater()
 
 
 def parse_backtest(value):
@@ -60,20 +65,25 @@ def parse_backtest(value):
 
 
 async def update_symbols_periodically(symbols_container: dict, n: int = None, interval_sec: int = None):
-    """Update symbols automatically based on volatility and volume"""
+    """Met à jour automatiquement la liste des symbols filtrés par volatilité, volume, include/exclude"""
     if n is None:
         n = config.strategy.auto_select_top_n
     if interval_sec is None:
         interval_sec = config.strategy.auto_select_update_interval
-        
+
     while True:
         try:
             new_symbols = fetch_top_n_volatility_volume(n=n)
             if new_symbols:
-                symbols_container['list'] = new_symbols
-                log(f"Symbol auto-update: {new_symbols}")
+                # Appliquer filtre include/exclude
+                filtered = filter_symbols_by_config(new_symbols)
+                if filtered:
+                    symbols_container['list'] = filtered
+                    log(f"Symbol auto-update filtered: {filtered}")
+                else:
+                    log("Symbol auto-update: après filtrage, aucun symbole retenu")
         except Exception as e:
-            log(f"Error updating symbols automatically: {e}")
+            log(f"Erreur lors de la mise à jour automatique des symbols : {e}")
         await asyncio.sleep(interval_sec)
 
 
@@ -128,6 +138,7 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
             current_modified = os.path.getmtime(filepath)
             if current_modified != last_modified:
                 symbols = load_symbols_from_file(filepath)
+                symbols = filter_symbols_by_config(symbols)
                 log(f"Symbol file reloaded: {symbols}")
                 last_modified = current_modified
 
