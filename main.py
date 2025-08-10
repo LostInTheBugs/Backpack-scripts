@@ -23,8 +23,16 @@ config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-# Container mutable partagé pour stocker les symboles mis à jour par le thread
-symbols_container = {'list': fetch_top_n_volatility_volume(n=config.strategy.auto_select_top_n)}
+# Liste auto-select
+auto_symbols = fetch_top_n_volatility_volume(n=config.strategy.auto_select_top_n)
+
+# On fusionne avec include
+all_symbols = list(set(auto_symbols + config.strategy.include))
+
+# On applique le filtre exclude
+final_symbols = [s for s in all_symbols if s not in config.strategy.exclude]
+
+symbols_container = {'list': final_symbols}
 
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 start_symbol_updater(symbols_container)
