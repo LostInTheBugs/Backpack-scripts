@@ -40,8 +40,12 @@ def get_combined_signal(df):
     context = detect_market_context(df)
 
     if context in ['bull', 'bear']:
-        log(f"📈 Contexte = {context.upper()} → Stratégie = ThreeOutOfFour")
-        return three_out_of_four(df)
+        stop_loss = strategy_cfg.three_out_of_four.stop_loss_pct
+        take_profit = strategy_cfg.three_out_of_four.take_profit_pct
+        log(f"📈 ThreeOutOfFour | SL={stop_loss}% TP={take_profit}%")
+        return three_out_of_four(df, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
     else:
-        log(f"🔄 Contexte = RANGE → Stratégie = TwoOutOfFourScalp")
-        return two_out_of_four(df)
+        stop_loss = strategy_cfg.two_out_of_four_scalp.stop_loss_pct
+        take_profit = strategy_cfg.two_out_of_four_scalp.take_profit_pct
+        log(f"🔄 TwoOutOfFourScalp | SL={stop_loss}% TP={take_profit}%")
+        return two_out_of_four(df, stop_loss_pct=stop_loss, take_profit_pct=take_profit)

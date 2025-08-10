@@ -5,7 +5,7 @@ import pandas as pd
 STOP_LOSS_PERCENT = 0.5   # -0.5%
 TAKE_PROFIT_PERCENT = 1.0 # +1%
 
-def get_combined_signal(df):
+def get_combined_signal(df, stop_loss_pct=None, take_profit_pct=None):
     df = df.copy()
     df = compute_all(df)
 

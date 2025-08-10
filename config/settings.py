@@ -21,6 +21,14 @@ class DatabaseConfig(BaseSettings):
     pool_max_size: int = Field(20, description="Maximum pool connections")
     max_age_seconds: int = Field(600, description="Max age for fresh data in seconds")
 
+class ThreeOutOfFourConfig(BaseSettings):
+    stop_loss_pct: float = Field(1.0, description="Stop loss percent for ThreeOutOfFour")
+    take_profit_pct: float = Field(2.0, description="Take profit percent for ThreeOutOfFour")
+
+class TwoOutOfFourScalpConfig(BaseSettings):
+    stop_loss_pct: float = Field(0.5, description="Stop loss percent for TwoOutOfFourScalp")
+    take_profit_pct: float = Field(1.0, description="Take profit percent for TwoOutOfFourScalp")
+
 class StrategyConfig(BaseSettings):
     """Strategy configuration settings"""
     default_strategy: str = Field("Default", description="Default trading strategy")
@@ -37,6 +45,8 @@ class StrategyConfig(BaseSettings):
         {"short": 20, "medium": 50, "long": 200}, 
         description="EMA periods"
     )
+    three_out_of_four: ThreeOutOfFourConfig = ThreeOutOfFourConfig()
+    two_out_of_four_scalp: TwoOutOfFourScalpConfig = TwoOutOfFourScalpConfig()
 
 class RiskConfig(BaseSettings):
     """Risk management configuration"""

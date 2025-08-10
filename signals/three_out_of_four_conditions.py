@@ -1,7 +1,7 @@
 from indicators.combined_indicators import compute_all
 import pandas as pd
 
-def get_combined_signal(df):
+def get_combined_signal(df, stop_loss_pct=None, take_profit_pct=None):
     df = df.copy()
     df = compute_all(df)
 

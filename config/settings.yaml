@@ -30,6 +30,14 @@ strategy:
     medium: 50
     long: 200
 
+  three_out_of_four:
+    stop_loss_pct: 1.0      # Stop loss à 1%
+    take_profit_pct: 2.0    # Take profit à 2%
+  two_out_of_four_scalp:
+    stop_loss_pct: 0.5      # Stop loss plus serré à 0.5%
+    take_profit_pct: 1.0    # Take profit plus petit à 1%
+
+    
 risk:
   max_daily_loss_pct: 10.0        # Maximum daily loss percentage
   max_correlation: 0.7            # Maximum correlation between positions
