@@ -153,12 +153,17 @@ async def async_main(args):
         max_size=db_config.pool_max_size
     )
 
-    from utils.scan_all_symbols import scan_all_symbols  # à adapter au chemin réel
-    if args.symbols:
+    from utils.scan_all_symbols import scan_all_symbols  # Ajuste chemin si besoin
+
+    # Choix des symbols à scanner
+    if args.auto_select:
+        initial_symbols = auto_symbols  # liste volatile auto récupérée en début main.py
+    elif args.symbols:
         initial_symbols = args.symbols.split(",")
     else:
         initial_symbols = load_symbols_from_file()
 
+    log(f"[DEBUG] Initial scan of symbols before main loop: {initial_symbols}", level="DEBUG")
     await scan_all_symbols(pool, initial_symbols)
 
     loop = asyncio.get_running_loop()
