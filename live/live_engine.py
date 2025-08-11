@@ -40,6 +40,12 @@ def import_strategy_signal(strategy):
         from signals.range_soft_signal import get_combined_signal
     elif strategy == "AutoSoft":
         from signals.strategy_selector import strategy_autosoft as get_combined_signal
+    elif strategy == "DynamicThreeTwo":  
+        from signals.dynamic_three_two_selector import get_combined_signal
+    elif strategy == "ThreeOutOfFour":  
+        from signals.three_out_of_four_conditions import get_combined_signal
+    elif strategy == "TwoOutOfFourScalp":  
+        from signals.two_out_of_four_scalp import get_combined_signal
     else:
         from signals.macd_rsi_breakout import get_combined_signal
     return get_combined_signal
