@@ -56,4 +56,12 @@ def get_combined_signal(df, stop_loss_pct=None, take_profit_pct=None):
         "ConditionsSELL_met": sum(conditions_sell)
     }
 
+    rsi = df['RSI'].iloc[-1]
+    macd = df['MACD'].iloc[-1] 
+    signal_line = df['MACD_signal'].iloc[-1]
+    
+    print(f"[DEBUG ThreeOutOfFour] RSI: {rsi:.2f}")
+    print(f"[DEBUG ThreeOutOfFour] MACD: {macd:.4f}, Signal: {signal_line:.4f}")
+    print(f"[DEBUG ThreeOutOfFour] Conditions check...")
+    
     return signal, indicators
