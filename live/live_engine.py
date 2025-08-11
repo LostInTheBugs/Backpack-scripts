@@ -91,32 +91,41 @@ def import_strategy_signal(strategy):
 def ensure_indicators(df):
     required_cols = ["EMA20", "EMA50", "EMA200", "RSI", "MACD"]
 
-    # 1. Calculer MACD si absent
-    if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
-        try:
-            short_window, long_window, signal_window = 12, 26, 9
-            ema_short = df['close'].ewm(span=short_window, adjust=False).mean()
-            ema_long = df['close'].ewm(span=long_window, adjust=False).mean()
-            df['MACD'] = ema_short - ema_long
-            df['MACD_signal'] = df['MACD'].ewm(span=signal_window, adjust=False).mean()
-            df['MACD_hist'] = df['MACD'] - df['MACD_signal']
-            log("✅ MACD calculé automatiquement.")
-        except Exception as e:
-            log(f"💥 Erreur calcul MACD: {e}")
-            return None
+    # Calcul EMA si absent
+    for period, col in [(20, "EMA20"), (50, "EMA50"), (200, "EMA200")]:
+        if col not in df.columns:
+            df[col] = df['close'].ewm(span=period, adjust=False).mean()
 
+    # Calcul RSI si absent
+    if 'RSI' not in df.columns:
+        import ta
+        rsi_period = 14
+        df['RSI'] = ta.momentum.RSIIndicator(close=df['close'], window=rsi_period).rsi()
+
+    # Calcul MACD si absent
+    if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
+        short_window, long_window, signal_window = 12, 26, 9
+        ema_short = df['close'].ewm(span=short_window, adjust=False).mean()
+        ema_long = df['close'].ewm(span=long_window, adjust=False).mean()
+        df['MACD'] = ema_short - ema_long
+        df['MACD_signal'] = df['MACD'].ewm(span=signal_window, adjust=False).mean()
+        df['MACD_hist'] = df['MACD'] - df['MACD_signal']
+        log("✅ MACD calculé automatiquement.")
+
+    # Vérification colonnes
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         log(f"⚠️ Indicateurs manquants: {missing} — signal ignoré.")
         return None
 
-    # 3. Vérifier NaN
+    # Vérification NaN
     for col in required_cols:
         if df[col].isna().any():
             log(f"⚠️ NaN détecté dans {col} — signal ignoré.")
             return None
 
     return df
+
 
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args):
@@ -152,6 +161,14 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[{symbol}] 📊 Strategy manually selected: {selected_strategy}")
 
         get_combined_signal = import_strategy_signal(selected_strategy)
+
+        strategy_module = None
+        if selected_strategy == "DynamicThreeTwo":
+            import signals.dynamic_three_two_selector as strategy_module
+
+        if strategy_module is not None and hasattr(strategy_module, "prepare_indicators"):
+            df = strategy_module.prepare_indicators(df)
+
         df = ensure_indicators(df)
         if df is None:
             return
