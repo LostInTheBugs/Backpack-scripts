@@ -31,9 +31,9 @@ auto_symbols = fetch_top_n_volatility_volume(n=config.strategy.auto_select_top_n
 include_symbols = getattr(config.strategy, 'include', [])
 exclude_symbols = getattr(config.strategy, 'exclude', [])
 
-log("[DEBUG] Auto symbols: {auto_symbols}", level="DEBUG")
-log("[DEBUG] Include symbols: {include_symbols}", level="DEBUG")
-log("[DEBUG] Exclude symbols: {exclude_symbols}", level="DEBUG")
+log(f"[DEBUG] Auto symbols: {auto_symbols}", level="DEBUG")
+log(f"[DEBUG] Include symbols: {include_symbols}", level="DEBUG")
+log(f"[DEBUG] Exclude symbols: {exclude_symbols}", level="DEBUG")
 
 # On fusionne avec include (ajoute les symboles forcés)
 all_symbols = list(set(auto_symbols + include_symbols))

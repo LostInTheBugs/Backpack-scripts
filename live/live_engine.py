@@ -88,9 +88,9 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         # Handle new position signals
         if signal in ["BUY", "SELL"]:
             await handle_new_position(symbol, signal, real_run, dry_run)
-            log("[DEBUG] {symbol} 🚨 Try open position: {signal}", level="DEBUG")
+            log(f"[DEBUG] {symbol} 🚨 Try open position: {signal}", level="DEBUG")
         else:
-            log("[DEBUG] {symbol} ❌ No actionable signal detected: {signal}", level="DEBUG")
+            log(f"[DEBUG] {symbol} ❌ No actionable signal detected: {signal}", level="DEBUG")
 
     except Exception as e:
         log(f"[{symbol}] 💥 Error: {e}")
