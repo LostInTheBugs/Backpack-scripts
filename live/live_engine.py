@@ -152,6 +152,10 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         df.set_index('timestamp', inplace=True)
         df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
 
+        log(f"[{symbol}] [DEBUG] Data types:\n{df.dtypes}", level="DEBUG")
+        log(f"[{symbol}] [DEBUG] Index type: {type(df.index)}", level="DEBUG")
+        log(f"[{symbol}] [DEBUG] DataFrame length: {len(df)}", level="DEBUG")
+        log(f"[{symbol}] [DEBUG] Any NaN in close? {df['close'].isna().any()}", level="DEBUG")
         # Strategy selection (dynamic or manual)
         if args.strategie == "Auto":
             market_condition, selected_strategy = get_strategy_for_market(df)

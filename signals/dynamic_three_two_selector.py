@@ -42,6 +42,8 @@ def detect_market_context(df):
         return 'range'
 
 def get_combined_signal(df):
+    log(f"[DEBUG] DataFrame length before indicators: {len(df)}", level="DEBUG")
+    log(f"[DEBUG] Any NaN in close? {df['close'].isna().any()}", level="DEBUG")
     df = prepare_indicators(df)
     context = detect_market_context(df)
     
