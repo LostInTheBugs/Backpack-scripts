@@ -31,11 +31,11 @@ strategy:
     long: 200
 
   three_out_of_four:
-    stop_loss_pct: 1.0      # Stop loss à 1%
-    take_profit_pct: 2.0    # Take profit à 2%
+    stop_loss_pct: 3.0     
+    take_profit_pct: 6.0   
   two_out_of_four_scalp:
-    stop_loss_pct: 0.5      # Stop loss plus serré à 0.5%
-    take_profit_pct: 1.0    # Take profit plus petit à 1%
+    stop_loss_pct: 2.0      
+    take_profit_pct: 4.0  
 
 symbols:
   include:

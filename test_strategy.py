@@ -18,45 +18,17 @@ async def test_strategy_on_recent_data(symbol="BTC_USDC_PERP"):
     
     pool = await asyncpg.create_pool(dsn=pg_dsn, min_size=1, max_size=2)
     
-    # D'abord, listons les tables disponibles
-    tables_query = """
-    SELECT tablename FROM pg_tables 
-    WHERE schemaname = 'public' 
-    AND tablename LIKE '%market%' OR tablename LIKE '%data%' OR tablename LIKE '%1s%'
-    ORDER BY tablename;
-    """
+    # Format de table: ohlcv_{symbol avec __ au lieu de _}
+    table_name = f"ohlcv_{symbol.lower().replace('_', '__')}"
+    print(f"🔍 Recherche table: {table_name}")
     
-    tables = await pool.fetch(tables_query)
-    print("📋 Tables disponibles dans la DB:")
-    for table in tables:
-        print(f"  - {table['tablename']}")
-    
-    # Essayons plusieurs noms possibles
-    possible_tables = [
-        "market_data_1s",
-        f"{symbol.lower()}_1s",
-        f"data_1s_{symbol.lower()}",
-        "market_data",
-        "ohlcv_1s",
-        f"{symbol}_1s"
-    ]
-    
-    table_found = None
-    for table_name in possible_tables:
-        try:
-            test_query = f"SELECT COUNT(*) FROM {table_name} WHERE symbol = $1 LIMIT 1"
-            result = await pool.fetchval(test_query, symbol)
-            table_found = table_name
-            print(f"✅ Table trouvée: {table_name} ({result} rows pour {symbol})")
-            break
-        except:
-            continue
-    
-    if not table_found:
-        print("❌ Aucune table trouvée. Essayons de lister toutes les tables:")
-        all_tables = await pool.fetch("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;")
-        for table in all_tables:
-            print(f"  - {table['tablename']}")
+    # Vérifie si la table existe
+    try:
+        count_query = f"SELECT COUNT(*) FROM {table_name}"
+        total_rows = await pool.fetchval(count_query)
+        print(f"✅ Table trouvée: {table_name} ({total_rows} rows total)")
+    except Exception as e:
+        print(f"❌ Erreur table {table_name}: {e}")
         await pool.close()
         return
     
@@ -66,12 +38,12 @@ async def test_strategy_on_recent_data(symbol="BTC_USDC_PERP"):
     
     query = f"""
     SELECT timestamp, open, high, low, close, volume 
-    FROM {table_found} 
-    WHERE symbol = $1 AND timestamp BETWEEN $2 AND $3
+    FROM {table_name} 
+    WHERE timestamp BETWEEN $1 AND $2
     ORDER BY timestamp
     """
     
-    rows = await pool.fetch(query, symbol, start_time, end_time)
+    rows = await pool.fetch(query, start_time, end_time)
     
     if not rows:
         print(f"❌ Pas de données pour {symbol}")
