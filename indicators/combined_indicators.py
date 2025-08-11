@@ -1,4 +1,5 @@
 import pandas as pd
+from utils.logger import log
 
 def calculate_macd(df, fast=12, slow=26, signal=9):
     df['ema_fast'] = df['close'].ewm(span=fast, adjust=False).mean()
@@ -15,6 +16,9 @@ def calculate_rsi(df, period=14):
     avg_loss = loss.rolling(window=period).mean()
     rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
     df['rsi'] = 100 - (100 / (1 + rs))
+    if len(df) < period:
+        log(f"[DEBUG] [WARNING] Pas assez de données pour RSI ({len(df)} < {period}), signal ignoré.", level="DEBUG")
+        return None
     return df
 
 def calculate_trix(df, period=9):
