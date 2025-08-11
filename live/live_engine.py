@@ -28,6 +28,43 @@ MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
+async def scan_all_symbols(pool, symbols):
+    """Scanner toutes les paires pour vérifier EMA/RSI/MACD avant lancement."""
+    log("🔍 Lancement du scan indicateurs…")
+
+    ok_symbols = []
+    ko_symbols = []
+
+    for symbol in symbols:
+        try:
+            end_ts = datetime.now(timezone.utc)
+            start_ts = end_ts - timedelta(seconds=60)
+            df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+
+            if df is None or df.empty:
+                ko_symbols.append((symbol, "No data"))
+                continue
+
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            if df['timestamp'].dt.tz is None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+            df.set_index('timestamp', inplace=True)
+            df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+
+            df_checked = ensure_indicators(df)
+            if df_checked is None:
+                ko_symbols.append((symbol, "Missing/NaN indicators"))
+            else:
+                ok_symbols.append(symbol)
+
+        except Exception as e:
+            ko_symbols.append((symbol, f"Error: {e}"))
+
+    log(f"✅ OK: {ok_symbols}")
+    log(f"❌ KO: {ko_symbols}")
+    log(f"📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.")
+
+
 def import_strategy_signal(strategy):
     """Import strategy signal function dynamically"""
     if strategy == "Trix":
@@ -49,6 +86,38 @@ def import_strategy_signal(strategy):
     else:
         from signals.macd_rsi_breakout import get_combined_signal
     return get_combined_signal
+
+
+def ensure_indicators(df):
+    required_cols = ["EMA20", "EMA50", "EMA200", "RSI", "MACD"]
+
+    # 1. Calculer MACD si absent
+    if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
+        try:
+            short_window, long_window, signal_window = 12, 26, 9
+            ema_short = df['close'].ewm(span=short_window, adjust=False).mean()
+            ema_long = df['close'].ewm(span=long_window, adjust=False).mean()
+            df['MACD'] = ema_short - ema_long
+            df['MACD_signal'] = df['MACD'].ewm(span=signal_window, adjust=False).mean()
+            df['MACD_hist'] = df['MACD'] - df['MACD_signal']
+            log("✅ MACD calculé automatiquement.")
+        except Exception as e:
+            log(f"💥 Erreur calcul MACD: {e}")
+            return None
+
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        log(f"⚠️ Indicateurs manquants: {missing} — signal ignoré.")
+        return None
+
+    # 3. Vérifier NaN
+    for col in required_cols:
+        if df[col].isna().any():
+            log(f"⚠️ NaN détecté dans {col} — signal ignoré.")
+            return None
+
+    return df
+
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args):
     """Handle live trading for a single symbol"""
@@ -83,6 +152,10 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[{symbol}] 📊 Strategy manually selected: {selected_strategy}")
 
         get_combined_signal = import_strategy_signal(selected_strategy)
+        df = ensure_indicators(df)
+        if df is None:
+            return
+        
         signal = get_combined_signal(df)
         log(f"[{symbol}] 🎯 Signal detected: {signal}")
 

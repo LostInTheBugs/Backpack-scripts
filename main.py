@@ -153,6 +153,14 @@ async def async_main(args):
         max_size=db_config.pool_max_size
     )
 
+    from utils.scan_all_symbols import scan_all_symbols  # à adapter au chemin réel
+    if args.symbols:
+        initial_symbols = args.symbols.split(",")
+    else:
+        initial_symbols = load_symbols_from_file()
+
+    await scan_all_symbols(pool, initial_symbols)
+
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
