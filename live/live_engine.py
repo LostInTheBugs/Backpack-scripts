@@ -38,7 +38,7 @@ async def scan_all_symbols(pool, symbols):
     for symbol in symbols:
         try:
             end_ts = datetime.now(timezone.utc)
-            start_ts = end_ts - timedelta(seconds=60)
+            start_ts = end_ts - timedelta(seconds=300)
             df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
 
             if df is None or df.empty:
