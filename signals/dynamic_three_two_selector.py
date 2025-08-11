@@ -26,13 +26,19 @@ def detect_market_context(df):
     ema50 = df['EMA50'].iloc[-1]
     ema200 = df['EMA200'].iloc[-1]
     rsi = df['RSI'].iloc[-1]
+    
+    # Debug pour voir les valeurs actuelles
+    log(f"[DEBUG] EMA20: {ema20:.4f}, EMA50: {ema50:.4f}, EMA200: {ema200:.4f}, RSI: {rsi:.2f}")
 
-    # Tu peux ajuster ces seuils dans la config si tu veux plus tard
-    if ema20 > ema50 > ema200 and rsi > 55:
+    # Conditions assouplies
+    if ema20 > ema50 and rsi > 50:  # Pas besoin que EMA50 > EMA200
+        log(f"[DEBUG] Context: BULL (EMA20 > EMA50 and RSI > 50)")
         return 'bull'
-    elif ema20 < ema50 < ema200 and rsi < 45:
+    elif ema20 < ema50 and rsi < 50:  # Pas besoin que EMA50 < EMA200
+        log(f"[DEBUG] Context: BEAR (EMA20 < EMA50 and RSI < 50)")
         return 'bear'
     else:
+        log(f"[DEBUG] Context: RANGE")
         return 'range'
 
 def get_combined_signal(df):
