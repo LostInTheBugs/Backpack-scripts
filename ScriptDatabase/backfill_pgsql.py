@@ -36,6 +36,19 @@ public = Public()  # Instance du client public du SDK bpx-py
 def timestamp_to_datetime_str(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
 
+async def get_last_timestamp(conn, symbol: str) -> int | None:
+    """
+    Retourne le timestamp UNIX (en secondes) de la dernière bougie présente en base pour ce symbole,
+    ou None si aucune donnée.
+    """
+    table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
+    query = f"SELECT timestamp FROM {table_name} ORDER BY timestamp DESC LIMIT 1"
+    row = await conn.fetchrow(query)
+    if row is None:
+        return None
+    # row['timestamp'] est un datetime timezone-aware, on le convertit en timestamp unix (secondes)
+    return int(row['timestamp'].timestamp())
+
 async def create_table_if_not_exists(conn, symbol: str):
     table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
     query = f"""
