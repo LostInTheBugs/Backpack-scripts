@@ -1,5 +1,5 @@
 import asyncio
-from combined_indicators import fetch_api_fallback, calculate_rsi, RSI_PERIOD_MINUTES, log
+from indicators.combined_indicators import fetch_api_fallback, calculate_rsi, RSI_PERIOD_MINUTES, log
 
 async def test_api_fallback(symbol):
     df = await fetch_api_fallback(symbol)
