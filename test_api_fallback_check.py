@@ -11,8 +11,11 @@ async def test_api_fallback(symbol):
         print(f"[{symbol}] ATTENTION: données récupérées insuffisantes pour RSI ({len(df)} < {RSI_PERIOD_MINUTES})")
     else:
         print(f"[{symbol}] OK pour calcul RSI (>= {RSI_PERIOD_MINUTES} lignes)")
-    df = calculate_rsi(df, symbol=symbol)
-    print(df[['timestamp','close','rsi']].tail(10))
+    df_rsi = calculate_rsi(df, symbol=symbol)
+    if df_rsi is None:
+        print(f"[{symbol}] RSI non calculé (pas assez de données).")
+    else:
+        print(df_rsi[['timestamp','close','rsi']].tail(10))
 
 if __name__ == "__main__":
     import sys
