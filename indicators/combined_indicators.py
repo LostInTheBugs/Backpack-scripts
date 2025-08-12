@@ -64,9 +64,10 @@ async def fetch_ohlcv_chunk(symbol: str, start_time: int, end_time: int) -> pd.D
 async def fetch_api_fallback(symbol: str) -> pd.DataFrame | None:
     """
     Récupère au moins RSI_PERIOD_MINUTES de données via API Backpack en batchs de 1000 bougies max (en découpant par chunks de 6h).
+    Ici on élargit la période de récupération pour avoir assez de données pour RSI 14 jours.
     """
     interval_sec = 60
-    total_minutes = RSI_PERIOD_MINUTES + 100  # marge de sécurité
+    total_minutes = RSI_PERIOD_MINUTES * 4  # multiplication x4 pour s'assurer assez de données
     end_time = int(datetime.now(timezone.utc).timestamp())
     start_time = end_time - total_minutes * interval_sec
 
