@@ -6,40 +6,32 @@ from utils.logger import log
 # Lecture de la connexion PostgreSQL via la variable d'environnement PG_DSN
 PG_DSN = os.environ.get("PG_DSN")
 
-def load_ohlcv_from_db(symbol, limit=500):
+def load_ohlcv_from_db(symbol, limit=1000):
     """
-    Charge les données OHLCV depuis PostgreSQL pour un symbole donné.
-    limit = nombre de lignes récentes à récupérer (par défaut 500)
-    Retourne un DataFrame pandas avec un index datetime.
+    Charge les dernières données OHLCV pour un symbole donné
+    depuis une table PostgreSQL spécifique ohlcv_<symbol>.
     """
-    if not PG_DSN:
-        log("[DB] PG_DSN non configuré, impossible de charger les données en base.", level="ERROR")
-        return None
-    
+    table_name = f"ohlcv_{symbol}"
+
     query = f"""
-    SELECT
-        time,
-        open,
-        high,
-        low,
-        close,
-        volume
-    FROM ohlcv
-    WHERE symbol = %s
-    ORDER BY time DESC
-    LIMIT %s
+        SELECT
+            time,
+            open,
+            high,
+            low,
+            close,
+            volume
+        FROM {table_name}
+        ORDER BY time DESC
+        LIMIT %s
     """
 
     try:
         with psycopg2.connect(PG_DSN) as conn:
-            df = pd.read_sql(query, conn, params=(symbol, limit))
-        if df.empty:
-            log(f"[DB] Aucune donnée trouvée pour {symbol}", level="WARNING")
-            return None
-        # Mise en index datetime, tri chronologique ascendant
-        df['time'] = pd.to_datetime(df['time'])
-        df = df.set_index('time').sort_index()
-        return df
+            df = pd.read_sql(query, conn, params=(limit,))
+            df.set_index('time', inplace=True)
+            df.sort_index(inplace=True)
+            return df
     except Exception as e:
         log(f"[DB] Erreur lors du chargement des données {symbol} : {e}", level="ERROR")
         return None
