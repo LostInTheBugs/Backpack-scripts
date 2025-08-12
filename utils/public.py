@@ -6,9 +6,7 @@ import asyncpg
 
 def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None):
     """
-    Récupère les données OHLCV via l'API Backpack pour un symbole et intervalle donnés.
-    - interval ne doit PAS être '1s' (non supporté par l'API)
-    - startTime doit être un timestamp UNIX en secondes (sera converti en ms)
+    - startTime: timestamp UNIX en secondes, transmis tel quel (sans conversion)
     """
     if interval == "1s":
         print("[ERROR] get_ohlcv() : l'intervalle '1s' n'est pas supporté via l'API. Utiliser la BDD locale.")
@@ -16,29 +14,22 @@ def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int
     
     base_url = "https://api.backpack.exchange/api/v1/klines"
     
-    # Calcul startTime en ms
     if startTime is None:
-        # Timestamp actuel en ms - limit*interval en ms
-        now_ms = int(time.time() * 1000)
-        # Pour l'intervalle 1m, interval en ms = 60_000 ms
-        # Attention: ici on ne gère que l'intervalle en minutes pour le calcul par défaut
-        # Pour un vrai usage général, gérer tous les cas d'intervalle
+        now_sec = int(time.time())
         if interval.endswith('m'):
             minutes = int(interval[:-1])
-            delta_ms = limit * minutes * 60_000
+            delta_sec = limit * minutes * 60
         else:
-            # fallback : juste limit * 60_000
-            delta_ms = limit * 60_000
-        startTime = now_ms - delta_ms
+            delta_sec = limit * 60
+        startTime_sec = now_sec - delta_sec
     else:
-        # Convertir startTime secondes en ms
-        startTime = int(startTime * 1000)
+        startTime_sec = startTime  # Pas de conversion en ms
 
     params = {
         "symbol": symbol,
         "interval": interval,
         "limit": limit,
-        "startTime": startTime,
+        "startTime": startTime_sec,
     }
     
     try:
@@ -49,6 +40,7 @@ def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int
     except requests.RequestException as e:
         print(f"[ERROR] get_ohlcv(): {e}")
         return None
+
 
 def format_table_name(symbol: str) -> str:
     parts = symbol.lower().split("_")
