@@ -9,7 +9,7 @@ if not PG_DSN:
     raise RuntimeError("PG_DSN non défini")
 
 RETENTION_DAYS = 90
-INTERVAL_SEC = 60
+INTERVAL_SEC = "1m"
 BATCH_SECONDS = 3600
 MAX_CONCURRENT_TASKS = 5  # Limite de parallélisme
 
