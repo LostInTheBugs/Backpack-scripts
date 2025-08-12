@@ -1,39 +1,17 @@
-import os
-import asyncpg
-import aiohttp
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+import asyncpg
+import pandas as pd
+from public import get_ohlcv, format_table_name  # ta fonction existante
 
-PG_DSN = os.environ.get("PG_DSN")
-if not PG_DSN:
-    raise RuntimeError("PG_DSN non défini")
+PG_DSN = "ton_dsn_ici"  # ou depuis variable d'env
 
-RETENTION_DAYS = 90
-INTERVAL_SEC = "1m"
-BATCH_SECONDS = 3600
-MAX_CONCURRENT_TASKS = 5  # Limite de parallélisme
+BACKFILL_DAYS = 90
+INTERVAL = "1m"
+LIMIT_PER_CALL = 1000  # max points par requête (à ajuster selon API)
 
-def table_name_from_symbol(symbol: str) -> str:
-    return "ohlcv_" + symbol.lower().replace("_", "__")
-
-async def fetch_all_symbols() -> list[str]:
-    url = "https://api.backpack.exchange/api/v1/tickers"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    print(f"❌ Erreur API Backpack : HTTP {resp.status}")
-                    return []
-                data = await resp.json()
-    except Exception as e:
-        print(f"❌ Exception lors de la récupération des symboles : {e}")
-        return []
-
-    symbols = [t["symbol"] for t in data if "_PERP" in t.get("symbol", "")]
-    return symbols
-
-async def create_or_clean_table(conn, symbol):
-    table_name = table_name_from_symbol(symbol)
+async def create_table_if_not_exists(conn, symbol):
+    table_name = format_table_name(symbol)
     await conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {table_name} (
             symbol TEXT NOT NULL,
@@ -47,83 +25,84 @@ async def create_or_clean_table(conn, symbol):
             PRIMARY KEY (symbol, interval_sec, timestamp)
         );
     """)
-    await conn.execute(f"DELETE FROM {table_name};")
-    print(f"🧹 Table {table_name} nettoyée.")
+    # Optionnel : hypertable timescale
+    try:
+        await conn.execute(f"SELECT create_hypertable('{table_name}', 'timestamp', if_not_exists => TRUE);")
+    except Exception as e:
+        print(f"⚠️ Erreur création hypertable pour {table_name}: {e}")
 
-async def fetch_and_insert(symbol, pool, semaphore):
-    async with semaphore:
-        table_name = table_name_from_symbol(symbol)
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(days=RETENTION_DAYS)
+async def insert_ohlcv_batch(conn, symbol, df):
+    table_name = format_table_name(symbol)
+    interval_sec = 60  # 1m = 60 sec
+    records = []
+    for idx, row in df.iterrows():
+        dt = pd.to_datetime(row["open_time"], unit='ms', utc=True)
+        records.append((
+            symbol,
+            dt,
+            interval_sec,
+            row["open"],
+            row["high"],
+            row["low"],
+            row["close"],
+            row["volume"]
+        ))
 
-        async with aiohttp.ClientSession() as session:
-            current = start_time
-            total_inserted = 0
-            while current < end_time:
-                next_batch = min(current + timedelta(seconds=BATCH_SECONDS), end_time)
-                url = (
-                    f"https://api.backpack.exchange/api/v1/klines"
-                    f"?symbol={symbol}&interval=1s"
-                    f"&startTime={int(current.timestamp()*1000)}"
-                    f"&endTime={int(next_batch.timestamp()*1000)}"
-                )
+    query = f"""
+        INSERT INTO {table_name} (symbol, timestamp, interval_sec, open, high, low, close, volume)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (symbol, interval_sec, timestamp) DO NOTHING
+    """
+    await conn.executemany(query, records)
+    print(f"⏳ {len(records)} bougies insérées pour {symbol}.")
 
-                try:
-                    async with session.get(url) as resp:
-                        if resp.status != 200:
-                            print(f"❌ Erreur API {symbol} : {resp.status}")
-                            await asyncio.sleep(1)
-                            continue
-                        data = await resp.json()
-                except Exception as e:
-                    print(f"❌ Exception API {symbol}: {e}")
-                    await asyncio.sleep(1)
-                    continue
+async def backfill_symbol(pool, symbol):
+    print(f"🔄 Backfill {symbol} pour {BACKFILL_DAYS} jours")
+    now = datetime.now(timezone.utc)
+    start_time = now - timedelta(days=BACKFILL_DAYS)
+    start_ts_sec = int(start_time.timestamp())
+    end_ts_sec = int(now.timestamp())
 
-                rows = []
-                for candle in data:
-                    ts = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
-                    rows.append((
-                        symbol, INTERVAL_SEC, ts,
-                        float(candle[1]),
-                        float(candle[2]),
-                        float(candle[3]),
-                        float(candle[4]),
-                        float(candle[5])
-                    ))
+    async with pool.acquire() as conn:
+        await create_table_if_not_exists(conn, symbol)
 
-                if rows:
-                    async with pool.acquire() as conn:
-                        await conn.executemany(f"""
-                            INSERT INTO {table_name} (symbol, interval_sec, timestamp, open, high, low, close, volume)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-                            ON CONFLICT (symbol, interval_sec, timestamp) DO NOTHING
-                        """, rows)
-                    total_inserted += len(rows)
+    current_start = start_ts_sec
+    while current_start < end_ts_sec:
+        # Appeler ta fonction get_ohlcv (synchrone) avec interval='1m', limit=LIMIT_PER_CALL, startTime=current_start
+        data = get_ohlcv(symbol, interval=INTERVAL, limit=LIMIT_PER_CALL, startTime=current_start)
+        if not data:
+            print(f"❌ Pas de données pour {symbol} à partir de {datetime.fromtimestamp(current_start)}")
+            break
 
-                print(f"✅ {symbol} : {len(rows)} bougies insérées ({current} → {next_batch})")
-                current = next_batch
-                await asyncio.sleep(0.2)
+        # data est une liste de listes (open_time, open, high, low, close, volume, ...)
+        df = pd.DataFrame(data, columns=[
+            "open_time", "open", "high", "low", "close", "volume", "close_time",
+            "quote_asset_volume", "number_of_trades", "taker_buy_base_asset_volume",
+            "taker_buy_quote_asset_volume", "ignore"
+        ])
 
-            print(f"🎉 {symbol} terminé : {total_inserted} bougies insérées.")
+        # Convertir colonnes en bonnes types float
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = df[col].astype(float)
+
+        async with pool.acquire() as conn:
+            await insert_ohlcv_batch(conn, symbol, df)
+
+        # Passer au timestamp suivant : open_time max + 60 secondes
+        last_open_time_ms = df["open_time"].max()
+        current_start = int(last_open_time_ms / 1000) + 60
+
+        # Si moins de LIMIT_PER_CALL résultats, fin de boucle (données à jour)
+        if len(df) < LIMIT_PER_CALL:
+            break
 
 async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
-    symbols = await fetch_all_symbols()
-    if not symbols:
-        print("❌ Pas de symboles récupérés, arrêt.")
-        await pool.close()
-        return
+    symbols = ["BTC_USDC_PERP", "ETH_USDC_PERP", "SOL_USDC_PERP"]  # Par exemple, ou charger dynamiquement
 
-    # Nettoyer les tables avant insertion
-    async with pool.acquire() as conn:
-        for sym in symbols:
-            await create_or_clean_table(conn, sym)
+    for symbol in symbols:
+        await backfill_symbol(pool, symbol)
 
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
-    tasks = [fetch_and_insert(sym, pool, semaphore) for sym in symbols]
-
-    await asyncio.gather(*tasks)
     await pool.close()
 
 if __name__ == "__main__":
