@@ -93,6 +93,7 @@ async def backfill_symbol(pool, symbol, days=RETENTION_DAYS):
 
         batch_start = current_start
         while batch_start < current_end:
+            print(f"Appel get_ohlcv() startTime = {batch_start} ({datetime.utcfromtimestamp(batch_start)})")
             data = get_ohlcv(symbol, interval=INTERVAL, limit=LIMIT_PER_REQUEST, startTime=batch_start)
             if not data:
                 print(f"❌ Pas de données pour {symbol} à partir de {datetime.utcfromtimestamp(batch_start)}")
