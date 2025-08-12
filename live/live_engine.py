@@ -158,6 +158,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         log(f"[{symbol}] [DEBUG] Index type: {type(df.index)}", level="DEBUG")
         log(f"[{symbol}] [DEBUG] DataFrame length: {len(df)}", level="DEBUG")
         log(f"[{symbol}] [DEBUG] Any NaN in close? {df['close'].isna().any()}", level="DEBUG")
+
         # Strategy selection (dynamic or manual)
         if args.strategie == "Auto":
             market_condition, selected_strategy = get_strategy_for_market(df)
@@ -179,8 +180,9 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if df is None:
             return
         
-        signal = get_combined_signal(df, symbol)
-        log(f"[{symbol}] 🎯 Signal detected: {signal}")
+        # Ici on décompose bien le tuple renvoyé en signal + détails
+        signal, details = get_combined_signal(df, symbol)
+        log(f"[{symbol}] 🎯 Signal detected: {signal} | Details: {details}")
 
         # Handle existing positions with trailing stop
         if position_already_open(symbol):
@@ -196,7 +198,9 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
     except Exception as e:
         log(f"[{symbol}] 💥 Error: {e}")
+        import traceback
         traceback.print_exc()
+
 
 async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
     """Handle existing position with trailing stop logic"""
