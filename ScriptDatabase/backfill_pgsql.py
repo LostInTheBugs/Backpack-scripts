@@ -132,7 +132,9 @@ async def get_symbol_listing_date(symbol: str) -> Optional[int]:
         now - 365 * 24 * 3600,  # Il y a 1 an
     ]
     
+    logger.info(f"Now timestamp: {now} ({timestamp_to_datetime_str(now)})")
     for test_date in test_dates:
+        logger.info(f"Testing listing date candidate: {test_date} ({timestamp_to_datetime_str(test_date)})")
         try:
             logger.debug(f"Test date de listing pour {symbol}: {timestamp_to_datetime_str(test_date)}")
             data = get_ohlcv(symbol, interval=INTERVAL, limit=1, startTime=test_date)
