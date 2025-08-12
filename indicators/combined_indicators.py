@@ -17,24 +17,19 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
-
-    # Moyenne exponentielle pour gain et perte (plus rapide et moins NaN)
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
-
-    rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / (avg_loss + 1e-9)
     df['rsi'] = 100 - (100 / (1 + rs))
 
+    # Remplacer les NaN initiaux par la première valeur non-NaN
     first_valid_idx = df['rsi'].first_valid_index()
-    log(f"[{symbol}] RSI première valeur non-NaN à l'index {first_valid_idx}", level="DEBUG")
-
-
-    # Tester seulement la dernière valeur RSI
-    if pd.isna(df['rsi'].iloc[-1]):
-        log(f"[{symbol}] ⚠️ Dernière valeur RSI est NaN — signal ignoré.", level="INFO")
-        return None
+    if first_valid_idx is not None:
+        df['rsi'].fillna(method='bfill', inplace=True)
+        log(f"[{symbol}] RSI premiers NaN remplacés par backward fill à partir de l'index {first_valid_idx}", level="DEBUG")
 
     return df
+
 
 def calculate_trix(df, period=9):
     ema1 = df['close'].ewm(span=period, adjust=False).mean()
