@@ -68,7 +68,19 @@ def calculate_breakout_levels(df, window=20):
     df['low_breakout'] = df['low'].rolling(window=window).min()
     return df
 
-def compute_all(df, symbol=None):
+def compute_all(df=None, symbol=None):
+    """
+    Calcule tous les indicateurs pour le df fourni.
+    Si df est None, charge les données depuis la base PostgreSQL pour le symbole donné.
+    """
+    if df is None:
+        if symbol is None:
+            raise ValueError("Le paramètre symbol doit être fourni si df est None")
+        log(f"[{symbol}] Chargement des données OHLCV depuis la base...", level="INFO")
+        df = load_ohlcv_from_db(symbol)
+        if df is None or df.empty:
+            raise ValueError(f"[{symbol}] Aucune donnée OHLCV disponible en base.")
+
     df = df.copy()
 
     # Déduire symbole si besoin
@@ -84,7 +96,7 @@ def compute_all(df, symbol=None):
 
     df_rsi = calculate_rsi(df, symbol=symbol)
     if df_rsi is not None:
-        df = df_rsi  # <-- ici on met à jour df avec le RSI calculé
+        df = df_rsi  # mise à jour df avec RSI
         log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
     else:
         log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
