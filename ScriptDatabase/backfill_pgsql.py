@@ -93,11 +93,17 @@ async def backfill_symbol(pool, symbol, days=RETENTION_DAYS):
 
         batch_start = current_start
         while batch_start < current_end:
+            # S'assurer de ne pas demander un startTime dans le futur
+            if batch_start >= now:
+                print(f"⏭️ startTime {datetime.utcfromtimestamp(batch_start)} dans le futur, arrêt de la boucle.")
+                break
+
             print(f"Appel get_ohlcv() startTime = {batch_start} ({datetime.utcfromtimestamp(batch_start)})")
             data = get_ohlcv(symbol, interval=INTERVAL, limit=LIMIT_PER_REQUEST, startTime=batch_start)
+            
             if not data:
-                print(f"❌ Pas de données pour {symbol} à partir de {datetime.utcfromtimestamp(batch_start)}")
-                break
+                print(f"❌ Pas de données pour {symbol} à partir de {datetime.utcfromtimestamp(batch_start)}. Arrêt du backfill sur cette période.")
+                break  # On sort de la boucle batch pour passer à la tranche suivante ou arrêter
 
             async with pool.acquire() as conn:
                 await insert_ohlcv_batch(conn, symbol, interval_sec, data)
@@ -106,11 +112,13 @@ async def backfill_symbol(pool, symbol, days=RETENTION_DAYS):
             last_ts_sec = last_ts_ms // 1000
 
             if len(data) < LIMIT_PER_REQUEST:
+                # Moins de données que la limite = fin du batch
                 break
 
             batch_start = last_ts_sec + interval_sec
 
         current_start = current_end
+
 
 async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
