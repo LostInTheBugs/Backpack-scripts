@@ -1,16 +1,17 @@
 import pandas as pd
 from utils.logger import log
 
-def calculate_macd(df, fast=12, slow=26, signal=9):
+def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
     df['ema_fast'] = df['close'].ewm(span=fast, adjust=False).mean()
     df['ema_slow'] = df['close'].ewm(span=slow, adjust=False).mean()
     df['macd'] = df['ema_fast'] - df['ema_slow']
     df['signal'] = df['macd'].ewm(span=signal, adjust=False).mean()
+    log(f"[{symbol}] ✅ MACD calculé automatiquement.", level="INFO")
     return df
 
 def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     if len(df) < period:
-        log(f"[{symbol}] [WARNING] Pas assez de données pour RSI ({len(df)} < {period}), signal ignoré.", level="DEBUG")
+        log(f"[{symbol}] [WARNING] Pas assez de données pour RSI ({len(df)} < {period}), signal ignoré.", level="INFO")
         return None
 
     delta = df['close'].diff()
@@ -21,10 +22,12 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
     df['rsi'] = 100 - (100 / (1 + rs))
 
-    if df['rsi'].isna().any():
-        log(f"[{symbol}] ⚠️ NaN détecté dans RSI — signal ignoré.", level="INFO")
+    # Vérif : seulement si *tout* est NaN → problème réel
+    if df['rsi'].isna().all():
+        log(f"[{symbol}] ⚠️ Tous les RSI sont NaN — signal ignoré.", level="INFO")
         return None
 
+    log(f"[{symbol}] ✅ RSI calculé automatiquement.", level="INFO")
     return df
 
 def calculate_trix(df, period=9):
@@ -55,18 +58,17 @@ def compute_all(df, symbol=None):
         else:
             symbol = "UNKNOWN"
 
-    # Calcul MACD
-    df = calculate_macd(df)
+    # MACD
+    df = calculate_macd(df, symbol=symbol)
 
-    # Calcul RSI
+    # RSI
     df_rsi = calculate_rsi(df, symbol=symbol)
-    if df_rsi is None:
-        log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN détectés).", level="INFO")
-        return df  # retourne le df avec MACD, sans RSI
-    else:
+    if df_rsi is not None:
         df = df_rsi
+    else:
+        log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
 
-    # Autres indicateurs
+    # TRIX & Breakout
     df = calculate_trix(df)
     df = calculate_breakout_levels(df)
 
