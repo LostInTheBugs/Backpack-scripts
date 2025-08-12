@@ -103,7 +103,7 @@ def ensure_indicators(df):
     #    df['RSI'] = ta.momentum.RSIIndicator(close=df['close'], window=rsi_period).rsi()
     df['RSI'] = 50
     log("⚠️ RSI désactivé temporairement, colonne RSI fixée à 50.", level="WARNING")
-    
+
     # Calcul MACD si absent
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
         short_window, long_window, signal_window = 12, 26, 9
@@ -179,7 +179,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if df is None:
             return
         
-        signal = get_combined_signal(df)
+        signal = get_combined_signal(df, symbol)
         log(f"[{symbol}] 🎯 Signal detected: {signal}")
 
         # Handle existing positions with trailing stop
