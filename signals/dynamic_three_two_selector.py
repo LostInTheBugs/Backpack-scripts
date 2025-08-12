@@ -53,12 +53,12 @@ def get_combined_signal(df, symbol):
         stop_loss = strategy_cfg.three_out_of_four.stop_loss_pct
         take_profit = strategy_cfg.three_out_of_four.take_profit_pct
         log(f"📈 Using ThreeOutOfFour | Context: {context} | SL={stop_loss}% TP={take_profit}%")
-        signal = three_out_of_four(df, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+        signal = three_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
     else:
         stop_loss = strategy_cfg.two_out_of_four_scalp.stop_loss_pct
         take_profit = strategy_cfg.two_out_of_four_scalp.take_profit_pct
         log(f"🔄 Using TwoOutOfFourScalp | Context: {context} | SL={stop_loss}% TP={take_profit}%")
-        signal = two_out_of_four(df, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+        signal = two_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
     
     log(f"[DEBUG] Final signal: {signal}")
     return signal
