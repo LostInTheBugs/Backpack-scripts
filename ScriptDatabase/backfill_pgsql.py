@@ -7,6 +7,7 @@ import logging
 from typing import List, Optional
 
 from bpx.public import Public  # import SDK bpx-py
+from config.settings import get_config  # Chargement config
 
 # Configuration du logging
 logging.basicConfig(
@@ -19,17 +20,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-PG_DSN = os.environ.get("PG_DSN")
+config = get_config()
+
+PG_DSN = os.environ.get("PG_DSN") or config.pg_dsn
 if not PG_DSN:
     raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
 INTERVAL = "1m"
 CHUNK_SIZE_SECONDS = 6 * 3600  # 6 heures
 LIMIT_PER_REQUEST = 1000
-RETENTION_DAYS = 90
+RETENTION_DAYS = config.database.retention_days
 MAX_RETRIES = 3
 RETRY_DELAY = 1
 API_RATE_LIMIT_DELAY = 0.2  # 200ms entre les requêtes
+
+RSI_PERIOD_MINUTES = config.strategy.rsi_period * 24 * 60  # RSI en jours converti en minutes
 
 public = Public()  # Instance du client public du SDK bpx-py
 
@@ -37,16 +42,19 @@ def timestamp_to_datetime_str(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
 
 async def get_last_timestamp(conn, symbol: str) -> int | None:
-    """
-    Retourne le timestamp UNIX (en secondes) de la dernière bougie présente en base pour ce symbole,
-    ou None si aucune donnée.
-    """
     table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
     query = f"SELECT timestamp FROM {table_name} ORDER BY timestamp DESC LIMIT 1"
     row = await conn.fetchrow(query)
     if row is None:
         return None
-    # row['timestamp'] est un datetime timezone-aware, on le convertit en timestamp unix (secondes)
+    return int(row['timestamp'].timestamp())
+
+async def get_first_timestamp(conn, symbol: str) -> int | None:
+    table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
+    query = f"SELECT timestamp FROM {table_name} ORDER BY timestamp ASC LIMIT 1"
+    row = await conn.fetchrow(query)
+    if row is None:
+        return None
     return int(row['timestamp'].timestamp())
 
 async def create_table_if_not_exists(conn, symbol: str):
@@ -64,10 +72,6 @@ async def create_table_if_not_exists(conn, symbol: str):
     await conn.execute(query)
 
 async def insert_ohlcv_batch(conn, symbol: str, interval_sec: int, data: list) -> int:
-    """
-    Insère une liste de candles OHLCV dans la table.
-    data est une liste de listes, chaque élément = [timestamp_ms, open, high, low, close, volume]
-    """
     table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
     query = f"""
     INSERT INTO {table_name} (timestamp, open, high, low, close, volume)
@@ -91,16 +95,10 @@ async def clean_old_data(conn, symbol: str, retention_days: int):
     query = f"DELETE FROM {table_name} WHERE timestamp < $1"
     deleted = await conn.execute(query, cutoff_date)
     logger.info(f"Nettoyage: {deleted} lignes supprimées dans {table_name} avant {cutoff_date}")
-    
-# Nouvelle fonction sync qui utilise le SDK bpx-py
+
 def get_ohlcv_bpx_sdk(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = 0):
-    """
-    Wrapper sync autour de public.get_klines.
-    startTime et endTime en secondes UNIX (int).
-    """
     if startTime is None:
         raise ValueError("startTime doit être fourni")
-    # Adapter interval pour SDK, il accepte '1m', '5m', etc. donc ok
     try:
         data = public.get_klines(
             symbol=symbol,
@@ -113,7 +111,6 @@ def get_ohlcv_bpx_sdk(symbol: str, interval: str = "1m", limit: int = 21, startT
         logger.error(f"Erreur get_ohlcv_bpx_sdk({symbol}): {e}")
         return None
 
-# Fonction async pour appeler la fonction sync sans bloquer
 async def get_ohlcv_async(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = 0):
     return await asyncio.to_thread(get_ohlcv_bpx_sdk, symbol, interval, limit, startTime, endTime)
 
@@ -148,8 +145,6 @@ async def fetch_all_symbols() -> List[str]:
     symbols = [t["symbol"] for t in data if "_PERP" in t.get("symbol", "")]
     logger.info(f"Récupéré {len(symbols)} symboles PERP")
     return symbols
-
-# Reste des fonctions create_table_if_not_exists, get_last_timestamp, clean_old_data, insert_ohlcv_batch inchangées...
 
 async def get_symbol_listing_date(symbol: str) -> Optional[int]:
     now = int(time.time())
@@ -186,20 +181,33 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
     async with pool.acquire() as conn:
         await create_table_if_not_exists(conn, symbol)
         last_ts = await get_last_timestamp(conn, symbol)
+        first_ts = await get_first_timestamp(conn, symbol)
 
-        if last_ts and last_ts < now:
-            start = last_ts + interval_sec
-            logger.info(f"📈 Reprise backfill pour {symbol} depuis {timestamp_to_datetime_str(start)}")
+        if last_ts and first_ts:
+            minutes_in_db = (last_ts - first_ts) // 60
+            logger.info(f"Données en base pour {symbol}: {minutes_in_db} minutes disponibles")
         else:
-            logger.info(f"🔍 Recherche date de listing pour {symbol}")
+            minutes_in_db = 0
+            logger.info(f"Aucune donnée en base pour {symbol}")
+
+        # Si on a moins que RSI_PERIOD_MINUTES en historique, backfill complet depuis listing ou retention_days
+        if minutes_in_db < RSI_PERIOD_MINUTES:
+            logger.info(f"ℹ️ Historique insuffisant (< {RSI_PERIOD_MINUTES} min) pour {symbol}, backfill complet lancé")
             listing_date = await get_symbol_listing_date(symbol)
             if not listing_date:
-                logger.error(f"❌ Impossible de déterminer la date de listing pour {symbol}")
+                logger.error(f"❌ Impossible de déterminer la date de listing pour {symbol}, abandon backfill")
                 return
             retention_start = now - days * 24 * 3600
             start = max(listing_date, retention_start)
             logger.info(f"📅 Backfill complet pour {symbol} depuis {timestamp_to_datetime_str(start)}")
             await clean_old_data(conn, symbol, days)
+        else:
+            if last_ts < now:
+                start = last_ts + interval_sec
+                logger.info(f"📈 Reprise backfill pour {symbol} depuis {timestamp_to_datetime_str(start)}")
+            else:
+                logger.info(f"✅ Historique complet pour {symbol}, pas de backfill nécessaire")
+                return
 
     if start >= now:
         logger.warning(f"⚠️ Start timestamp {timestamp_to_datetime_str(start)} est dans le futur pour {symbol}")
@@ -271,8 +279,8 @@ async def main():
     try:
         pool = await asyncpg.create_pool(
             dsn=PG_DSN,
-            min_size=2,
-            max_size=10,
+            min_size=config.database.pool_min_size,
+            max_size=config.database.pool_max_size,
             command_timeout=60
         )
         symbols = await fetch_all_symbols()
