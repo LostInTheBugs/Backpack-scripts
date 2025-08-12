@@ -71,6 +71,22 @@ async def create_table_if_not_exists(conn, symbol: str):
     """
     await conn.execute(query)
 
+async def count_days_with_data(conn, symbol: str) -> int:
+    table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
+    query = f"""
+        SELECT COUNT(DISTINCT DATE(timestamp AT TIME ZONE 'UTC')) as day_count
+        FROM {table_name}
+    """
+    try:
+        row = await conn.fetchrow(query)
+        return row["day_count"] if row else 0
+    except asyncpg.exceptions.UndefinedTableError:
+        return 0
+    except Exception as e:
+        logger.error(f"Erreur comptage jours avec données pour {symbol}: {e}")
+        return 0
+
+
 async def insert_ohlcv_batch(conn, symbol: str, interval_sec: int, data: list) -> int:
     table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
     query = f"""
@@ -182,17 +198,18 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
         await create_table_if_not_exists(conn, symbol)
         last_ts = await get_last_timestamp(conn, symbol)
         first_ts = await get_first_timestamp(conn, symbol)
+        days_with_data = await count_days_with_data(conn, symbol)
 
         if last_ts and first_ts:
             minutes_in_db = (last_ts - first_ts) // 60
-            logger.info(f"Données en base pour {symbol}: {minutes_in_db} minutes disponibles")
+            logger.info(f"Données en base pour {symbol}: {minutes_in_db} minutes disponibles, {days_with_data} jours avec données")
         else:
             minutes_in_db = 0
             logger.info(f"Aucune donnée en base pour {symbol}")
 
-        # Si on a moins que RSI_PERIOD_MINUTES en historique, backfill complet depuis listing ou retention_days
-        if minutes_in_db < RSI_PERIOD_MINUTES:
-            logger.info(f"ℹ️ Historique insuffisant (< {RSI_PERIOD_MINUTES} min) pour {symbol}, backfill complet lancé")
+        # Si on a moins que RSI_PERIOD_MINUTES minutes OU moins de 14 jours de données, backfill complet depuis listing ou retention_days
+        if minutes_in_db < RSI_PERIOD_MINUTES or days_with_data < 14:
+            logger.info(f"ℹ️ Historique insuffisant (< {RSI_PERIOD_MINUTES} min ou moins de 14 jours) pour {symbol}, backfill complet lancé")
             listing_date = await get_symbol_listing_date(symbol)
             if not listing_date:
                 logger.error(f"❌ Impossible de déterminer la date de listing pour {symbol}, abandon backfill")
@@ -212,6 +229,7 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
     if start >= now:
         logger.warning(f"⚠️ Start timestamp {timestamp_to_datetime_str(start)} est dans le futur pour {symbol}")
         return
+
 
     current_start = start
     consecutive_failures = 0
