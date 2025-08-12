@@ -1,6 +1,6 @@
 import asyncio
 import asyncpg
-from backfill_pgsql import count_days_with_data
+from ScriptDatabase.backfill_pgsql import count_days_with_data
 import os
 
 PG_DSN = os.environ.get("PG_DSN")
