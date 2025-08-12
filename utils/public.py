@@ -5,17 +5,12 @@ import os
 import asyncpg
 
 def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None):
-    """
-    Récupère les données OHLCV via l'API Backpack pour un symbole et intervalle donnés.
-    - interval ne doit PAS être '1s' (non supporté par l'API)
-    - startTime doit être un timestamp UNIX en secondes (sera converti en ms)
-    """
     if interval == "1s":
         print("[ERROR] get_ohlcv() : l'intervalle '1s' n'est pas supporté via l'API. Utiliser la BDD locale.")
         return None
-    
+
     base_url = "https://api.backpack.exchange/api/v1/klines"
-    
+
     if startTime is None:
         now_ms = int(time.time() * 1000)
         if interval.endswith('m'):
@@ -25,8 +20,8 @@ def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int
             delta_ms = limit * 60_000
         startTime_ms = now_ms - delta_ms
     else:
-        # Ici on suppose startTime en secondes, on convertit en ms
-        startTime_ms = int(startTime * 1000)
+        # startTime est en secondes, API attend secondes
+        startTime_ms = startTime
 
     params = {
         "symbol": symbol,
