@@ -6,34 +6,37 @@ from utils.logger import log
 # Lecture de la connexion PostgreSQL via la variable d'environnement PG_DSN
 PG_DSN = os.environ.get("PG_DSN")
 
-def load_ohlcv_from_db(symbol, limit=1000):
-    """
-    Charge les dernières données OHLCV pour un symbole donné
-    depuis une table PostgreSQL spécifique ohlcv_<symbol>.
-    """
-    table_name = f"ohlcv_{symbol}"
-
+def load_ohlcv_from_db(symbol, limit=500):
+    PG_DSN = os.environ.get("PG_DSN")
+    if not PG_DSN:
+        log("[DB] PG_DSN non défini dans l'environnement", level="ERROR")
+        return None
+    
+    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
+    
     query = f"""
-        SELECT
-            time,
-            open,
-            high,
-            low,
-            close,
-            volume
-        FROM {table_name}
-        ORDER BY time DESC
-        LIMIT %s
+    SELECT
+        time,
+        open,
+        high,
+        low,
+        close,
+        volume
+    FROM {table_name}
+    ORDER BY time DESC
+    LIMIT %s
     """
 
     try:
         with psycopg2.connect(PG_DSN) as conn:
-            df = pd.read_sql(query, conn, params=(limit,))
+            # Utilisation de read_sql_query pour psycopg2 sans ORM
+            df = pd.read_sql_query(query, conn, params=(limit,))
             df.set_index('time', inplace=True)
             df.sort_index(inplace=True)
+            log(f"[DB] Chargé {len(df)} lignes depuis {table_name}", level="INFO")
             return df
     except Exception as e:
-        log(f"[DB] Erreur lors du chargement des données {symbol} : {e}", level="ERROR")
+        log(f"[DB] Erreur lors du chargement des données {symbol} depuis {table_name} : {e}", level="ERROR")
         return None
 
 def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
