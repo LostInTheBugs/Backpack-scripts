@@ -15,7 +15,7 @@ database:
   max_age_seconds: 600            # Max age for fresh data in seconds
 
 strategy:
-  default_strategy: "Default"     # Default trading strategy
+  default_strategy: "TwoOutOfFourScalp"     # Default trading strategy
   auto_select_update_interval: 300 # Auto symbol update interval in seconds
   auto_select_top_n: 20           # Number of top symbols to select
   
