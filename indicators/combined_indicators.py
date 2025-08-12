@@ -167,17 +167,12 @@ def compute_all(df=None, symbol=None, disable_rsi=False):
 
     df = calculate_macd(df, symbol=symbol)
 
-    if not disable_rsi:
-            df_rsi = calculate_rsi(df, symbol=symbol)
-            if df_rsi is not None:
-                df = df_rsi
-                log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
-            else:
-                log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
-        else:
-            # Pour simuler RSI neutre, tu peux fixer une colonne RSI constante (par ex. 50)
-            df['rsi'] = 50
-            log(f"[{symbol}] ⚠️ Calcul RSI désactivé temporairement, valeur RSI forcée à 50.", level="WARNING")
+    df_rsi = calculate_rsi(df, symbol=symbol)
+    if df_rsi is not None:
+        df = df_rsi
+        log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
+    else:
+        log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
 
     df = calculate_trix(df)
     df = calculate_breakout_levels(df)

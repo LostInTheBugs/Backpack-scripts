@@ -97,11 +97,13 @@ def ensure_indicators(df):
             df[col] = df['close'].ewm(span=period, adjust=False).mean()
 
     # Calcul RSI si absent
-    if 'RSI' not in df.columns:
-        import ta
-        rsi_period = 14
-        df['RSI'] = ta.momentum.RSIIndicator(close=df['close'], window=rsi_period).rsi()
-
+    #if 'RSI' not in df.columns:
+    #    import ta
+    #    rsi_period = 14
+    #    df['RSI'] = ta.momentum.RSIIndicator(close=df['close'], window=rsi_period).rsi()
+    df['RSI'] = 50
+    log("⚠️ RSI désactivé temporairement, colonne RSI fixée à 50.", level="WARNING")
+    
     # Calcul MACD si absent
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
         short_window, long_window, signal_window = 12, 26, 9
