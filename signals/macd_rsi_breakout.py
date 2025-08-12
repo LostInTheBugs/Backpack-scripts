@@ -1,10 +1,11 @@
 from indicators.combined_indicators import compute_all
 
-def get_combined_signal(df):
+def get_combined_signal(df, symbol):
     if df.empty or len(df) < 50:
         return "HOLD"
 
-    df = compute_all(df)
+    # Passe le symbole pour un logging plus précis
+    df = compute_all(df, symbol=symbol)
 
     close = df['close']
 
@@ -32,3 +33,4 @@ def get_combined_signal(df):
         return "SELL"
     else:
         return "HOLD"
+

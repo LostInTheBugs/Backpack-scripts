@@ -1,9 +1,9 @@
 from indicators.combined_indicators import compute_all
 import pandas as pd
 
-def get_combined_signal(df):
+def get_combined_signal(df, symbol):
     df = df.copy()
-    df = compute_all(df)
+    df = compute_all(df, symbol=symbol)
 
     if len(df) < 50:  # besoin d'au moins 50 données pour EMA50
         return None, {}

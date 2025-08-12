@@ -1,6 +1,6 @@
 from indicators.combined_indicators import calculate_trix
 
-def get_combined_signal(df):
+def get_combined_signal(df, symbol):
     df = df.copy()
     df = calculate_trix(df)
 

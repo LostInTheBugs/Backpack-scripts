@@ -2,7 +2,7 @@ import pandas as pd
 from indicators.range_indicators import compute_range_indicators
 from utils.logger import log
 
-def get_combined_signal(df):
+def get_combined_signal(df, symbol):
     df = compute_range_indicators(df)
 
     price = df['close'].iloc[-1]

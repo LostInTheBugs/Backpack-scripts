@@ -5,9 +5,9 @@ import pandas as pd
 STOP_LOSS_PERCENT = 0.5   # -0.5%
 TAKE_PROFIT_PERCENT = 1.0 # +1%
 
-def get_combined_signal(df, stop_loss_pct=None, take_profit_pct=None):
+def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
     df = df.copy()
-    df = compute_all(df)
+    df = compute_all(df, symbol=symbol)
 
     if len(df) < 50:  # besoin d'assez de données pour EMA50
         return None, {}

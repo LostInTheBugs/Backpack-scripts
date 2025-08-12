@@ -1,9 +1,9 @@
 from indicators.combined_indicators import compute_all
 import pandas as pd
 
-def get_combined_signal(df, stop_loss_pct=None, take_profit_pct=None):
+def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
     df = df.copy()
-    df = compute_all(df)
+    df = compute_all(df, symbol=symbol)
 
     if len(df) < 50:  # besoin d'assez de données pour EMA50
         return None, {}
