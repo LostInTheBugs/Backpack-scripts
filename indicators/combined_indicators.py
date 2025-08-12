@@ -138,7 +138,7 @@ def calculate_breakout_levels(df, window=20):
     df['low_breakout'] = df['low'].rolling(window=window).min()
     return df
 
-def compute_all(df=None, symbol=None):
+def compute_all(df=None, symbol=None, disable_rsi=False):
     """
     Calcule tous les indicateurs pour le df fourni.
     Si df est None, charge les données depuis la base PostgreSQL ou fallback API si insuffisant.
@@ -167,12 +167,17 @@ def compute_all(df=None, symbol=None):
 
     df = calculate_macd(df, symbol=symbol)
 
-    df_rsi = calculate_rsi(df, symbol=symbol)
-    if df_rsi is not None:
-        df = df_rsi
-        log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
-    else:
-        log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
+    if not disable_rsi:
+            df_rsi = calculate_rsi(df, symbol=symbol)
+            if df_rsi is not None:
+                df = df_rsi
+                log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
+            else:
+                log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
+        else:
+            # Pour simuler RSI neutre, tu peux fixer une colonne RSI constante (par ex. 50)
+            df['rsi'] = 50
+            log(f"[{symbol}] ⚠️ Calcul RSI désactivé temporairement, valeur RSI forcée à 50.", level="WARNING")
 
     df = calculate_trix(df)
     df = calculate_breakout_levels(df)
