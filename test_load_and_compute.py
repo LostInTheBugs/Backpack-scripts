@@ -1,6 +1,6 @@
 # test_load_and_compute.py
 import os
-from combined_indicators import load_ohlcv_from_db, compute_all
+from indicators.combined_indicators import load_ohlcv_from_db, compute_all
 from utils.logger import log
 
 def main():
