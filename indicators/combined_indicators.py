@@ -1,42 +1,30 @@
 import os
 import pandas as pd
-import psycopg2
+import asyncio
+from datetime import datetime, timezone, timedelta
 from utils.logger import log
+from pgsql_ohlcv import fetch_ohlcv_1s
 
-# Lecture de la connexion PostgreSQL via la variable d'environnement PG_DSN
-PG_DSN = os.environ.get("PG_DSN")
-
-def load_ohlcv_from_db(symbol, limit=500):
-    PG_DSN = os.environ.get("PG_DSN")
-    if not PG_DSN:
-        log("[DB] PG_DSN non défini dans l'environnement", level="ERROR")
-        return None
-    
-    table_name = "ohlcv_" + symbol.lower().replace("_", "__")
-    
-    query = f"""
-    SELECT
-        time,
-        open,
-        high,
-        low,
-        close,
-        volume
-    FROM {table_name}
-    ORDER BY time DESC
-    LIMIT %s
+def load_ohlcv_from_db(symbol: str, lookback_seconds=3600) -> pd.DataFrame:
+    """
+    Charge les données OHLCV 1s depuis PostgreSQL pour le symbole donné,
+    sur une fenêtre de lookback_seconds en arrière à partir de maintenant.
     """
 
+    async def _load_async():
+        end_ts = datetime.now(timezone.utc)
+        start_ts = end_ts - timedelta(seconds=lookback_seconds)
+        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+        return df
+
     try:
-        with psycopg2.connect(PG_DSN) as conn:
-            # Utilisation de read_sql_query pour psycopg2 sans ORM
-            df = pd.read_sql_query(query, conn, params=(limit,))
-            df.set_index('time', inplace=True)
-            df.sort_index(inplace=True)
-            log(f"[DB] Chargé {len(df)} lignes depuis {table_name}", level="INFO")
-            return df
+        df = asyncio.run(_load_async())
+        if df.empty:
+            log(f"[{symbol}] [WARNING] Pas de données chargées depuis la base.", level="WARNING")
+            return None
+        return df
     except Exception as e:
-        log(f"[DB] Erreur lors du chargement des données {symbol} depuis {table_name} : {e}", level="ERROR")
+        log(f"[{symbol}] [ERROR] Erreur chargement base de données : {e}", level="ERROR")
         return None
 
 def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
