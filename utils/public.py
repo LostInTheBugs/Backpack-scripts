@@ -4,34 +4,35 @@ import time
 import os
 import asyncpg
 
-def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 1000, startTime: int = None, endTime: int = None):
-    # Définir la limite maximale de jours entre startTime et endTime
-    max_days = 200
-    max_ms = max_days * 24 * 3600 * 1000  # Convertir les jours en millisecondes
-
-    # Si startTime est fourni, calculer endTime
-    if startTime:
-        if not endTime:
-            endTime = startTime + max_ms
-        elif endTime - startTime > max_ms:
-            print(f"[ERROR] La plage de temps entre {startTime} et {endTime} dépasse la limite de {max_days} jours.")
-            return None
+def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = None):
+    if startTime is not None:
+        startTime_ms = int(startTime * 1000)
     else:
-        # Si startTime n'est pas fourni, définir une valeur par défaut (par exemple, 30 jours avant maintenant)
-        endTime = int(time.time() * 1000)
-        startTime = endTime - max_ms
+        startTime_ms = None
 
-    # Construire l'URL de la requête
-    url = f"https://api.backpack.exchange/api/v1/klines?symbol={symbol}&interval={interval}&startTime={startTime}&endTime={endTime}&limit={limit}"
+    if endTime is not None:
+        endTime_ms = int(endTime * 1000)
+    else:
+        endTime_ms = None
 
-    # Effectuer la requête et gérer les erreurs
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit,
+    }
+    if startTime_ms is not None:
+        params["startTime"] = startTime_ms
+    if endTime_ms is not None:
+        params["endTime"] = endTime_ms
+
     try:
-        response = requests.get(url)
+        response = requests.get("https://api.backpack.exchange/api/v1/klines", params=params)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
-        print(f"[ERROR] get_ohlcv() : {e}")
+        print(f"[ERROR] get_ohlcv(): {e}")
         return None
+
 
 
 def format_table_name(symbol: str) -> str:
