@@ -14,7 +14,7 @@ RSI_PERIOD_MINUTES = 14 * 24 * 60
 def load_ohlcv_from_db(symbol: str, lookback_seconds=6*3600) -> pd.DataFrame:
     """
     Charge les données OHLCV 1s depuis PostgreSQL pour le symbole donné,
-    sur une fenêtre de lookback_seconds en arrière à partir de maintenant.
+    sur une fenêtre lookback_seconds en arrière à partir de maintenant.
     """
     async def _load_async():
         end_ts = datetime.now(timezone.utc)
@@ -32,52 +32,57 @@ def load_ohlcv_from_db(symbol: str, lookback_seconds=6*3600) -> pd.DataFrame:
         log(f"[{symbol}] [ERROR] Erreur chargement base de données : {e}", level="ERROR")
         return None
 
-async def fetch_ohlcv_from_api_sdk(symbol: str, interval: str, start_time: int, end_time: int) -> pd.DataFrame:
+async def fetch_ohlcv_chunk(symbol: str, start_time: int, end_time: int) -> pd.DataFrame:
     """
-    Récupère les OHLCV via SDK Backpack.
-    start_time et end_time en timestamps secondes UTC.
+    Récupère un chunk OHLCV via SDK Backpack entre start_time et end_time (timestamps en secondes UTC).
     """
     try:
-        data = public.get_klines(
+        data = await asyncio.to_thread(
+            public.get_klines,
             symbol=symbol,
-            interval=interval,
-            start_time=start_time * 1000,
-            end_time=end_time * 1000,
+            interval="1m",
+            start_time=start_time,
+            end_time=end_time
         )
         if not data:
+            log(f"[{symbol}] Pas de données reçues entre {start_time} et {end_time}", level="WARNING")
             return pd.DataFrame()
 
-        df = pd.DataFrame(data, columns=[
-            "timestamp","open","high","low","close","volume",
-            "close_time","quote_asset_volume","number_of_trades",
-            "taker_buy_base_asset_volume","taker_buy_quote_asset_volume","ignore"
-        ])
+        # La data est liste de listes, colonne timestamp en ms
+        df = pd.DataFrame(data, columns=["timestamp","open","high","low","close","volume",
+                                        "close_time","quote_asset_volume","number_of_trades",
+                                        "taker_buy_base_asset_volume","taker_buy_quote_asset_volume","ignore"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df = df[["timestamp","open","high","low","close","volume"]]
         for col in ["open","high","low","close","volume"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
         return df
     except Exception as e:
-        log(f"[{symbol}] [ERROR] fetch_ohlcv_from_api_sdk: {e}", level="ERROR")
+        log(f"[{symbol}] [ERROR] fetch_ohlcv_chunk: {e}", level="ERROR")
         return pd.DataFrame()
 
 async def fetch_api_fallback(symbol: str) -> pd.DataFrame | None:
     """
-    Récupère au moins RSI_PERIOD_MINUTES de données via API Backpack en batchs de 1000 bougies max.
+    Récupère au moins RSI_PERIOD_MINUTES de données via API Backpack en batchs de 1000 bougies max (en découpant par chunks de 6h).
     """
     interval_sec = 60
-    total_minutes = RSI_PERIOD_MINUTES + 100  # marge
+    total_minutes = RSI_PERIOD_MINUTES + 100  # marge de sécurité
     end_time = int(datetime.now(timezone.utc).timestamp())
     start_time = end_time - total_minutes * interval_sec
+
+    chunk_seconds = 6 * 3600  # chunks de 6h
     df_total = pd.DataFrame()
 
-    while start_time < end_time:
-        batch_end = min(start_time + 1000 * interval_sec, end_time)
-        df_batch = await fetch_ohlcv_from_api_sdk(symbol, "1m", start_time, batch_end)
-        if df_batch.empty:
+    current_start = start_time
+    while current_start < end_time:
+        current_end = min(current_start + chunk_seconds, end_time)
+        df_chunk = await fetch_ohlcv_chunk(symbol, current_start, current_end)
+        if df_chunk.empty:
+            log(f"[{symbol}] Aucune donnée pour chunk {current_start}-{current_end}, arrêt fallback API.", level="WARNING")
             break
-        df_total = pd.concat([df_total, df_batch])
-        start_time = batch_end + 1
+        df_total = pd.concat([df_total, df_chunk])
+        current_start = current_end + 1
+        await asyncio.sleep(0.25)  # anti rate limit
 
     if df_total.empty:
         log(f"[{symbol}] [WARNING] Pas de données récupérées via API fallback", level="WARNING")
@@ -110,8 +115,7 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     rs = avg_gain / (avg_loss + 1e-9)
     rsi = 100 - (100 / (1 + rs))
 
-    # Remplacement futur-proof : bfill → bfill() méthode explicite
-    rsi = rsi.bfill()
+    rsi = rsi.bfill()  # méthode explicite futur-proof
 
     df['rsi'] = rsi
 
