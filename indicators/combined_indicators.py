@@ -3,7 +3,7 @@ import pandas as pd
 import asyncio
 from datetime import datetime, timezone, timedelta
 from utils.logger import log
-from pgsql_ohlcv import fetch_ohlcv_1s
+from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 
 def load_ohlcv_from_db(symbol: str, lookback_seconds=3600) -> pd.DataFrame:
     """
