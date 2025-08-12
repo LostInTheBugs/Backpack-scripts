@@ -44,13 +44,9 @@ def calculate_breakout_levels(df, window=20):
     return df
 
 def compute_all(df, symbol=None):
-    """
-    Calcule tous les indicateurs nécessaires une seule fois.
-    symbol est optionnel — s'il n'est pas fourni, on tente de le déduire du DataFrame.
-    """
     df = df.copy()
 
-    # Déduire le symbole si non fourni
+    # Déduire symbole si besoin
     if symbol is None:
         if 'symbol' in df.columns and not df['symbol'].empty:
             symbol = str(df['symbol'].iloc[0])
@@ -59,15 +55,17 @@ def compute_all(df, symbol=None):
         else:
             symbol = "UNKNOWN"
 
-    # MACD
     df = calculate_macd(df, symbol=symbol)
 
-    # RSI
     df_rsi = calculate_rsi(df, symbol=symbol)
+    if df_rsi is not None:
+        df = df_rsi  # <-- ici on met à jour df avec le RSI calculé
+        log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
+    else:
+        log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
 
-
-    # TRIX & Breakout
     df = calculate_trix(df)
     df = calculate_breakout_levels(df)
 
     return df
+
