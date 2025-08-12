@@ -138,7 +138,7 @@ def calculate_breakout_levels(df, window=20):
     df['low_breakout'] = df['low'].rolling(window=window).min()
     return df
 
-def compute_all(df=None, symbol=None, disable_rsi=False):
+def compute_all(df=None, symbol=None):
     """
     Calcule tous les indicateurs pour le df fourni.
     Si df est None, charge les données depuis la base PostgreSQL ou fallback API si insuffisant.
