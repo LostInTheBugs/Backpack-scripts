@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 import time
 import asyncpg
-from public import get_ohlcv, format_table_name
+from utils.public import get_ohlcv, format_table_name
 import aiohttp
 import os
 
