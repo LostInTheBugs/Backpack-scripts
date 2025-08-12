@@ -6,6 +6,7 @@ import asyncpg
 
 def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = None):
     if startTime is not None:
+        print(f"[DEBUG] get_ohlcv called with startTime={startTime}")
         startTime_ms = int(startTime * 1000)
     else:
         startTime_ms = None
