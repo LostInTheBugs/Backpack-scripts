@@ -123,13 +123,11 @@ async def get_symbol_listing_date(symbol: str) -> Optional[int]:
     Récupère la date de listing d'un symbole en testant avec une requête minimale.
     Retourne le timestamp de début ou None si erreur.
     """
-    # On va tester différentes dates pour trouver quand le symbole a été listé
     now = int(time.time())
     test_dates = [
-        now - 30 * 24 * 3600,   # Il y a 30 jours
-        now - 90 * 24 * 3600,   # Il y a 90 jours
-        now - 180 * 24 * 3600,  # Il y a 180 jours
-        now - 365 * 24 * 3600,  # Il y a 1 an
+        now - 7 * 24 * 3600,   # 7 jours
+        now - 14 * 24 * 3600,  # 14 jours
+        now - 30 * 24 * 3600,  # 30 jours
     ]
     
     logger.info(f"Now timestamp: {now} ({timestamp_to_datetime_str(now)})")
@@ -142,16 +140,25 @@ async def get_symbol_listing_date(symbol: str) -> Optional[int]:
                 first_candle_ts = data[0][0] // 1000  # Convertir ms en secondes
                 logger.info(f"Première bougie trouvée pour {symbol}: {timestamp_to_datetime_str(first_candle_ts)}")
                 return first_candle_ts
-                
-            # Attendre entre les tests pour éviter de surcharger l'API
+            
+            # Petite pause entre les appels pour respecter l'API
             await asyncio.sleep(API_RATE_LIMIT_DELAY)
             
         except Exception as e:
-            logger.debug(f"Erreur test date {timestamp_to_datetime_str(test_date)} pour {symbol}: {e}")
+            # Si c'est une erreur HTTP 400, afficher aussi le contenu de la réponse
+            err_msg = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    err_content = e.response.text()
+                    logger.debug(f"Contenu de l'erreur API: {err_content}")
+                except Exception:
+                    pass
+            logger.debug(f"Erreur test date {timestamp_to_datetime_str(test_date)} pour {symbol}: {err_msg}")
             continue
-    
+
     logger.warning(f"Impossible de déterminer la date de listing pour {symbol}")
     return None
+
 
 async def clean_old_data(conn: asyncpg.Connection, symbol: str, retention_days: int) -> None:
     """Nettoie les données anciennes"""
