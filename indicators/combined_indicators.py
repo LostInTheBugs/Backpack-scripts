@@ -45,11 +45,11 @@ def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, s
         # Vérification simple pour éviter double multiplication
         if startTime > 1e12:  # On dirait déjà un ms timestamp, on convertit en secondes
             startTime = startTime // 1000
-        params["startTime"] = int(startTime * 1000)
+        params["startTime"] = int(startTime)
     if endTime is not None:
         if endTime > 1e12:
             endTime = endTime // 1000
-        params["endTime"] = int(endTime * 1000)
+        params["endTime"] = int(endTime)
 
     try:
         resp = requests.get(url, params=params)
