@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from utils.logger import log
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 
-def load_ohlcv_from_db(symbol: str, lookback_seconds=3600) -> pd.DataFrame:
+def load_ohlcv_from_db(symbol: str, lookback_seconds=6*3600) -> pd.DataFrame:
     """
     Charge les données OHLCV 1s depuis PostgreSQL pour le symbole donné,
     sur une fenêtre de lookback_seconds en arrière à partir de maintenant.
