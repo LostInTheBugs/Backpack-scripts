@@ -2,11 +2,13 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 import time
 import asyncpg
-from utils.public import get_ohlcv, format_table_name
-import aiohttp
 import os
 import logging
 from typing import List, Optional
+
+from bpx.public import BackpackPublic  # import du SDK Backpack
+
+from utils.public import format_table_name
 
 # Configuration du logging
 logging.basicConfig(
@@ -31,6 +33,9 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1
 API_RATE_LIMIT_DELAY = 0.2  # 200ms entre les requêtes
 
+# Initialisation globale du client public Backpack
+bpx_public = BackpackPublic()
+
 def timestamp_to_datetime_str(ts: int) -> str:
     """Convertit un timestamp en string datetime lisible"""
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
@@ -38,7 +43,8 @@ def timestamp_to_datetime_str(ts: int) -> str:
 async def fetch_all_symbols() -> List[str]:
     """Récupère tous les symboles PERP depuis l'API Backpack"""
     url = "https://api.backpack.exchange/api/v1/tickers"
-    
+
+    import aiohttp
     for attempt in range(MAX_RETRIES):
         try:
             timeout = aiohttp.ClientTimeout(total=30)
@@ -51,7 +57,7 @@ async def fetch_all_symbols() -> List[str]:
                             continue
                         return []
                     data = await resp.json()
-                    
+
         except asyncio.TimeoutError:
             logger.error(f"Timeout lors de la récupération des symboles (tentative {attempt + 1})")
             if attempt < MAX_RETRIES - 1:
@@ -72,7 +78,7 @@ async def fetch_all_symbols() -> List[str]:
 async def create_table_if_not_exists(conn: asyncpg.Connection, symbol: str) -> None:
     """Crée la table et l'hypertable si elles n'existent pas"""
     table_name = format_table_name(symbol)
-    
+
     await conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {table_name} (
             symbol TEXT NOT NULL,
@@ -86,7 +92,7 @@ async def create_table_if_not_exists(conn: asyncpg.Connection, symbol: str) -> N
             PRIMARY KEY (symbol, interval_sec, timestamp)
         );
     """)
-    
+
     try:
         await conn.execute(f"""
             SELECT create_hypertable('{table_name}', 'timestamp', 
@@ -118,6 +124,25 @@ async def get_last_timestamp(conn: asyncpg.Connection, symbol: str) -> Optional[
     except Exception:
         return None
 
+async def get_ohlcv_async(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = None):
+    """Récupère les données OHLCV via le SDK bpx-py"""
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit,
+    }
+    if startTime is not None:
+        params["startTime"] = startTime * 1000  # convertir en ms
+    if endTime is not None:
+        params["endTime"] = endTime * 1000
+
+    try:
+        data = await bpx_public.get_ohlcv(**params)
+        return data
+    except Exception as e:
+        logger.error(f"Erreur get_ohlcv_async pour {symbol}: {e}")
+        return None
+
 async def get_symbol_listing_date(symbol: str) -> Optional[int]:
     """
     Récupère la date de listing d'un symbole en testant avec une requête minimale.
@@ -125,46 +150,35 @@ async def get_symbol_listing_date(symbol: str) -> Optional[int]:
     """
     now = int(time.time())
     test_dates = [
-        now - 7 * 24 * 3600,   # 7 jours
-        now - 14 * 24 * 3600,  # 14 jours
-        now - 30 * 24 * 3600,  # 30 jours
+        now - 30 * 24 * 3600,   # Il y a 30 jours
+        now - 90 * 24 * 3600,   # Il y a 90 jours
+        now - 180 * 24 * 3600,  # Il y a 180 jours
+        now - 365 * 24 * 3600,  # Il y a 1 an
     ]
-    
+
     logger.info(f"Now timestamp: {now} ({timestamp_to_datetime_str(now)})")
     for test_date in test_dates:
         logger.info(f"Testing listing date candidate: {test_date} ({timestamp_to_datetime_str(test_date)})")
         try:
-            logger.debug(f"Test date de listing pour {symbol}: {timestamp_to_datetime_str(test_date)}")
-            data = get_ohlcv(symbol, interval=INTERVAL, limit=1, startTime=test_date)
+            data = await get_ohlcv_async(symbol, interval=INTERVAL, limit=1, startTime=test_date)
             if data:
                 first_candle_ts = data[0][0] // 1000  # Convertir ms en secondes
                 logger.info(f"Première bougie trouvée pour {symbol}: {timestamp_to_datetime_str(first_candle_ts)}")
                 return first_candle_ts
-            
-            # Petite pause entre les appels pour respecter l'API
+            # Attendre entre les tests pour éviter de surcharger l'API
             await asyncio.sleep(API_RATE_LIMIT_DELAY)
-            
         except Exception as e:
-            # Si c'est une erreur HTTP 400, afficher aussi le contenu de la réponse
-            err_msg = str(e)
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    err_content = e.response.text()
-                    logger.debug(f"Contenu de l'erreur API: {err_content}")
-                except Exception:
-                    pass
-            logger.debug(f"Erreur test date {timestamp_to_datetime_str(test_date)} pour {symbol}: {err_msg}")
+            logger.debug(f"Erreur test date {timestamp_to_datetime_str(test_date)} pour {symbol}: {e}")
             continue
 
     logger.warning(f"Impossible de déterminer la date de listing pour {symbol}")
     return None
 
-
 async def clean_old_data(conn: asyncpg.Connection, symbol: str, retention_days: int) -> None:
     """Nettoie les données anciennes"""
     table_name = format_table_name(symbol)
     cutoff_dt = datetime.now(timezone.utc) - timedelta(days=retention_days)
-    
+
     try:
         result = await conn.execute(f"""
             DELETE FROM {table_name} 
@@ -178,20 +192,20 @@ async def insert_ohlcv_batch(conn: asyncpg.Connection, symbol: str, interval_sec
     """Insère un batch de données OHLCV"""
     if not ohlcv_list:
         return 0
-        
+
     table_name = format_table_name(symbol)
     values = []
-    
+
     for item in ohlcv_list:
         try:
             ts = datetime.fromtimestamp(item[0] / 1000, tz=timezone.utc)
             open_, high, low, close_, volume = map(float, item[1:6])
-            
+
             # Validation des données
             if any(val < 0 for val in [open_, high, low, close_]):
                 logger.warning(f"Prix négatif détecté pour {symbol} à {ts}, ignoré")
                 continue
-                
+
             values.append((symbol, interval_sec, ts, open_, high, low, close_, volume))
         except (ValueError, IndexError) as e:
             logger.warning(f"Erreur parsing données pour {symbol}: {e}")
@@ -205,15 +219,15 @@ async def insert_ohlcv_batch(conn: asyncpg.Connection, symbol: str, interval_sec
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (symbol, interval_sec, timestamp) DO NOTHING
     """
-    
+
     try:
         async with conn.transaction():
             await conn.executemany(stmt, values)
-        
+
         inserted_count = len(values)
         logger.info(f"Inséré {inserted_count} bougies dans {table_name}")
         return inserted_count
-        
+
     except Exception as e:
         logger.error(f"Erreur insertion batch pour {symbol}: {e}")
         return 0
@@ -221,17 +235,17 @@ async def insert_ohlcv_batch(conn: asyncpg.Connection, symbol: str, interval_sec
 async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION_DAYS) -> None:
     """Effectue le backfill pour un symbole donné"""
     logger.info(f"🚀 Début backfill pour {symbol}")
-    
+
     now = int(time.time())
     interval_sec = 60
     total_inserted = 0
 
     async with pool.acquire() as conn:
         await create_table_if_not_exists(conn, symbol)
-        
+
         # Récupérer le dernier timestamp disponible
         last_ts = await get_last_timestamp(conn, symbol)
-        
+
         if last_ts and last_ts < now:
             # Reprise depuis le dernier timestamp + 1 minute
             start = last_ts + interval_sec
@@ -240,17 +254,17 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
             # Nouveau symbole - trouver la date de listing
             logger.info(f"🔍 Recherche date de listing pour {symbol}")
             listing_date = await get_symbol_listing_date(symbol)
-            
+
             if not listing_date:
                 logger.error(f"❌ Impossible de déterminer la date de listing pour {symbol}")
                 return
-                
+
             # Commencer depuis la date de listing ou la limite de rétention
             retention_start = now - days * 24 * 3600
             start = max(listing_date, retention_start)
-            
+
             logger.info(f"📅 Backfill complet pour {symbol} depuis {timestamp_to_datetime_str(start)}")
-            
+
             # Nettoyer les anciennes données pour un backfill complet
             await clean_old_data(conn, symbol, days)
 
@@ -261,21 +275,21 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
 
     current_start = start
     consecutive_failures = 0
-    
+
     while current_start < now and consecutive_failures < 5:
         # Limiter la fin du chunk au timestamp actuel
         current_end = min(current_start + CHUNK_SIZE_SECONDS, now - 60)  # -60s de marge
-        
+
         # Si le chunk est trop petit, on s'arrête
         if current_end <= current_start:
             logger.info(f"⏹️ Chunk trop petit pour {symbol}, arrêt")
             break
-            
+
         logger.info(f"⏳ Traitement {symbol}: {timestamp_to_datetime_str(current_start)} → {timestamp_to_datetime_str(current_end)}")
 
         batch_start = current_start
         batch_success = False
-        
+
         while batch_start < current_end:
             # Vérification supplémentaire pour éviter les requêtes futures
             if batch_start >= now - 60:  # Marge de 60 secondes
@@ -284,8 +298,8 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
 
             try:
                 logger.debug(f"📡 Requête API pour {symbol}: {timestamp_to_datetime_str(batch_start)}")
-                data = get_ohlcv(symbol, interval=INTERVAL, limit=LIMIT_PER_REQUEST, startTime=batch_start)
-                
+                data = await get_ohlcv_async(symbol, interval=INTERVAL, limit=LIMIT_PER_REQUEST, startTime=batch_start)
+
                 if not data:
                     logger.warning(f"📭 Pas de données pour {symbol} à partir de {timestamp_to_datetime_str(batch_start)}")
                     break
@@ -313,14 +327,12 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
                 else:
                     break
 
-                # Si on reçoit moins de données que demandé, on a atteint la fin
+                # Si on reçoit moins de données que demandé, on a atteint la fin des données
                 if len(data) < LIMIT_PER_REQUEST:
-                    logger.info(f"📊 Fin des données disponibles pour {symbol}")
                     break
 
-                # Rate limiting
                 await asyncio.sleep(API_RATE_LIMIT_DELAY)
-                
+
             except Exception as e:
                 logger.error(f"❌ Erreur lors du traitement de {symbol}: {e}")
                 consecutive_failures += 1
@@ -328,51 +340,36 @@ async def backfill_symbol(pool: asyncpg.Pool, symbol: str, days: int = RETENTION
                 break
 
         if not batch_success:
+            logger.warning(f"❌ Échec du batch pour {symbol} à {timestamp_to_datetime_str(current_start)}")
             consecutive_failures += 1
-            logger.warning(f"⚠️ Échec batch pour {symbol}, tentatives échouées: {consecutive_failures}")
-            # Essayer de passer au chunk suivant même après échec
-        
+            await asyncio.sleep(RETRY_DELAY * consecutive_failures)
+            if consecutive_failures >= 5:
+                logger.error(f"🚫 Trop d'échecs consécutifs pour {symbol}, arrêt du backfill")
+                break
+
         current_start = current_end
 
-    logger.info(f"✅ Backfill terminé pour {symbol}, total inséré: {total_inserted}")
+    logger.info(f"✅ Backfill terminé pour {symbol}, total inséré : {total_inserted} bougies")
 
 async def main():
-    """Fonction principale"""
-    logger.info("🎯 Début du processus de backfill")
-    
-    try:
-        pool = await asyncpg.create_pool(
-            dsn=PG_DSN,
-            min_size=2,
-            max_size=10,
-            command_timeout=60
-        )
-        
-        symbols = await fetch_all_symbols()
-        if not symbols:
-            logger.error("❌ Aucun symbole récupéré, arrêt.")
-            return
+    logger.info("🔔 Démarrage du backfill")
 
-        logger.info(f"📋 Traitement de {len(symbols)} symboles")
-        
-        # Traiter les symboles séquentiellement pour éviter les rate limits
-        for i, symbol in enumerate(symbols, 1):
-            logger.info(f"🔄 Progression: {i}/{len(symbols)} - Traitement de {symbol}")
-            try:
-                await backfill_symbol(pool, symbol, RETENTION_DAYS)
-                # Pause entre les symboles
-                if i < len(symbols):
-                    await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"❌ Erreur lors du traitement de {symbol}: {e}")
-                continue
-        
-        await pool.close()
-        logger.info("🎉 Processus de backfill terminé")
-        
-    except Exception as e:
-        logger.error(f"💥 Erreur critique dans main(): {e}")
-        raise
+    pool = await asyncpg.create_pool(dsn=PG_DSN, max_size=10)
+
+    symbols = await fetch_all_symbols()
+    if not symbols:
+        logger.error("Aucun symbole récupéré, arrêt")
+        return
+
+    for idx, symbol in enumerate(symbols, start=1):
+        logger.info(f"🔄 Progression: {idx}/{len(symbols)} - Traitement de {symbol}")
+        try:
+            await backfill_symbol(pool, symbol)
+        except Exception as e:
+            logger.error(f"Erreur lors du backfill de {symbol}: {e}")
+
+    await pool.close()
+    logger.info("🔔 Backfill terminé")
 
 if __name__ == "__main__":
     asyncio.run(main())
