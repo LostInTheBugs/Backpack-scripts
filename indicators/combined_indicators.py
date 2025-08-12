@@ -25,6 +25,10 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
     df['rsi'] = 100 - (100 / (1 + rs))
 
+    first_valid_idx = df['rsi'].first_valid_index()
+    log(f"[{symbol}] RSI première valeur non-NaN à l'index {first_valid_idx}", level="DEBUG")
+
+    
     # Tester seulement la dernière valeur RSI
     if pd.isna(df['rsi'].iloc[-1]):
         log(f"[{symbol}] ⚠️ Dernière valeur RSI est NaN — signal ignoré.", level="INFO")
