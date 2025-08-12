@@ -4,39 +4,33 @@ import time
 import os
 import asyncpg
 
-def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None):
-    if interval == "1s":
-        print("[ERROR] get_ohlcv() : l'intervalle '1s' n'est pas supporté via l'API. Utiliser la BDD locale.")
-        return None
+def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 1000, startTime: int = None, endTime: int = None):
+    # Définir la limite maximale de jours entre startTime et endTime
+    max_days = 200
+    max_ms = max_days * 24 * 3600 * 1000  # Convertir les jours en millisecondes
 
-    base_url = "https://api.backpack.exchange/api/v1/klines"
-
-    if startTime is None:
-        now_ms = int(time.time() * 1000)
-        if interval.endswith('m'):
-            minutes = int(interval[:-1])
-            delta_ms = limit * minutes * 60_000
-        else:
-            delta_ms = limit * 60_000
-        startTime_ms = now_ms - delta_ms
+    # Si startTime est fourni, calculer endTime
+    if startTime:
+        if not endTime:
+            endTime = startTime + max_ms
+        elif endTime - startTime > max_ms:
+            print(f"[ERROR] La plage de temps entre {startTime} et {endTime} dépasse la limite de {max_days} jours.")
+            return None
     else:
-        # startTime est en secondes, API attend secondes
-        startTime_ms = startTime
+        # Si startTime n'est pas fourni, définir une valeur par défaut (par exemple, 30 jours avant maintenant)
+        endTime = int(time.time() * 1000)
+        startTime = endTime - max_ms
 
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": limit,
-        "startTime": startTime_ms,
-    }
+    # Construire l'URL de la requête
+    url = f"https://api.backpack.exchange/api/v1/klines?symbol={symbol}&interval={interval}&startTime={startTime}&endTime={endTime}&limit={limit}"
 
+    # Effectuer la requête et gérer les erreurs
     try:
-        response = requests.get(base_url, params=params)
+        response = requests.get(url)
         response.raise_for_status()
-        data = response.json()
-        return data
+        return response.json()
     except requests.RequestException as e:
-        print(f"[ERROR] get_ohlcv(): {e}")
+        print(f"[ERROR] get_ohlcv() : {e}")
         return None
 
 
