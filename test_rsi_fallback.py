@@ -1,4 +1,4 @@
-from combined_indicators import compute_all
+from indicators.combined_indicators import compute_all
 from utils.logger import log
 
 if __name__ == "__main__":
