@@ -40,21 +40,25 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
         return None
 
     delta = df['close'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
-    rs = avg_gain / (avg_loss + 1e-9)
-    df['rsi'] = 100 - (100 / (1 + rs))
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
 
-    # Correction warning pandas + future dépréciation fillna(method='bfill')
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
+
+    rs = avg_gain / (avg_loss + 1e-9)
+    rsi = 100 - (100 / (1 + rs))
+
+    rsi = rsi.fillna(method='bfill')  # remplace les NaN initiaux
+
+    df['rsi'] = rsi
+
     first_valid_idx = df['rsi'].first_valid_index()
     if first_valid_idx is not None:
-        # On remplace inplace par affectation pour éviter chained assignment
-        df['rsi'] = df['rsi'].bfill()
-        log(f"[{symbol}] RSI premiers NaN remplacés par backward fill à partir de l'index {first_valid_idx}", level="DEBUG")
+        log(f"[{symbol}] RSI recalculé avec ewm, premiers NaN remplacés par backward fill à partir de l'index {first_valid_idx}", level="DEBUG")
 
     return df
+
 
 def calculate_trix(df, period=9):
     ema1 = df['close'].ewm(span=period, adjust=False).mean()
