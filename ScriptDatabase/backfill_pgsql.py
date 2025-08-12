@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import asyncpg
 import pandas as pd
-from public.public import get_ohlcv, format_table_name  # ta fonction existante
+from utils.public import get_ohlcv, format_table_name  # ta fonction existante
 
 PG_DSN = "ton_dsn_ici"  # ou depuis variable d'env
 
