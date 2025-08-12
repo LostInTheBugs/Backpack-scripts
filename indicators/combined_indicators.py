@@ -17,18 +17,20 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
+
+    # Moyenne exponentielle pour gain et perte (plus rapide et moins NaN)
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
+
     rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
     df['rsi'] = 100 - (100 / (1 + rs))
 
-    # Au lieu de tester si *n'importe quel* NaN existe, on teste seulement la dernière valeur
+    # Tester seulement la dernière valeur RSI
     if pd.isna(df['rsi'].iloc[-1]):
         log(f"[{symbol}] ⚠️ Dernière valeur RSI est NaN — signal ignoré.", level="INFO")
         return None
 
     return df
-
 
 def calculate_trix(df, period=9):
     ema1 = df['close'].ewm(span=period, adjust=False).mean()
