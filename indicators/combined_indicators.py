@@ -33,6 +33,7 @@ def load_ohlcv_from_db(symbol: str, lookback_seconds=6*3600) -> pd.DataFrame:
 def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, startTime: int = None, endTime: int = None) -> pd.DataFrame:
     """
     Récupère les données OHLCV depuis l'API Backpack Exchange.
+    startTime et endTime doivent être des timestamps UNIX en secondes (int).
     """
     url = "https://api.backpack.exchange/api/v1/klines"
     params = {
@@ -40,9 +41,14 @@ def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, s
         "interval": interval,
         "limit": limit,
     }
-    if startTime:
+    if startTime is not None:
+        # Vérification simple pour éviter double multiplication
+        if startTime > 1e12:  # On dirait déjà un ms timestamp, on convertit en secondes
+            startTime = startTime // 1000
         params["startTime"] = int(startTime * 1000)
-    if endTime:
+    if endTime is not None:
+        if endTime > 1e12:
+            endTime = endTime // 1000
         params["endTime"] = int(endTime * 1000)
 
     try:
@@ -51,7 +57,6 @@ def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, s
         data = resp.json()
         if not data:
             return pd.DataFrame()
-        # colonnes API: timestamp, open, high, low, close, volume, close_time, quote_asset_volume, number_of_trades, taker_buy_base_asset_volume, taker_buy_quote_asset_volume, ignore
         df = pd.DataFrame(data, columns=["timestamp","open","high","low","close","volume","close_time","quote_asset_volume","number_of_trades","taker_buy_base_asset_volume","taker_buy_quote_asset_volume","ignore"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df = df[["timestamp","open","high","low","close","volume"]]
@@ -61,6 +66,7 @@ def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, s
     except Exception as e:
         log(f"[{symbol}] [ERROR] fetch_ohlcv_from_api: {e}", level="ERROR")
         return pd.DataFrame()
+
 
 def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
     df['ema_fast'] = df['close'].ewm(span=fast, adjust=False).mean()
