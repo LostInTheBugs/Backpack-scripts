@@ -15,7 +15,7 @@ database:
   max_age_seconds: 600            # Max age for fresh data in seconds
 
 strategy:
-  default_strategy: "TwoOutOfFourScalp"     # Default trading strategy
+  default_strategy: "DynamicThreeTwo"     # Default trading strategy
   auto_select_update_interval: 300 # Auto symbol update interval in seconds
   auto_select_top_n: 20           # Number of top symbols to select
   
@@ -52,7 +52,7 @@ risk:
   risk_per_trade_pct: 2.0         # Risk per trade as % of capital
 
 logging:
-  log_level: "DEBUG"               # DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"               # DEBUG, INFO, WARNING, ERROR
   log_file_path: "logs/trading.log"
   max_log_file_size_mb: 50
   log_backup_count: 5
