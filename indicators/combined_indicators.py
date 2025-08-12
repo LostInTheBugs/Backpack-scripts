@@ -1,5 +1,48 @@
+import os
 import pandas as pd
+import psycopg2
 from utils.logger import log
+
+# Lecture de la connexion PostgreSQL via la variable d'environnement PG_DSN
+PG_DSN = os.environ.get("PG_DSN")
+
+def load_ohlcv_from_db(symbol, limit=500):
+    """
+    Charge les données OHLCV depuis PostgreSQL pour un symbole donné.
+    limit = nombre de lignes récentes à récupérer (par défaut 500)
+    Retourne un DataFrame pandas avec un index datetime.
+    """
+    if not PG_DSN:
+        log("[DB] PG_DSN non configuré, impossible de charger les données en base.", level="ERROR")
+        return None
+    
+    query = f"""
+    SELECT
+        time,
+        open,
+        high,
+        low,
+        close,
+        volume
+    FROM ohlcv
+    WHERE symbol = %s
+    ORDER BY time DESC
+    LIMIT %s
+    """
+
+    try:
+        with psycopg2.connect(PG_DSN) as conn:
+            df = pd.read_sql(query, conn, params=(symbol, limit))
+        if df.empty:
+            log(f"[DB] Aucune donnée trouvée pour {symbol}", level="WARNING")
+            return None
+        # Mise en index datetime, tri chronologique ascendant
+        df['time'] = pd.to_datetime(df['time'])
+        df = df.set_index('time').sort_index()
+        return df
+    except Exception as e:
+        log(f"[DB] Erreur lors du chargement des données {symbol} : {e}", level="ERROR")
+        return None
 
 def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
     df['ema_fast'] = df['close'].ewm(span=fast, adjust=False).mean()
@@ -29,7 +72,6 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
         log(f"[{symbol}] RSI premiers NaN remplacés par backward fill à partir de l'index {first_valid_idx}", level="DEBUG")
 
     return df
-
 
 def calculate_trix(df, period=9):
     ema1 = df['close'].ewm(span=period, adjust=False).mean()
@@ -68,4 +110,3 @@ def compute_all(df, symbol=None):
     df = calculate_breakout_levels(df)
 
     return df
-
