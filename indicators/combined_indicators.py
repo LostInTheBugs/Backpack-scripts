@@ -10,7 +10,6 @@ def load_ohlcv_from_db(symbol: str, lookback_seconds=3600) -> pd.DataFrame:
     Charge les données OHLCV 1s depuis PostgreSQL pour le symbole donné,
     sur une fenêtre de lookback_seconds en arrière à partir de maintenant.
     """
-
     async def _load_async():
         end_ts = datetime.now(timezone.utc)
         start_ts = end_ts - timedelta(seconds=lookback_seconds)
@@ -48,9 +47,10 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     rs = avg_gain / (avg_loss + 1e-9)
     df['rsi'] = 100 - (100 / (1 + rs))
 
-    # Remplacer les NaN initiaux par la première valeur non-NaN
+    # Correction warning pandas + future dépréciation fillna(method='bfill')
     first_valid_idx = df['rsi'].first_valid_index()
     if first_valid_idx is not None:
+        # On remplace inplace par affectation pour éviter chained assignment
         df['rsi'] = df['rsi'].bfill()
         log(f"[{symbol}] RSI premiers NaN remplacés par backward fill à partir de l'index {first_valid_idx}", level="DEBUG")
 
@@ -96,7 +96,7 @@ def compute_all(df=None, symbol=None):
 
     df_rsi = calculate_rsi(df, symbol=symbol)
     if df_rsi is not None:
-        df = df_rsi  # mise à jour df avec RSI
+        df = df_rsi
         log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
     else:
         log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
