@@ -10,9 +10,10 @@ async def fetch_ohlcv_from_api_sdk(symbol: str, interval: str, start_time: int, 
         data = public.get_klines(
             symbol=symbol,
             interval=interval,
-            start_time=start_time * 1000,
-            end_time=end_time * 1000,
+            start_time=start_time,
+            end_time=end_time,
         )
+
         if not data:
             print(f"[{symbol}] Pas de données reçues")
             return pd.DataFrame()
