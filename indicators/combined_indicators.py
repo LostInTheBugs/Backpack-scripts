@@ -51,7 +51,7 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     # Remplacer les NaN initiaux par la première valeur non-NaN
     first_valid_idx = df['rsi'].first_valid_index()
     if first_valid_idx is not None:
-        df['rsi'].fillna(method='bfill', inplace=True)
+        df['rsi'] = df['rsi'].bfill()
         log(f"[{symbol}] RSI premiers NaN remplacés par backward fill à partir de l'index {first_valid_idx}", level="DEBUG")
 
     return df
