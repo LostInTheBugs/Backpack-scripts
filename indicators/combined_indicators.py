@@ -64,11 +64,7 @@ def compute_all(df, symbol=None):
 
     # RSI
     df_rsi = calculate_rsi(df, symbol=symbol)
-    if df_rsi is not None:
-        df = df_rsi
-        log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
-    else:
-        log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
+
 
     # TRIX & Breakout
     df = calculate_trix(df)
