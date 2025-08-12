@@ -28,7 +28,7 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     first_valid_idx = df['rsi'].first_valid_index()
     log(f"[{symbol}] RSI première valeur non-NaN à l'index {first_valid_idx}", level="DEBUG")
 
-    
+
     # Tester seulement la dernière valeur RSI
     if pd.isna(df['rsi'].iloc[-1]):
         log(f"[{symbol}] ⚠️ Dernière valeur RSI est NaN — signal ignoré.", level="INFO")
@@ -71,6 +71,7 @@ def compute_all(df, symbol=None):
     df_rsi = calculate_rsi(df, symbol=symbol)
     if df_rsi is not None:
         df = df_rsi
+        log(f"[{symbol}] ✅ RSI calculé avec succès.", level="INFO")
     else:
         log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN permanents).", level="INFO")
 
