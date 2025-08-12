@@ -4,7 +4,11 @@ import asyncpg
 import pandas as pd
 from utils.public import get_ohlcv, format_table_name  # ta fonction existante
 
-PG_DSN = "ton_dsn_ici"  # ou depuis variable d'env
+import os
+
+PG_DSN = os.environ.get("PG_DSN")
+if not PG_DSN:
+    raise RuntimeError("La variable d'environnement PG_DSN n'est pas définie")
 
 BACKFILL_DAYS = 90
 INTERVAL = "1m"
