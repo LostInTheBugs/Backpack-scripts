@@ -36,6 +36,49 @@ public = Public()  # Instance du client public du SDK bpx-py
 def timestamp_to_datetime_str(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
 
+async def create_table_if_not_exists(conn, symbol: str):
+    table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
+    query = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        timestamp TIMESTAMP WITH TIME ZONE PRIMARY KEY,
+        open FLOAT NOT NULL,
+        high FLOAT NOT NULL,
+        low FLOAT NOT NULL,
+        close FLOAT NOT NULL,
+        volume FLOAT NOT NULL
+    );
+    """
+    await conn.execute(query)
+
+async def insert_ohlcv_batch(conn, symbol: str, interval_sec: int, data: list) -> int:
+    """
+    Insère une liste de candles OHLCV dans la table.
+    data est une liste de listes, chaque élément = [timestamp_ms, open, high, low, close, volume]
+    """
+    table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
+    query = f"""
+    INSERT INTO {table_name} (timestamp, open, high, low, close, volume)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (timestamp) DO NOTHING
+    """
+    count = 0
+    for candle in data:
+        timestamp_ms = candle[0]
+        ts = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+        try:
+            await conn.execute(query, ts, float(candle[1]), float(candle[2]), float(candle[3]), float(candle[4]), float(candle[5]))
+            count += 1
+        except Exception as e:
+            logger.error(f"Erreur insertion candle {ts} pour {symbol}: {e}")
+    return count
+
+async def clean_old_data(conn, symbol: str, retention_days: int):
+    table_name = f"ohlcv__{symbol.lower().replace('_', '__')}"
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    query = f"DELETE FROM {table_name} WHERE timestamp < $1"
+    deleted = await conn.execute(query, cutoff_date)
+    logger.info(f"Nettoyage: {deleted} lignes supprimées dans {table_name} avant {cutoff_date}")
+    
 # Nouvelle fonction sync qui utilise le SDK bpx-py
 def get_ohlcv_bpx_sdk(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = 0):
     """
