@@ -11,7 +11,7 @@ def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
 
 def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     if len(df) < period:
-        log(f"[{symbol}] [WARNING] Pas assez de données pour RSI ({len(df)} < {period}), signal ignoré.", level="INFO")
+        log(f"[{symbol}] [WARNING] Pas assez de données pour RSI ({len(df)} < {period}), signal ignoré.", level="DEBUG")
         return None
 
     delta = df['close'].diff()
@@ -22,13 +22,13 @@ def calculate_rsi(df, period=14, symbol="UNKNOWN"):
     rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
     df['rsi'] = 100 - (100 / (1 + rs))
 
-    # Vérif : seulement si *tout* est NaN → problème réel
-    if df['rsi'].isna().all():
-        log(f"[{symbol}] ⚠️ Tous les RSI sont NaN — signal ignoré.", level="INFO")
+    # Au lieu de tester si *n'importe quel* NaN existe, on teste seulement la dernière valeur
+    if pd.isna(df['rsi'].iloc[-1]):
+        log(f"[{symbol}] ⚠️ Dernière valeur RSI est NaN — signal ignoré.", level="INFO")
         return None
 
-    log(f"[{symbol}] ✅ RSI calculé automatiquement.", level="INFO")
     return df
+
 
 def calculate_trix(df, period=9):
     ema1 = df['close'].ewm(span=period, adjust=False).mean()
