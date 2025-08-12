@@ -8,7 +8,11 @@ def calculate_macd(df, fast=12, slow=26, signal=9):
     df['signal'] = df['macd'].ewm(span=signal, adjust=False).mean()
     return df
 
-def calculate_rsi(df, period=14):
+def calculate_rsi(df, period=14, symbol="UNKNOWN"):
+    if len(df) < period:
+        log(f"[{symbol}] [WARNING] Pas assez de données pour RSI ({len(df)} < {period}), signal ignoré.", level="DEBUG")
+        return None
+
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
@@ -16,9 +20,11 @@ def calculate_rsi(df, period=14):
     avg_loss = loss.rolling(window=period).mean()
     rs = avg_gain / (avg_loss + 1e-9)  # éviter division par zéro
     df['rsi'] = 100 - (100 / (1 + rs))
-    if len(df) < period:
-        log(f"[DEBUG] [WARNING] Pas assez de données pour RSI ({len(df)} < {period}), signal ignoré.", level="DEBUG")
+
+    if df['rsi'].isna().any():
+        log(f"[{symbol}] ⚠️ NaN détecté dans RSI — signal ignoré.", level="INFO")
         return None
+
     return df
 
 def calculate_trix(df, period=9):
@@ -33,13 +39,35 @@ def calculate_breakout_levels(df, window=20):
     df['low_breakout'] = df['low'].rolling(window=window).min()
     return df
 
-def compute_all(df):
+def compute_all(df, symbol=None):
     """
     Calcule tous les indicateurs nécessaires une seule fois.
+    symbol est optionnel — s'il n'est pas fourni, on tente de le déduire du DataFrame.
     """
     df = df.copy()
+
+    # Déduire le symbole si non fourni
+    if symbol is None:
+        if 'symbol' in df.columns and not df['symbol'].empty:
+            symbol = str(df['symbol'].iloc[0])
+        elif hasattr(df, 'attrs') and 'symbol' in df.attrs:
+            symbol = df.attrs['symbol']
+        else:
+            symbol = "UNKNOWN"
+
+    # Calcul MACD
     df = calculate_macd(df)
-    df = calculate_rsi(df)
+
+    # Calcul RSI
+    df_rsi = calculate_rsi(df, symbol=symbol)
+    if df_rsi is None:
+        log(f"[{symbol}] [WARNING] RSI non calculé (données insuffisantes ou NaN détectés).", level="INFO")
+        return df  # retourne le df avec MACD, sans RSI
+    else:
+        df = df_rsi
+
+    # Autres indicateurs
     df = calculate_trix(df)
     df = calculate_breakout_levels(df)
+
     return df
