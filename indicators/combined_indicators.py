@@ -33,7 +33,7 @@ def load_ohlcv_from_db(symbol: str, lookback_seconds=6*3600) -> pd.DataFrame:
 def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, startTime: int = None, endTime: int = None) -> pd.DataFrame:
     """
     Récupère les données OHLCV depuis l'API Backpack Exchange.
-    startTime et endTime doivent être des timestamps UNIX en secondes (int).
+    Si startTime est donné, endTime est obligatoire et forcé à now si absent.
     """
     url = "https://api.backpack.exchange/api/v1/klines"
     params = {
@@ -42,14 +42,12 @@ def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, s
         "limit": limit,
     }
     if startTime is not None:
-        # Vérification simple pour éviter double multiplication
-        if startTime > 1e12:  # On dirait déjà un ms timestamp, on convertit en secondes
-            startTime = startTime // 1000
-        params["startTime"] = int(startTime)
+        params["startTime"] = int(startTime * 1000)
+        if endTime is None:
+            # Forcer endTime à now (timestamp en secondes)
+            endTime = int(datetime.now(timezone.utc).timestamp())
     if endTime is not None:
-        if endTime > 1e12:
-            endTime = endTime // 1000
-        params["endTime"] = int(endTime)
+        params["endTime"] = int(endTime * 1000)
 
     try:
         resp = requests.get(url, params=params)
@@ -66,6 +64,7 @@ def fetch_ohlcv_from_api(symbol: str, interval: str = "1m", limit: int = 1000, s
     except Exception as e:
         log(f"[{symbol}] [ERROR] fetch_ohlcv_from_api: {e}", level="ERROR")
         return pd.DataFrame()
+
 
 
 def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
