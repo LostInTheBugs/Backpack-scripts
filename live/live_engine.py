@@ -173,6 +173,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
         get_combined_signal = import_strategy_signal(selected_strategy)
 
+        # Optional: prepare indicators if the strategy has it
         strategy_module = None
         if selected_strategy == "DynamicThreeTwo":
             import signals.dynamic_three_two_selector as strategy_module
@@ -180,25 +181,23 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if strategy_module is not None and hasattr(strategy_module, "prepare_indicators"):
             import inspect
             prepare_func = strategy_module.prepare_indicators
-
             if inspect.iscoroutinefunction(prepare_func):
                 df = await prepare_func(df, symbol)
             else:
                 df = prepare_func(df, symbol)
 
-        # Appel asynchrone de ensure_indicators
+        # Ensure all indicators are present
         df = await ensure_indicators(df, symbol)
         if df is None:
             return
-        
-        import inspect
 
-        # Appel de la stratégie, en gérant async ou sync
+        # Call the strategy function, async or sync
+        import inspect
         if inspect.iscoroutinefunction(get_combined_signal):
             signal, details = await get_combined_signal(df, symbol)
         else:
             signal, details = get_combined_signal(df, symbol)
-        
+
         log(f"[{symbol}] 🎯 Signal detected: {signal} | Details: {details}")
 
         # Handle existing positions with trailing stop
@@ -217,6 +216,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         log(f"[{symbol}] 💥 Error: {e}")
         import traceback
         traceback.print_exc()
+
 
 
 async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
