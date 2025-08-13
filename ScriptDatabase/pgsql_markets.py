@@ -4,6 +4,7 @@ import asyncio
 import os
 import json
 from datetime import datetime
+from utils.logger import log
 
 PG_DSN = os.environ.get("PG_DSN")
 if not PG_DSN:
@@ -48,7 +49,7 @@ async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
     await update_markets_table(pool)
     await pool.close()
-    print("Mise à jour terminée")
+    log(f"[DEBUG] Mise à jour terminée", level="DEBUG")
 
 if __name__ == "__main__":
     asyncio.run(main())

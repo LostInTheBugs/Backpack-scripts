@@ -30,7 +30,7 @@ secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
 
 async def scan_all_symbols(pool, symbols):
-    log("🔍 Lancement du scan indicateurs…")
+    log("[INFO] 🔍 Lancement du scan indicateurs…", level="INFO")
     ok_symbols, ko_symbols = [], []
 
     for symbol in symbols:
