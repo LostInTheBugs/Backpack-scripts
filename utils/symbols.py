@@ -1,4 +1,5 @@
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
+from utils.logger import log
 
 def get_top_symbols(top_n=10):
     """
@@ -9,5 +10,5 @@ def get_top_symbols(top_n=10):
         symbols = fetch_top_n_volatility_volume(n=top_n)
         return symbols
     except Exception as e:
-        print(f"❌ Erreur récupération des symboles : {e}")
+        log(f"[ERROR] ❌ Erreur récupération des symboles : {e}", level="ERROR")
         return []

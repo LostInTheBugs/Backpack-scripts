@@ -1,5 +1,6 @@
 import requests
 import sys
+from utils.logger import log
 
 API_URL = "https://api.backpack.exchange/api/v1/tickers"
 OUTPUT_FILE = "symbol.lst"
@@ -9,7 +10,7 @@ def fetch_top_n_volatility(n):
         resp = requests.get(API_URL)
         resp.raise_for_status()
     except Exception as e:
-        print(f"❌ Erreur lors de la récupération des données : {e}")
+        log(f"[ERROR] ❌ Erreur lors de la récupération des données : {e}", level="ERROR")
         sys.exit(1)
 
     data = resp.json()
@@ -32,7 +33,7 @@ def fetch_top_n_volatility(n):
         for symbol, vol in top_n:
             f.write(symbol + "\n")
 
-    print(f"✅ Écrit {len(top_n)} symboles les plus volatils dans {OUTPUT_FILE}")
+    log(f"[DEBUG] ✅ Écrit {len(top_n)} symboles les plus volatils dans {OUTPUT_FILE}", level="DEBUG")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

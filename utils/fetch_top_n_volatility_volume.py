@@ -1,5 +1,6 @@
 import requests
 import sys
+from utils.logger import log
 
 API_URL = "https://api.backpack.exchange/api/v1/tickers"
 OUTPUT_FILE = "symbol.lst"
@@ -9,7 +10,7 @@ def fetch_top_n_volatility_volume(n=None):
         resp = requests.get(API_URL)
         resp.raise_for_status()
     except Exception as e:
-        print(f"❌ Erreur lors de la récupération des données : {e}")
+        log(f"[ERROR] ❌ Erreur lors de la récupération des données : {e}", level="ERROR")
         return []
 
     data = resp.json()
@@ -32,7 +33,7 @@ def fetch_top_n_volatility_volume(n=None):
     ]
 
     if not tickers_data:
-        print("❌ Aucun ticker avec un volume >= 1 million")
+        log("[ERROR] ❌ Aucun ticker avec un volume >= 1 million", level="ERROR")
         return []
 
     max_volume = max(t[2] for t in tickers_data)
@@ -52,7 +53,7 @@ def fetch_top_n_volatility_volume(n=None):
 
     symbols_list = [symbol for symbol, score in top_n]
 
-    print(f"✅ {len(symbols_list)} symboles les plus volatils (volume ≥ 1M) récupérés.")
+    log(f"[DEBUG] ✅ {len(symbols_list)} symboles les plus volatils (volume ≥ 1M) récupérés.", level="DEBUG")
     return symbols_list
 
 if __name__ == "__main__":

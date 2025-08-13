@@ -11,7 +11,7 @@ strategy_cfg = get_strategy_config()
 def prepare_indicators(df, symbol=None):
     """Version synchrone pour rétro-compatibilité"""
     if symbol is None:
-        log("⚠️ Symbol manquant dans prepare_indicators, utilisation version simplifiée", level="WARNING")
+        log("[WARNING] ⚠️ Symbol manquant dans prepare_indicators, utilisation version simplifiée", level="WARNING")
         ema_short = 20
         ema_medium = 50  
         ema_long = 200
@@ -34,7 +34,7 @@ def prepare_indicators_sync(df, symbol):
     df['EMA200'] = df['close'].ewm(span=ema_long).mean()
 
     df['RSI'] = 50.0
-    log(f"[{symbol}] ⚠️ RSI fixé à 50 (version sync)")
+    log(f"[WARNING] [{symbol}] ⚠️ RSI fixé à 50 (version sync)", level="WARNING")
     
     return df
 
@@ -44,7 +44,7 @@ async def detect_market_context(df, symbol):
     ema200 = df['EMA200'].iloc[-1]
     
     rsi = await get_cached_rsi(symbol, interval="5m")
-    log(f"[{symbol}] [DEBUG] EMA20: {ema20:.4f}, EMA50: {ema50:.4f}, EMA200: {ema200:.4f}, RSI: {rsi:.2f}")
+    log(f"[INFO] [{symbol}] [DEBUG] EMA20: {ema20:.4f}, EMA50: {ema50:.4f}, EMA200: {ema200:.4f}, RSI: {rsi:.2f}", level="INFO")
 
     if ema20 > ema50 and rsi > 50:
         return 'bull'

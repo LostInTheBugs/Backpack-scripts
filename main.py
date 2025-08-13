@@ -95,7 +95,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                 ignored_symbols.append(symbol)
 
         if active_symbols:
-            log(f"Active symbols ({len(active_symbols)}): {active_symbols}")
+            log(f"[INFO] Active symbols ({len(active_symbols)}): {active_symbols}", level="INFO")
 
         ignored_details = []
         if ignored_symbols:
@@ -111,10 +111,10 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                     ignored_details.append(f"{sym} (inactive for {human_delay})")
 
             if ignored_details:
-                log(f"Ignored symbols ({len(ignored_details)}): {ignored_details}")
+                log(f"[INFO] Ignored symbols ({len(ignored_details)}): {ignored_details}", level="INFO")
 
         if not active_symbols:
-            log("No active symbols for this iteration")
+            log(f"[INFO] No active symbols for this iteration", level="INFO")
 
         await asyncio.sleep(1)
 
@@ -134,10 +134,10 @@ async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: 
 
             await main_loop(symbols, pool, real_run=real_run, dry_run=dry_run)
         except KeyboardInterrupt:
-            log("Manual stop requested")
+            log(f"[INFO] Manual stop requested", level="INFO")
             break
         except Exception as e:
-            log(f"Error in watcher: {e}")
+            log(f"[ERROR] Error in watcher: {e}", level="ERROR")
             traceback.print_exc()
 
         await asyncio.sleep(1)
@@ -194,13 +194,11 @@ async def async_main(args):
             if isinstance(args.backtest, tuple):
                 start_dt, end_dt = args.backtest
                 for symbol in symbols:
-                    log(f"[{symbol}] Starting backtest from {start_dt.date()} to {end_dt.date()} with {args.strategie} strategy")
-                    log(f"[DEBUG] Lancement backtest {symbol} de {start_dt.date()} à {end_dt.date()}", level="DEBUG")
+                    log(f"[DEBUG] [{symbol}] Starting backtest from {start_dt.date()} to {end_dt.date()} with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, (start_dt, end_dt), pg_dsn, args.strategie)
             else:
                 for symbol in symbols:
-                    log(f"[{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy")
-                    log(f"[DEBUG] Lancement backtest {symbol} pendant {args.backtest} heures", level="DEBUG")
+                    log(f"[DEBUG] [{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
         else:
             log("[DEBUG] Mode live (pas de backtest)", level="DEBUG")
@@ -225,7 +223,7 @@ async def async_main(args):
         traceback.print_exc()
     finally:
         await pool.close()
-        print("Connection pool closed, program terminated")
+        log(f"[ERROR] Connection pool closed, program terminated", level="ERROR")
 
 
 if __name__ == "__main__":

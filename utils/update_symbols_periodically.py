@@ -29,15 +29,15 @@ def update_symbols_periodically(symbols_container: dict):
 
     while True:
         try:
-            log("🔄 Mise à jour des symboles...")
+            log("[INFO] 🔄 Mise à jour des symboles...", level="INFO")
             auto_symbols = fetch_top_n_volatility_volume(
                 n=config.strategy.auto_select_top_n
             )
             symbols = merge_symbols_with_config(auto_symbols)
             symbols_container['list'] = symbols
-            log(f"✅ Symboles mis à jour : {symbols}")
+            log(f"[INFO] ✅ Symboles mis à jour : {symbols}", level="INFO")
         except Exception as e:
-            log(f"❌ Erreur mise à jour symboles : {e}")
+            log(f"[ERROR] ❌ Erreur mise à jour symboles : {e}", level="ERROR")
         time.sleep(interval)
 
 def start_symbol_updater(symbols_container: dict):
@@ -47,4 +47,4 @@ def start_symbol_updater(symbols_container: dict):
         daemon=True
     )
     t.start()
-    log("🚀 Thread de mise à jour des symboles démarré")
+    log("[INFO] 🚀 Thread de mise à jour des symboles démarré", level="INFO")

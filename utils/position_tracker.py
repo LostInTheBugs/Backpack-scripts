@@ -1,4 +1,5 @@
 from config.settings import get_config
+from utils.logger import log
 
 # Load configuration
 config = get_config()
@@ -31,7 +32,7 @@ class PositionTracker:
         else:  # SELL
             self.trailing_stop = price * (1 + self.trailing_stop_pct)
         
-        print(f"[{self.symbol}] 🟢 Position opened {direction} at {price:.4f} ({timestamp})")
+        log(f"[INFO] [{self.symbol}] 🟢 Position opened {direction} at {price:.4f} ({timestamp})", level="INFO")
 
     def update_trailing_stop(self, price, timestamp):
         """Update trailing stop based on current price"""
@@ -72,7 +73,7 @@ class PositionTracker:
         elif self.direction == "SELL":
             pnl_pct = ((self.entry_price - price) / self.entry_price) * 100
 
-        print(f"[{self.symbol}] 🔴 Position closed {self.direction} at {price:.4f} ({timestamp}) | PnL: {pnl_pct:.2f}%")
+        log(f"[INFO] [{self.symbol}] 🔴 Position closed {self.direction} at {price:.4f} ({timestamp}) | PnL: {pnl_pct:.2f}%", level="INFO")
 
         # Reset position state
         self.entry_price = None
