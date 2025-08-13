@@ -12,62 +12,76 @@ if not PG_DSN:
 
 _pool = None  # pool global
 
+
 async def get_pool():
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(dsn=PG_DSN)
     return _pool
 
+
 async def get_market(symbol: str):
-    pool = await get_pool()
+    """Récupère les infos marché et le PnL actuel pour un symbole"""
+    try:
+        pool = await get_pool()
 
-    # Récupérer les infos de marché
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT symbol, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt
-            FROM backpack_markets
-            WHERE symbol = $1
-        """, symbol)
+        # Récupérer les infos marché depuis la BDD
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT symbol, baseSymbol, quoteSymbol, marketType, orderBookState, createdAt
+                FROM backpack_markets
+                WHERE symbol = $1
+            """, symbol)
 
-    if not row:
-        log(f"⚠️ Marché {symbol} non trouvé en base locale")
+        if not row:
+            log(f"⚠️ Marché {symbol} non trouvé en base locale")
+            return None
+
+        result = dict(row)
+
+        # Vérifier positions ouvertes
+        open_positions = await get_open_positions()
+        position = open_positions.get(symbol)
+
+        if position:
+            # Récupérer le prix actuel depuis la BDD OHLCV (bougie 1s)
+            end_ts = datetime.now(timezone.utc)
+            start_ts = end_ts - timedelta(seconds=10)
+            df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+
+            if df is None or df.empty:
+                result["pnl"] = 0.0
+                return result
+
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            if df['timestamp'].dt.tz is None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+            df.set_index('timestamp', inplace=True)
+            df = df.sort_index()
+            df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
+
+            current_price = float(df.iloc[-1]["close"])
+            entry_price = position["entry_price"]
+            side = position["side"]
+
+            if side == "long":
+                pnl = (current_price - entry_price) / entry_price * 100
+            else:  # short
+                pnl = (entry_price - current_price) / entry_price * 100
+
+            result["pnl"] = pnl
+            result["current_price"] = current_price
+            result["side"] = side
+            result["entry_price"] = entry_price
+        else:
+            result["pnl"] = 0.0
+
+        return result
+
+    except Exception as e:
+        log(f"⚠️ Erreur get_market({symbol}): {e}")
         return None
 
-    result = dict(row)
-
-    # Récupérer positions ouvertes
-    open_positions = await get_open_positions()
-    position = open_positions.get(symbol)
-
-    if position:
-        # Récupérer le prix actuel depuis la BDD OHLCV (dernière bougie 1s)
-        end_ts = datetime.now(timezone.utc)
-        start_ts = end_ts - timedelta(seconds=10)  # suffisant pour avoir une bougie
-        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
-
-        if df is None or df.empty:
-            result["pnl"] = 0.0
-            return result
-
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df.set_index('timestamp', inplace=True)
-        df = df.sort_index()
-        df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
-
-        current_price = float(df.iloc[-1]["close"])
-        entry_price = position["entry_price"]
-        side = position["side"]
-
-        if side == "long":
-            pnl = (current_price - entry_price) / entry_price * 100
-        else:  # short
-            pnl = (entry_price - current_price) / entry_price * 100
-
-        result["pnl"] = pnl
-    else:
-        result["pnl"] = 0.0
-
-    return result
 
 async def close_pool():
     global _pool

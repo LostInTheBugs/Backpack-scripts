@@ -4,13 +4,11 @@ from datetime import datetime, timedelta, timezone
 import os
 import inspect
 
-from utils.position_utils import position_already_open
+from utils.position_utils import position_already_open, get_real_pnl, get_open_positions
 from utils.logger import log
 from utils.public import check_table_and_fresh_data
-from execute.open_position_usdc import open_position
-from execute.close_position_percent import close_position_percent
+from execute.async_wrappers import open_position_async, close_position_percent_async
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
-from utils.position_utils import get_real_pnl
 from signals.strategy_selector import get_strategy_for_market
 from config.settings import get_config
 from indicators.rsi_calculator import get_cached_rsi
@@ -32,18 +30,14 @@ secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
 
 async def scan_all_symbols(pool, symbols):
-    """Scanner toutes les paires pour vérifier EMA/RSI/MACD avant lancement."""
     log("🔍 Lancement du scan indicateurs…")
-
-    ok_symbols = []
-    ko_symbols = []
+    ok_symbols, ko_symbols = [], []
 
     for symbol in symbols:
         try:
             end_ts = datetime.now(timezone.utc)
             start_ts = end_ts - timedelta(seconds=60)
             df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
-
             if df is None or df.empty:
                 ko_symbols.append((symbol, "No data"))
                 continue
@@ -52,7 +46,7 @@ async def scan_all_symbols(pool, symbols):
             if df['timestamp'].dt.tz is None:
                 df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
             df.set_index('timestamp', inplace=True)
-            df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+            df[['open','high','low','close','volume']] = df[['open','high','low','close','volume']].astype(float)
 
             df_checked = await ensure_indicators(df, symbol)
             if df_checked is None:
@@ -69,7 +63,6 @@ async def scan_all_symbols(pool, symbols):
 
 
 def import_strategy_signal(strategy):
-    """Import strategy signal function dynamically"""
     if strategy == "Trix":
         from signals.trix_only_signal import get_combined_signal
     elif strategy == "Combo":
@@ -92,10 +85,8 @@ def import_strategy_signal(strategy):
 
 
 async def ensure_indicators(df, symbol):
-    """Version asynchrone avec RSI depuis l'API Backpack"""
     required_cols = ["EMA20", "EMA50", "EMA200", "RSI", "MACD"]
-
-    for period, col in [(20, "EMA20"), (50, "EMA50"), (200, "EMA200")]:
+    for period, col in [(20,"EMA20"),(50,"EMA50"),(200,"EMA200")]:
         if col not in df.columns:
             df[col] = df['close'].ewm(span=period, adjust=False).mean()
 
@@ -108,7 +99,7 @@ async def ensure_indicators(df, symbol):
         df['RSI'] = 50
 
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
-        short_window, long_window, signal_window = 12, 26, 9
+        short_window, long_window, signal_window = 12,26,9
         ema_short = df['close'].ewm(span=short_window, adjust=False).mean()
         ema_long = df['close'].ewm(span=long_window, adjust=False).mean()
         df['MACD'] = ema_short - ema_long
@@ -129,11 +120,9 @@ async def ensure_indicators(df, symbol):
     return df
 
 
-async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args):
-    """Handle live trading for a single symbol"""
+async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args=None):
     try:
         log(f"[{symbol}] 📈 Loading OHLCV data for {INTERVAL}")
-
         if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
             log(f"[{symbol}] ❌ Ignored: no recent data in local database")
             return
@@ -141,7 +130,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         end_ts = datetime.now(timezone.utc)
         start_ts = end_ts - timedelta(seconds=600)
         df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
-
         if df is None or df.empty:
             log(f"[{symbol}] ❌ No 1s data retrieved from local database")
             return
@@ -150,12 +138,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if df['timestamp'].dt.tz is None:
             df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
         df.set_index('timestamp', inplace=True)
-        df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
-
-        log(f"[{symbol}] [DEBUG] Data types:\n{df.dtypes}", level="DEBUG")
-        log(f"[{symbol}] [DEBUG] Index type: {type(df.index)}", level="DEBUG")
-        log(f"[{symbol}] [DEBUG] DataFrame length: {len(df)}", level="DEBUG")
-        log(f"[{symbol}] [DEBUG] Any NaN in close? {df['close'].isna().any()}", level="DEBUG")
+        df[['open','high','low','close','volume']] = df[['open','high','low','close','volume']].astype(float)
 
         if args.strategie == "Auto":
             market_condition, selected_strategy = get_strategy_for_market(df)
@@ -165,17 +148,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[{symbol}] 📊 Strategy manually selected: {selected_strategy}")
 
         get_combined_signal = import_strategy_signal(selected_strategy)
-
-        strategy_module = None
-        if selected_strategy == "DynamicThreeTwo":
-            import signals.dynamic_three_two_selector as strategy_module
-
-        if strategy_module and hasattr(strategy_module, "prepare_indicators"):
-            prepare_func = strategy_module.prepare_indicators
-            if inspect.iscoroutinefunction(prepare_func):
-                df = await prepare_func(df, symbol)
-            else:
-                df = prepare_func(df, symbol)
 
         df = await ensure_indicators(df, symbol)
         if df is None:
@@ -192,7 +164,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             await handle_existing_position(symbol, real_run, dry_run)
             return
 
-        if signal in ["BUY", "SELL"]:
+        if signal in ["BUY","SELL"]:
             await handle_new_position(symbol, signal, real_run, dry_run)
             log(f"[DEBUG] {symbol} 🚨 Try open position: {signal}", level="DEBUG")
         else:
@@ -204,7 +176,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
 
 async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
-    """Handle existing position with trailing stop logic"""
     pnl_usdc, _ = get_real_pnl(symbol)
     pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100
 
@@ -215,16 +186,14 @@ async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
 
     if max_pnl >= MIN_PNL_FOR_TRAILING and (max_pnl - pnl_percent) >= TRAILING_STOP_TRIGGER:
         log(f"[{symbol}] ⛔ Trailing stop triggered: PnL {pnl_percent:.2f}% < Max {max_pnl:.2f}% - {TRAILING_STOP_TRIGGER}%")
-        
         if real_run:
             try:
-                close_position_percent(public_key, secret_key, symbol, percent=100)
+                await close_position_percent_async(symbol, percent=100)
                 log(f"[{symbol}] ✅ Position closed successfully via trailing stop")
             except Exception as e:
                 log(f"[{symbol}] ❌ Error closing position: {e}")
         else:
             log(f"[{symbol}] 🧪 DRY-RUN: Simulated close via trailing stop")
-        
         MAX_PNL_TRACKER.pop(symbol, None)
     else:
         log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}% | Min for trailing: {MIN_PNL_FOR_TRAILING:.1f}%")
@@ -234,19 +203,18 @@ async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
 
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
-    """Handle new position opening"""
-    direction = "long" if signal == "BUY" else "short"
+    direction = "long" if signal=="BUY" else "short"
     
-    if real_run and not check_position_limit():
+    if real_run and not await check_position_limit():
         log(f"[{symbol}] ⚠️ Maximum positions limit ({trading_config.max_positions}) reached - skipping")
         return
-    
+
     if dry_run:
         log(f"[{symbol}] 🧪 DRY-RUN: Simulated {direction.upper()} position opening")
     elif real_run:
         log(f"[{symbol}] ✅ REAL position opening: {direction.upper()}")
         try:
-            open_position(symbol, POSITION_AMOUNT_USDC, direction)
+            await open_position_async(symbol, POSITION_AMOUNT_USDC, direction)
             MAX_PNL_TRACKER[symbol] = 0.0
             log(f"[{symbol}] ✅ Position opened successfully")
         except Exception as e:
@@ -255,11 +223,9 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
         log(f"[{symbol}] ❌ Neither --real-run nor --dry-run specified: no action")
 
 
-def check_position_limit() -> bool:
-    """Check if we can open a new position based on max_positions limit"""
+async def check_position_limit() -> bool:
     try:
-        from utils.position_utils import get_open_positions
-        positions = get_open_positions()
+        positions = await get_open_positions()  # async version
         current_positions = len([p for p in positions.values() if p])
         return current_positions < trading_config.max_positions
     except Exception as e:
@@ -267,12 +233,9 @@ def check_position_limit() -> bool:
         return True
 
 
-def get_position_stats() -> dict:
-    """Get current position statistics"""
+async def get_position_stats() -> dict:
     try:
-        from utils.position_utils import get_open_positions
-        positions = get_open_positions()
-        
+        positions = await get_open_positions()
         return {
             'total_positions': len([p for p in positions.values() if p]),
             'max_positions': trading_config.max_positions,
