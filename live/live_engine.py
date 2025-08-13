@@ -178,12 +178,13 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             import signals.dynamic_three_two_selector as strategy_module
 
         if strategy_module is not None and hasattr(strategy_module, "prepare_indicators"):
-            # Vérifier si la fonction prepare_indicators est asynchrone
             import inspect
-            if inspect.iscoroutinefunction(strategy_module.prepare_indicators):
-                df = await strategy_module.prepare_indicators(df, symbol)
+            prepare_func = strategy_module.prepare_indicators
+
+            if inspect.iscoroutinefunction(prepare_func):
+                df = await prepare_func(df, symbol)
             else:
-                df = strategy_module.prepare_indicators(df, symbol)
+                df = prepare_func(df, symbol)
 
         # Appel asynchrone de ensure_indicators
         df = await ensure_indicators(df, symbol)
