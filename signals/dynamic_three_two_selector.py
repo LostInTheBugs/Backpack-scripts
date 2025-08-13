@@ -9,9 +9,25 @@ from indicators.rsi_calculator import get_cached_rsi
 
 strategy_cfg = get_strategy_config()
 
-async def prepare_indicators(df, symbol):
-    """Version asynchrone avec RSI depuis l'API"""
-    # Utiliser les périodes dans la config
+def prepare_indicators(df, symbol=None):
+    """Version synchrone pour rétro-compatibilité"""
+    if symbol is None:
+        log("⚠️ Symbol manquant dans prepare_indicators, utilisation version simplifiée", level="WARNING")
+        # Version basique sans RSI API
+        ema_short = 20
+        ema_medium = 50  
+        ema_long = 200
+        
+        df['EMA20'] = df['close'].ewm(span=ema_short).mean()
+        df['EMA50'] = df['close'].ewm(span=ema_medium).mean()  
+        df['EMA200'] = df['close'].ewm(span=ema_long).mean()
+        df['RSI'] = 50.0  # Valeur neutre
+        return df
+    
+    return prepare_indicators_sync(df, symbol)
+
+def prepare_indicators_sync(df, symbol):
+    """Version synchrone pour compatibilité"""
     ema_short = strategy_cfg.ema_periods['short']
     ema_medium = strategy_cfg.ema_periods['medium']
     ema_long = strategy_cfg.ema_periods['long']
@@ -20,14 +36,9 @@ async def prepare_indicators(df, symbol):
     df['EMA50'] = df['close'].ewm(span=ema_medium).mean()
     df['EMA200'] = df['close'].ewm(span=ema_long).mean()
 
-    # RSI depuis l'API Backpack
-    try:
-        rsi_value = await get_cached_rsi(symbol, interval="5m")
-        df['RSI'] = rsi_value
-        log(f"[{symbol}] ✅ RSI API intégré: {rsi_value:.2f}")
-    except Exception as e:
-        log(f"[{symbol}] ⚠️ Erreur RSI API: {e}", level="WARNING")
-        df['RSI'] = 50  # Valeur neutre
+    # RSI fixe à 50 pour la version sync (fallback)
+    df['RSI'] = 50.0
+    log(f"[{symbol}] ⚠️ RSI fixé à 50 (version sync)")
     
     return df
 
@@ -76,4 +87,33 @@ async def get_combined_signal(df, symbol):
         signal = two_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
     
     log(f"[{symbol}] [DEBUG] Final signal: {signal}")
+    return signal
+
+def get_combined_signal_sync(df, symbol):
+    """Version synchrone pour compatibilité"""
+    df = prepare_indicators_sync(df, symbol)
+    
+    # Détection de contexte simplifiée
+    ema20 = df['EMA20'].iloc[-1]
+    ema50 = df['EMA50'].iloc[-1]
+    rsi = 50.0  # RSI fixe
+    
+    if ema20 > ema50 and rsi > 50:
+        context = 'bull'
+    elif ema20 < ema50 and rsi < 50:
+        context = 'bear'
+    else:
+        context = 'range'
+
+    log(f"[{symbol}] [DEBUG] Market context detected (sync): {context}")
+
+    if context in ['bull', 'bear']:
+        stop_loss = strategy_cfg.three_out_of_four.stop_loss_pct
+        take_profit = strategy_cfg.three_out_of_four.take_profit_pct
+        signal = three_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+    else:
+        stop_loss = strategy_cfg.two_out_of_four_scalp.stop_loss_pct
+        take_profit = strategy_cfg.two_out_of_four_scalp.take_profit_pct
+        signal = two_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+    
     return signal

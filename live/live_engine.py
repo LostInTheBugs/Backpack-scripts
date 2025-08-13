@@ -134,7 +134,6 @@ async def ensure_indicators(df, symbol):
     return df
 
 
-
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args):
     """Handle live trading for a single symbol"""
     try:
@@ -179,15 +178,29 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             import signals.dynamic_three_two_selector as strategy_module
 
         if strategy_module is not None and hasattr(strategy_module, "prepare_indicators"):
-            df = strategy_module.prepare_indicators(df)
+            # Vérifier si la fonction prepare_indicators est asynchrone
+            import inspect
+            if inspect.iscoroutinefunction(strategy_module.prepare_indicators):
+                df = await strategy_module.prepare_indicators(df, symbol)
+            else:
+                df = strategy_module.prepare_indicators(df, symbol)
 
         # Appel asynchrone de ensure_indicators
         df = await ensure_indicators(df, symbol)
         if df is None:
             return
         
-        # Ici on décompose bien le tuple renvoyé en signal + détails
-        signal, details = get_combined_signal(df, symbol)
+        # Vérifier si get_combined_signal est asynchrone pour DynamicThreeTwo
+        if selected_strategy == "DynamicThreeTwo":
+            import inspect
+            if inspect.iscoroutinefunction(get_combined_signal):
+                signal, details = await get_combined_signal(df, symbol)
+            else:
+                signal, details = get_combined_signal(df, symbol)
+        else:
+            # Ici on décompose bien le tuple renvoyé en signal + détails
+            signal, details = get_combined_signal(df, symbol)
+        
         log(f"[{symbol}] 🎯 Signal detected: {signal} | Details: {details}")
 
         # Handle existing positions with trailing stop
