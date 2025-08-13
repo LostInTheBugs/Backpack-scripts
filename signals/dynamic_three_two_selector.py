@@ -70,7 +70,7 @@ async def get_combined_signal(df, symbol):
     log(f"[{symbol}] [DEBUG] DataFrame length before indicators: {len(df)}", level="DEBUG")
     log(f"[{symbol}] [DEBUG] Any NaN in close? {df['close'].isna().any()}", level="DEBUG")
     
-    df = await prepare_indicators(df, symbol)
+    df = prepare_indicators(df, symbol)
     context = await detect_market_context(df, symbol)
     
     log(f"[{symbol}] [DEBUG] Market context detected: {context}")
