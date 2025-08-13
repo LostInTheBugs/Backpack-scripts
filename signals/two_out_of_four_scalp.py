@@ -1,13 +1,15 @@
 from indicators.combined_indicators import compute_all
 import pandas as pd
 
-# Paramètres par défaut (peuvent être modifiés)
+# Paramètres par défaut
 STOP_LOSS_PERCENT = 0.5   # -0.5%
 TAKE_PROFIT_PERCENT = 1.0 # +1%
 
-def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
+async def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
     df = df.copy()
-    df = compute_all(df, symbol=symbol)
+    
+    # ⚠️ await compute_all car c'est une coroutine
+    df = await compute_all(df, symbol=symbol)
 
     if len(df) < 50:  # besoin d'assez de données pour EMA50
         return None, {}
@@ -35,7 +37,6 @@ def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
     trix_buy = prev['trix'] < 0 and last['trix'] > 0
     trix_sell = prev['trix'] > 0 and last['trix'] < 0
 
-    # Compte le nombre de conditions
     conditions_buy = [macd_buy, rsi_buy, breakout_buy, trix_buy]
     conditions_sell = [macd_sell, rsi_sell, breakout_sell, trix_sell]
 
@@ -46,7 +47,6 @@ def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
     else:
         signal = None
 
-    # Retourne aussi un stop loss et take profit
     indicators = {
         "MACD": last['macd'],
         "MACD_signal": last['signal'],
@@ -61,16 +61,5 @@ def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
         "StopLossPrice": last['close'] * (1 - STOP_LOSS_PERCENT / 100) if signal == "BUY" else last['close'] * (1 + STOP_LOSS_PERCENT / 100),
         "TakeProfitPrice": last['close'] * (1 + TAKE_PROFIT_PERCENT / 100) if signal == "BUY" else last['close'] * (1 - TAKE_PROFIT_PERCENT / 100),
     }
-
-    rsi = df['RSI'].iloc[-1]
-    macd = df['MACD'].iloc[-1] 
-    signal_line = df['MACD_signal'].iloc[-1]
-    
-    print(f"[DEBUG ThreeOutOfFour] RSI: {rsi:.2f}")
-    print(f"[DEBUG ThreeOutOfFour] MACD: {macd:.4f}, Signal: {signal_line:.4f}")
-    print(f"[DEBUG ThreeOutOfFour] Conditions check...")
-
-
-
 
     return signal, indicators

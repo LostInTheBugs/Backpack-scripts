@@ -191,15 +191,12 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if df is None:
             return
         
-        # Vérifier si get_combined_signal est asynchrone pour DynamicThreeTwo
-        if selected_strategy == "DynamicThreeTwo":
-            import inspect
-            if inspect.iscoroutinefunction(get_combined_signal):
-                signal, details = await get_combined_signal(df, symbol)
-            else:
-                signal, details = get_combined_signal(df, symbol)
+        import inspect
+
+        # Appel de la stratégie, en gérant async ou sync
+        if inspect.iscoroutinefunction(get_combined_signal):
+            signal, details = await get_combined_signal(df, symbol)
         else:
-            # Ici on décompose bien le tuple renvoyé en signal + détails
             signal, details = get_combined_signal(df, symbol)
         
         log(f"[{symbol}] 🎯 Signal detected: {signal} | Details: {details}")
