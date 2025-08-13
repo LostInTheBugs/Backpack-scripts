@@ -12,6 +12,7 @@ from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from utils.position_utils import get_real_pnl
 from signals.strategy_selector import get_strategy_for_market
 from config.settings import get_config
+from indicators.rsi_calculator import get_cached_rsi
 
 # Load configuration
 config = get_config()
@@ -88,7 +89,8 @@ def import_strategy_signal(strategy):
     return get_combined_signal
 
 
-def ensure_indicators(df):
+async def ensure_indicators(df, symbol):
+    """Version asynchrone avec RSI depuis l'API Backpack"""
     required_cols = ["EMA20", "EMA50", "EMA200", "RSI", "MACD"]
 
     # Calcul EMA si absent
@@ -96,13 +98,14 @@ def ensure_indicators(df):
         if col not in df.columns:
             df[col] = df['close'].ewm(span=period, adjust=False).mean()
 
-    # Calcul RSI si absent
-    #if 'RSI' not in df.columns:
-    #    import ta
-    #    rsi_period = 14
-    #    df['RSI'] = ta.momentum.RSIIndicator(close=df['close'], window=rsi_period).rsi()
-    df['RSI'] = 50
-    log("⚠️ RSI désactivé temporairement, colonne RSI fixée à 50.", level="WARNING")
+    # Récupération RSI via API Backpack
+    try:
+        rsi_value = await get_cached_rsi(symbol, interval="5m")
+        df['RSI'] = rsi_value
+        log(f"[{symbol}] ✅ RSI récupéré via API: {rsi_value:.2f}")
+    except Exception as e:
+        log(f"[{symbol}] ⚠️ Erreur RSI API, utilisation valeur neutre: {e}", level="WARNING")
+        df['RSI'] = 50
 
     # Calcul MACD si absent
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
@@ -112,18 +115,20 @@ def ensure_indicators(df):
         df['MACD'] = ema_short - ema_long
         df['MACD_signal'] = df['MACD'].ewm(span=signal_window, adjust=False).mean()
         df['MACD_hist'] = df['MACD'] - df['MACD_signal']
-        log("✅ MACD calculé automatiquement.")
+        log(f"[{symbol}] ✅ MACD calculé automatiquement.")
 
     # Vérification colonnes
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
-        log(f"⚠️ Indicateurs manquants: {missing} — signal ignoré.")
+        log(f"[{symbol}] ⚠️ Indicateurs manquants: {missing} — signal ignoré.")
         return None
 
-    # Vérification NaN
+    # Vérification NaN (sauf RSI qui est une valeur unique)
     for col in required_cols:
+        if col == 'RSI':
+            continue  # RSI est maintenant une valeur unique, pas une série
         if df[col].isna().any():
-            log(f"⚠️ NaN détecté dans {col} — signal ignoré.")
+            log(f"[{symbol}] ⚠️ NaN détecté dans {col} — signal ignoré.")
             return None
 
     return df
@@ -176,7 +181,8 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if strategy_module is not None and hasattr(strategy_module, "prepare_indicators"):
             df = strategy_module.prepare_indicators(df)
 
-        df = ensure_indicators(df)
+        # Appel asynchrone de ensure_indicators
+        df = await ensure_indicators(df, symbol)
         if df is None:
             return
         
