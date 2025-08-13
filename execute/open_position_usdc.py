@@ -66,15 +66,15 @@ async def open_position(symbol: str, usdc_amount: float, direction: str, dry_run
     tick_decimals = get_decimal_places(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
     quantity_str = f"{quantity:.{quantity_decimals}f}" if step_size < 1 else str(int(quantity))
 
-    log(t("order.market_info", symbol))
-    log(f"   - markPrice: {mark_price:.{tick_decimals}f}")
-    log(f"   - stepSize: {step_size}")
-    log(f"   - minQty: {min_qty}")
-    log(f"   - targetQuantity: {quantity_str}")
+    log(t("[INFO] order.market_info", symbol), level="INFO")
+    log(f"   - markPrice: {mark_price:.{tick_decimals}f}", level="INFO")
+    log(f"   - stepSize: {step_size}", level="INFO")
+    log(f"   - minQty: {min_qty}", level="INFO")
+    log(f"   - targetQuantity: {quantity_str}", level="INFO")
 
     if quantity < min_qty:
-        log(t("order.below_min_qty", quantity_str, min_qty, symbol))
-        log(t("order.increase_amount"))
+        log(t("order.below_min_qty", quantity_str, min_qty, symbol), level="INFO")
+        log(t("order.increase_amount"), level="INFO")
         return
 
     valid_qty, valid_price = is_order_valid_for_market(quantity, mark_price, step_size, tick_size)

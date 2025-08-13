@@ -23,7 +23,7 @@ async def fetch_rsi_data(symbol: str, interval: str = "5m") -> pd.DataFrame:
         # 6 jours maximum selon la limite API
         start_time = end_time - (6 * 24 * 3600)
         
-        log(f"[{symbol}] Récupération données RSI via API Backpack ({interval}) sur 6 jours", level="INFO")
+        log(f"[INFO] [{symbol}] Récupération données RSI via API Backpack ({interval}) sur 6 jours", level="INFO")
         
         # Appel API
         data = await asyncio.to_thread(
@@ -35,7 +35,7 @@ async def fetch_rsi_data(symbol: str, interval: str = "5m") -> pd.DataFrame:
         )
         
         if not data:
-            log(f"[{symbol}] Aucune donnée reçue de l'API Backpack", level="WARNING")
+            log(f"[WARNING] [{symbol}] Aucune donnée reçue de l'API Backpack", level="WARNING")
             return pd.DataFrame()
         
         # Conversion en DataFrame
@@ -55,11 +55,11 @@ async def fetch_rsi_data(symbol: str, interval: str = "5m") -> pd.DataFrame:
         # Tri par timestamp
         df = df.sort_values("timestamp").reset_index(drop=True)
         
-        log(f"[{symbol}] ✅ {len(df)} bougies récupérées pour RSI", level="INFO")
+        log(f"[INFO] [{symbol}] ✅ {len(df)} bougies récupérées pour RSI", level="INFO")
         return df
         
     except Exception as e:
-        log(f"[{symbol}] Erreur lors de la récupération des données RSI: {e}", level="ERROR")
+        log(f"[ERROR] [{symbol}] Erreur lors de la récupération des données RSI: {e}", level="ERROR")
         return pd.DataFrame()
 
 def calculate_rsi_optimized(df: pd.DataFrame, period: int = RSI_PERIOD, symbol: str = "UNKNOWN") -> pd.DataFrame:
@@ -67,7 +67,7 @@ def calculate_rsi_optimized(df: pd.DataFrame, period: int = RSI_PERIOD, symbol: 
     Calcule le RSI de manière optimisée avec gestion des cas limites.
     """
     if len(df) < period:
-        log(f"[{symbol}] Données insuffisantes pour RSI: {len(df)} < {period}", level="WARNING")
+        log(f"[WARNING] [{symbol}] Données insuffisantes pour RSI: {len(df)} < {period}", level="WARNING")
         df['rsi'] = 50.0  # Valeur neutre par défaut
         return df
     
@@ -97,14 +97,14 @@ def calculate_rsi_optimized(df: pd.DataFrame, period: int = RSI_PERIOD, symbol: 
         valid_rsi = df['rsi'].dropna()
         if len(valid_rsi) > 0:
             current_rsi = valid_rsi.iloc[-1]
-            log(f"[{symbol}] ✅ RSI calculé: {current_rsi:.2f} (sur {len(valid_rsi)} points valides)", level="INFO")
+            log(f"[INFO] [{symbol}] ✅ RSI calculé: {current_rsi:.2f} (sur {len(valid_rsi)} points valides)", level="INFO")
         else:
-            log(f"[{symbol}] ⚠️ RSI calculé mais toutes valeurs NaN", level="WARNING")
+            log(f"[WARNING] [{symbol}] ⚠️ RSI calculé mais toutes valeurs NaN", level="WARNING")
             
         return df
         
     except Exception as e:
-        log(f"[{symbol}] Erreur calcul RSI: {e}", level="ERROR")
+        log(f"[ERROR] [{symbol}] Erreur calcul RSI: {e}", level="ERROR")
         df['rsi'] = 50.0  # Valeur de sécurité
         return df
 
@@ -118,7 +118,7 @@ async def get_current_rsi(symbol: str, interval: str = "5m") -> float:
         df = await fetch_rsi_data(symbol, interval)
         
         if df.empty:
-            log(f"[{symbol}] Pas de données pour RSI, retour valeur neutre (50)", level="WARNING")
+            log(f"[WARNING] [{symbol}] Pas de données pour RSI, retour valeur neutre (50)", level="WARNING")
             return 50.0
         
         # Calcul du RSI
@@ -129,13 +129,13 @@ async def get_current_rsi(symbol: str, interval: str = "5m") -> float:
         
         # Validation de la valeur
         if pd.isna(current_rsi) or not (0 <= current_rsi <= 100):
-            log(f"[{symbol}] RSI invalide ({current_rsi}), retour valeur neutre", level="WARNING")
+            log(f"[WARNING] [{symbol}] RSI invalide ({current_rsi}), retour valeur neutre", level="WARNING")
             return 50.0
             
         return float(current_rsi)
         
     except Exception as e:
-        log(f"[{symbol}] Erreur get_current_rsi: {e}", level="ERROR")
+        log(f"[ERROR] [{symbol}] Erreur get_current_rsi: {e}", level="ERROR")
         return 50.0
 
 # Cache pour éviter trop d'appels API

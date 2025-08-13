@@ -22,7 +22,7 @@ async def position_already_open(symbol: str) -> bool:
                 return True
         return False
     except Exception as e:
-        log(f"Erreur vérif position ouverte : {e}")
+        log(f"[ERROR] Erreur vérif position ouverte : {e}", level="error")
         return False
 
 
@@ -47,7 +47,7 @@ async def get_open_positions():
                 }
         return positions
     except Exception as e:
-        log(f"⚠️ Erreur get_open_positions(): {e}")
+        log(f"[ERROR] ⚠️ Erreur get_open_positions(): {e}", level="error")
         return {}
 
 
@@ -64,8 +64,8 @@ async def get_real_pnl(symbol: str):
                 return pnl_unrealized, notional
         return 0.0, 1.0
     except Exception as e:
-        log(f"⚠️ Erreur get_real_pnl({symbol}): {e}")
+        log(f"[ERROR] ⚠️ Erreur get_real_pnl({symbol}): {e}", level="error")
         return 0.0, 1.0
 
 
-from utils.get_market import get_market  # tu dois avoir une version async pour ça
+from utils.get_market import get_market  

@@ -34,7 +34,7 @@ async def get_market(symbol: str):
             """, symbol)
 
         if not row:
-            log(f"⚠️ Marché {symbol} non trouvé en base locale")
+            log(f"[ERROR] ⚠️ Marché {symbol} non trouvé en base locale", level="error")
             return None
 
         result = dict(row)
@@ -79,7 +79,7 @@ async def get_market(symbol: str):
         return result
 
     except Exception as e:
-        log(f"⚠️ Erreur get_market({symbol}): {e}")
+        log(f"[ERROR] ⚠️ Erreur get_market({symbol}): {e}", level="error")
         return None
 
 

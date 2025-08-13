@@ -57,9 +57,9 @@ async def scan_all_symbols(pool, symbols):
         except Exception as e:
             ko_symbols.append((symbol, f"Error: {e}"))
 
-    log(f"✅ OK: {ok_symbols}")
-    log(f"❌ KO: {ko_symbols}")
-    log(f"📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.")
+    log(f"[INFO] ✅ OK: {ok_symbols}", level="INFO")
+    log(f"[INFO] ❌ KO: {ko_symbols}", level="INFO")
+    log(f"[INFO] 📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.", level="INFO")
 
 
 def import_strategy_signal(strategy):
@@ -93,9 +93,9 @@ async def ensure_indicators(df, symbol):
     try:
         rsi_value = await get_cached_rsi(symbol, interval="5m")
         df['RSI'] = rsi_value
-        log(f"[{symbol}] ✅ RSI récupéré via API: {rsi_value:.2f}")
+        log(f"[DEBUG] [{symbol}] ✅ RSI récupéré via API: {rsi_value:.2f}", level="DEBUG")
     except Exception as e:
-        log(f"[{symbol}] ⚠️ Erreur RSI API, utilisation valeur neutre: {e}", level="WARNING")
+        log(f"[WARNING] [{symbol}] ⚠️ Erreur RSI API, utilisation valeur neutre: {e}", level="WARNING")
         df['RSI'] = 50
 
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
@@ -105,16 +105,16 @@ async def ensure_indicators(df, symbol):
         df['MACD'] = ema_short - ema_long
         df['MACD_signal'] = df['MACD'].ewm(span=signal_window, adjust=False).mean()
         df['MACD_hist'] = df['MACD'] - df['MACD_signal']
-        log(f"[{symbol}] ✅ MACD calculé automatiquement.")
+        log(f"[INFO] [{symbol}] ✅ MACD calculé automatiquement.", level="INFO")
 
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
-        log(f"[{symbol}] ⚠️ Indicateurs manquants: {missing} — signal ignoré.")
+        log(f"[WARNING] [{symbol}] ⚠️ Indicateurs manquants: {missing} — signal ignoré.", level="WARNING")
         return None
 
     for col in required_cols:
         if col != 'RSI' and df[col].isna().any():
-            log(f"[{symbol}] ⚠️ NaN détecté dans {col} — signal ignoré.")
+            log(f"[WARNING] [{symbol}] ⚠️ NaN détecté dans {col} — signal ignoré.", level="WARNING")
             return None
 
     return df
@@ -122,16 +122,16 @@ async def ensure_indicators(df, symbol):
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args=None):
     try:
-        log(f"[{symbol}] 📈 Loading OHLCV data for {INTERVAL}")
+        log(f"[DEBUG] [{symbol}] 📈 Loading OHLCV data for {INTERVAL}", level="DEBUG")
         if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
-            log(f"[{symbol}] ❌ Ignored: no recent data in local database")
+            log(f"[ERROR] [{symbol}] ❌ Ignored: no recent data in local database", level="ERROR")
             return
 
         end_ts = datetime.now(timezone.utc)
         start_ts = end_ts - timedelta(seconds=600)
         df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
         if df is None or df.empty:
-            log(f"[{symbol}] ❌ No 1s data retrieved from local database")
+            log(f"[ERROR] [{symbol}] ❌ No 1s data retrieved from local database", level="ERROR")
             return
 
         df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -142,10 +142,10 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
         if args.strategie == "Auto":
             market_condition, selected_strategy = get_strategy_for_market(df)
-            log(f"[{symbol}] 📊 Market detected: {market_condition.upper()} — Strategy selected: {selected_strategy}")
+            log(f"[INFO] [{symbol}] 📊 Market detected: {market_condition.upper()} — Strategy selected: {selected_strategy}", level="INFO")
         else:
             selected_strategy = args.strategie
-            log(f"[{symbol}] 📊 Strategy manually selected: {selected_strategy}")
+            log(f"[INFO] [{symbol}] 📊 Strategy manually selected: {selected_strategy}", level="INFO")
 
         get_combined_signal = import_strategy_signal(selected_strategy)
 
@@ -158,7 +158,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         else:
             signal, details = get_combined_signal(df, symbol)
 
-        log(f"[{symbol}] 🎯 Signal detected: {signal} | Details: {details}")
+        log(f"[INFO] [{symbol}] 🎯 Signal detected: {signal} | Details: {details}", level="INFO")
 
         if await position_already_open(symbol):
             await handle_existing_position(symbol, real_run, dry_run)
@@ -185,42 +185,42 @@ async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
         max_pnl = pnl_percent
 
     if max_pnl >= MIN_PNL_FOR_TRAILING and (max_pnl - pnl_percent) >= TRAILING_STOP_TRIGGER:
-        log(f"[{symbol}] ⛔ Trailing stop triggered: PnL {pnl_percent:.2f}% < Max {max_pnl:.2f}% - {TRAILING_STOP_TRIGGER}%")
+        log(f"[INFO] [{symbol}] ⛔ Trailing stop triggered: PnL {pnl_percent:.2f}% < Max {max_pnl:.2f}% - {TRAILING_STOP_TRIGGER}%", level="INFO")
         if real_run:
             try:
                 await close_position_percent_async(symbol, percent=100)
-                log(f"[{symbol}] ✅ Position closed successfully via trailing stop")
+                log(f"[INFO] [{symbol}] ✅ Position closed successfully via trailing stop", level="INFO")
             except Exception as e:
-                log(f"[{symbol}] ❌ Error closing position: {e}")
+                log(f"[ERROR] [{symbol}] ❌ Error closing position: {e}", level="ERROR")
         else:
-            log(f"[{symbol}] 🧪 DRY-RUN: Simulated close via trailing stop")
+            log(f"[INFO] [{symbol}] 🧪 DRY-RUN: Simulated close via trailing stop", level="INFO")
         MAX_PNL_TRACKER.pop(symbol, None)
     else:
-        log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}% | Min for trailing: {MIN_PNL_FOR_TRAILING:.1f}%")
+        log(f"[INFO] [{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}% | Min for trailing: {MIN_PNL_FOR_TRAILING:.1f}%", level="INFO")
         MAX_PNL_TRACKER[symbol] = max_pnl
 
-    log(f"[{symbol}] ⚠️ Position already open — Monitoring (trailing stop active)")
+    log(f"[WARNING] [{symbol}] ⚠️ Position already open — Monitoring (trailing stop active)", level="WARNING")
 
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
     direction = "long" if signal=="BUY" else "short"
     
     if real_run and not await check_position_limit():
-        log(f"[{symbol}] ⚠️ Maximum positions limit ({trading_config.max_positions}) reached - skipping")
+        log(f"[WARNING] [{symbol}] ⚠️ Maximum positions limit ({trading_config.max_positions}) reached - skipping", level="WARNING")
         return
 
     if dry_run:
-        log(f"[{symbol}] 🧪 DRY-RUN: Simulated {direction.upper()} position opening")
+        log(f"[INFO] [{symbol}] 🧪 DRY-RUN: Simulated {direction.upper()} position opening", level="INFO")
     elif real_run:
-        log(f"[{symbol}] ✅ REAL position opening: {direction.upper()}")
+        log(f"[INFO] [{symbol}] ✅ REAL position opening: {direction.upper()}", level="INFO")
         try:
             await open_position_async(symbol, POSITION_AMOUNT_USDC, direction)
             MAX_PNL_TRACKER[symbol] = 0.0
-            log(f"[{symbol}] ✅ Position opened successfully")
+            log(f"[INFO] [{symbol}] ✅ Position opened successfully", level="INFO")
         except Exception as e:
-            log(f"[{symbol}] ❌ Error opening position: {e}")
+            log(f"[ERROR] [{symbol}] ❌ Error opening position: {e}", level="ERROR")
     else:
-        log(f"[{symbol}] ❌ Neither --real-run nor --dry-run specified: no action")
+        log(f"[ERROR] [{symbol}] ❌ Neither --real-run nor --dry-run specified: no action", level="ERROR")
 
 
 async def check_position_limit() -> bool:
@@ -229,7 +229,7 @@ async def check_position_limit() -> bool:
         current_positions = len([p for p in positions.values() if p])
         return current_positions < trading_config.max_positions
     except Exception as e:
-        log(f"⚠️ Error checking position limit: {e}")
+        log(f"[WARNING] ⚠️ Error checking position limit: {e}", level="WARNING")
         return True
 
 
@@ -245,5 +245,5 @@ async def get_position_stats() -> dict:
             'min_pnl_for_trailing': MIN_PNL_FOR_TRAILING
         }
     except Exception as e:
-        log(f"⚠️ Error getting position stats: {e}")
+        log(f"[ERROR] ⚠️ Error getting position stats: {e}", level="ERROR")
         return {}

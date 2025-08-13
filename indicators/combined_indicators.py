@@ -90,9 +90,9 @@ def load_ohlcv_from_db(symbol: str, lookback_seconds=6*3600) -> pd.DataFrame:
     try:
         df = asyncio.run(_load_async())
         if df.empty:
-            log(f"[{symbol}] [WARNING] Pas de données chargées depuis la base.", level="WARNING")
+            log(f"[WARNING] [{symbol}] Pas de données chargées depuis la base.", level="WARNING")
             return None
         return df
     except Exception as e:
-        log(f"[{symbol}] [ERROR] Erreur chargement base de données : {e}", level="ERROR")
+        log(f"[ERROR] [{symbol}] Erreur chargement base de données : {e}", level="ERROR")
         return None
