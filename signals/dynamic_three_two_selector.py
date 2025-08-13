@@ -4,6 +4,7 @@ from signals.two_out_of_four_scalp import get_combined_signal as two_out_of_four
 from utils.logger import log
 from config.settings import get_strategy_config
 from indicators.rsi_calculator import get_cached_rsi
+import inspect
 
 strategy_cfg = get_strategy_config()
 
@@ -59,12 +60,20 @@ async def get_combined_signal(df, symbol):
     if context in ['bull', 'bear']:
         stop_loss = strategy_cfg.three_out_of_four.stop_loss_pct
         take_profit = strategy_cfg.three_out_of_four.take_profit_pct
-        signal, details = await three_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit) \
-            if hasattr(three_out_of_four, "__await__") else three_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+
+        if inspect.iscoroutinefunction(three_out_of_four):
+            signal, details = await three_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+        else:
+            signal, details = three_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+
     else:
         stop_loss = strategy_cfg.two_out_of_four_scalp.stop_loss_pct
         take_profit = strategy_cfg.two_out_of_four_scalp.take_profit_pct
-        signal, details = await two_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+
+        if inspect.iscoroutinefunction(two_out_of_four):
+            signal, details = await two_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
+        else:
+            signal, details = two_out_of_four(df, symbol, stop_loss_pct=stop_loss, take_profit_pct=take_profit)
 
     return signal, details
 
