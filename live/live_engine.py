@@ -95,8 +95,15 @@ async def ensure_indicators(df, symbol):
         df['RSI'] = rsi_value
         log(f"[DEBUG] [{symbol}] ✅ RSI récupéré via API: {rsi_value:.2f}", level="DEBUG")
     except Exception as e:
-        log(f"[WARNING] [{symbol}] ⚠️ Erreur RSI API, utilisation valeur neutre: {e}", level="WARNING")
-        df['RSI'] = 50
+        log(f"[WARNING] [{symbol}] ⚠️ Erreur RSI API, tentative calcul local: {e}", level="WARNING")
+        try:
+            from indicators.rsi_calculator import calculate_rsi
+            rsi_value = calculate_rsi(df['close'], period=14)
+            df['RSI'] = rsi_value
+            log(f"[INFO] [{symbol}] 🔄 RSI calculé localement: {rsi_value.iloc[-1]:.2f}", level="INFO")
+        except Exception as e2:
+            df['RSI'] = 50
+            log(f"[ERROR] [{symbol}] ⚠️ Impossible de calculer RSI localement, utilisation valeur neutre: {e2}", level="ERROR")
 
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
         short_window, long_window, signal_window = 12,26,9
