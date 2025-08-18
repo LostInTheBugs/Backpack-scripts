@@ -1,4 +1,3 @@
-#main.py
 import argparse
 import os
 import traceback
@@ -8,6 +7,7 @@ import asyncpg
 import signal
 import sys
 from tabulate import tabulate
+import time
 
 from utils.logger import log
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
@@ -24,6 +24,11 @@ config = load_config()
 
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
+
+# Configuration des intervalles (en secondes)
+API_CALL_INTERVAL = getattr(config, 'api_call_interval', 5)  # Intervalle entre les appels API
+DASHBOARD_REFRESH_INTERVAL = getattr(config, 'dashboard_refresh_interval', 2)  # Intervalle de rafraîchissement du dashboard
+SYMBOLS_CHECK_INTERVAL = getattr(config, 'symbols_check_interval', 30)  # Vérification des symboles actifs
 
 # Sécurise auto_symbols avec gestion d'erreur améliorée
 try:
@@ -55,160 +60,301 @@ symbols_container = {'list': final_symbols}
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 update_symbols_periodically(symbols_container)
 
+class OptimizedDashboard:
+    def __init__(self, symbols_container, pool, real_run, dry_run, args):
+        self.symbols_container = symbols_container
+        self.pool = pool
+        self.real_run = real_run
+        self.dry_run = dry_run
+        self.args = args
+        
+        # Cache des données
+        self.trade_events = []
+        self.open_positions = {}
+        self.active_symbols = []
+        self.ignored_symbols = []
+        
+        # Timestamps pour contrôler les intervalles
+        self.last_api_call = {}  # par symbole
+        self.last_symbols_check = 0
+        
+        # Verrous pour éviter les appels concurrents
+        self.processing_symbols = set()
+        
+    async def check_symbols_status(self):
+        """Vérifie le statut des symboles (actifs/ignorés) - moins fréquent"""
+        current_time = time.time()
+        if current_time - self.last_symbols_check < SYMBOLS_CHECK_INTERVAL:
+            return
+            
+        self.last_symbols_check = current_time
+        symbols = self.symbols_container.get("list", [])
+        
+        new_active = []
+        new_ignored = []
+        
+        for symbol in symbols:
+            try:
+                if await check_table_and_fresh_data(self.pool, symbol, max_age_seconds=config.database.max_age_seconds):
+                    new_active.append(symbol)
+                else:
+                    new_ignored.append(symbol)
+            except Exception as e:
+                new_ignored.append(symbol)
+                log(f"[ERROR] check_table_and_fresh_data {symbol}: {e}", level="ERROR")
+        
+        self.active_symbols = new_active
+        self.ignored_symbols = new_ignored
+        
+        log(f"Symbols status updated: {len(new_active)} active, {len(new_ignored)} ignored", level="DEBUG")
+
+    async def process_symbol_with_throttling(self, symbol):
+        """Traite un symbole avec limitation du taux d'appels API"""
+        current_time = time.time()
+        
+        # Vérifier si on doit attendre avant le prochain appel
+        if symbol in self.last_api_call:
+            time_since_last = current_time - self.last_api_call[symbol]
+            if time_since_last < API_CALL_INTERVAL:
+                return  # Skip cet appel
+        
+        # Éviter les appels concurrents pour le même symbole
+        if symbol in self.processing_symbols:
+            return
+            
+        self.processing_symbols.add(symbol)
+        
+        try:
+            # Marquer l'heure de l'appel
+            self.last_api_call[symbol] = current_time
+            
+            # Appel à l'API
+            result = await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
+            
+            if result:
+                action = result.get("signal", "N/A")
+                price = result.get("price", 0.0)
+                pnl = result.get("pnl", 0.0)
+                amount = result.get("amount", 0.0)
+                duration = result.get("duration", "0s")
+                trailing_stop = result.get("trailing_stop", 0.0)
+                
+                # Ajouter l'événement de trade si un signal est présent
+                if action in ["BUY", "SELL"]:
+                    self.trade_events.append({
+                        "time": datetime.now().strftime("%H:%M:%S"),
+                        "symbol": symbol,
+                        "action": action,
+                        "price": price
+                    })
+                    # Garder seulement les 20 derniers événements
+                    if len(self.trade_events) > 20:
+                        self.trade_events = self.trade_events[-20:]
+                
+                # Mettre à jour les positions ouvertes
+                self.open_positions[symbol] = {
+                    "symbol": symbol,
+                    "pnl": pnl,
+                    "amount": amount,
+                    "duration": duration,
+                    "trailing_stop": trailing_stop
+                }
+            else:
+                # Supprimer la position si fermée
+                if symbol in self.open_positions:
+                    del self.open_positions[symbol]
+                    
+        except Exception as e:
+            log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
+        finally:
+            self.processing_symbols.discard(symbol)
+
+    async def symbol_processor(self):
+        """Processeur principal pour tous les symboles avec throttling"""
+        while True:
+            try:
+                # Vérifier le statut des symboles périodiquement
+                await self.check_symbols_status()
+                
+                # Traiter les symboles actifs avec throttling
+                tasks = []
+                for symbol in self.active_symbols:
+                    task = asyncio.create_task(self.process_symbol_with_throttling(symbol))
+                    tasks.append(task)
+                
+                # Attendre que toutes les tâches se terminent (ou timeout)
+                if tasks:
+                    try:
+                        await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=API_CALL_INTERVAL)
+                    except asyncio.TimeoutError:
+                        log("Some API calls timed out, continuing...", level="WARNING")
+                
+                # Attendre avant la prochaine itération
+                await asyncio.sleep(1)  # Check rapide pour les nouveaux symboles
+                
+            except Exception as e:
+                log(f"[ERROR] Erreur dans symbol_processor: {e}", level="ERROR")
+                await asyncio.sleep(5)  # Attendre plus longtemps en cas d'erreur
+
+    async def render_dashboard(self):
+        """Rendu du dashboard avec intervalle contrôlé"""
+        while True:
+            try:
+                await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
+                
+                # Clear terminal
+                os.system("clear")
+                
+                # Afficher les informations de configuration
+                print(f"=== CONFIGURATION ===")
+                print(f"API Call Interval: {API_CALL_INTERVAL}s")
+                print(f"Dashboard Refresh: {DASHBOARD_REFRESH_INTERVAL}s")
+                print(f"Symbols Check: {SYMBOLS_CHECK_INTERVAL}s")
+                print()
+                
+                # === SYMBOLS ===
+                print("=== SYMBOLS ===")
+                print(tabulate([
+                    ["Active", f"{len(self.active_symbols)} symbols: {', '.join(self.active_symbols[:10])}{' ...' if len(self.active_symbols) > 10 else ''}"],
+                    ["Ignored", f"{len(self.ignored_symbols)} symbols: {', '.join(self.ignored_symbols[:10])}{' ...' if len(self.ignored_symbols) > 10 else ''}"]
+                ], headers=["Status", "Symbols"], tablefmt="fancy_grid"))
+                
+                # === API CALL STATUS ===
+                print("\n=== API CALL STATUS ===")
+                current_time = time.time()
+                api_status = []
+                for symbol in self.active_symbols[:5]:  # Montrer seulement les 5 premiers
+                    last_call = self.last_api_call.get(symbol, 0)
+                    if last_call > 0:
+                        seconds_ago = int(current_time - last_call)
+                        status = "Processing" if symbol in self.processing_symbols else f"Last call: {seconds_ago}s ago"
+                        api_status.append([symbol, status])
+                    else:
+                        api_status.append([symbol, "No calls yet"])
+                
+                if api_status:
+                    print(tabulate(api_status, headers=["Symbol", "API Status"], tablefmt="fancy_grid"))
+                else:
+                    print("No API calls tracked yet.")
+                
+                # === TRADE EVENTS ===
+                print("\n=== TRADE EVENTS ===")
+                if self.trade_events:
+                    print(tabulate(self.trade_events[-10:], headers="keys", tablefmt="fancy_grid"))
+                else:
+                    print("No trades yet.")
+                
+                # === OPEN POSITIONS ===
+                print("\n=== OPEN POSITIONS ===")
+                if self.open_positions:
+                    positions_data = []
+                    for p in self.open_positions.values():
+                        positions_data.append([
+                            p["symbol"], 
+                            f'{p["pnl"]:.2f}%', 
+                            p["amount"], 
+                            p["duration"], 
+                            f'{p["trailing_stop"]}%'
+                        ])
+                    print(tabulate(
+                        positions_data,
+                        headers=["Symbol", "PnL", "Amount", "Duration", "Trailing Stop"], 
+                        tablefmt="fancy_grid"
+                    ))
+                else:
+                    print("No open positions yet.")
+                
+                # Statistiques
+                print(f"\n=== STATS ===")
+                print(f"Total API calls tracked: {len(self.last_api_call)}")
+                print(f"Symbols currently processing: {len(self.processing_symbols)}")
+                print(f"Last symbols check: {int(current_time - self.last_symbols_check)}s ago")
+                
+            except Exception as e:
+                log(f"[ERROR] Erreur dans render_dashboard: {e}", level="ERROR")
+                await asyncio.sleep(5)
+
+
 async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None):
     """
-    Boucle principale pour le dashboard texte en live.
-    Affiche :
-        - Symbols actifs
-        - Trade events récents
-        - Open positions
+    Boucle principale optimisée pour le dashboard texte en live.
     """
-    trade_events = []        # stockage des derniers trades
-    open_positions = {}      # positions ouvertes par symbol
-
     if symbols_container is None:
         symbols_container = {"list": symbols}
-
-    async def handle_symbol(symbol):
-        """
-        Gère les trades pour un symbol et met à jour trade_events / open_positions
-        """
-        while True:
-            await asyncio.sleep(1)  # vérifie toutes les secondes
-
-            try:
-                # récupère le signal et l'état de la position depuis ton moteur live
-                result = await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
-
-                if result:
-                    action = result.get("signal", "N/A")
-                    price = result.get("price", 0.0)
-                    pnl = result.get("pnl", 0.0)  # % ou valeur selon ton moteur
-                    amount = result.get("amount", 0.0)
-                    duration = result.get("duration", "0s")
-                    trailing_stop = result.get("trailing_stop", 0.0)
-
-                    # Ajoute le trade_event si un signal est présent
-                    if action in ["BUY", "SELL"]:
-                        trade_events.append({
-                            "time": datetime.now().strftime("%H:%M:%S"),
-                            "symbol": symbol,
-                            "action": action,
-                            "price": price
-                        })
-
-                    # Met à jour open_positions
-                    open_positions[symbol] = {
-                        "symbol": symbol,
-                        "pnl": pnl,
-                        "amount": amount,
-                        "duration": duration,
-                        "trailing_stop": trailing_stop
-                    }
-                else:
-                    # supprime la position si fermée
-                    if symbol in open_positions:
-                        del open_positions[symbol]
-
-            except Exception as e:
-                log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
-
-    async def render_dashboard():
-        """
-        Redessine le dashboard toutes les secondes
-        """
-        while True:
-            await asyncio.sleep(1)
-            if symbols_container:
-                symbols = symbols_container.get("list", [])
-
-            active_symbols = []
-            ignored_symbols = []
-
-            # vérification symboles actifs
-            for symbol in symbols:
-                try:
-                    if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
-                        active_symbols.append(symbol)
-                    else:
-                        ignored_symbols.append(symbol)
-                except Exception as e:
-                    ignored_symbols.append(symbol)
-                    log(f"[ERROR] check_table_and_fresh_data {symbol}: {e}", level="ERROR")
-
-            # clear terminal
-            os.system("clear")
-
-            # === SYMBOLS ===
-            print("=== SYMBOLS ===")
-            print(tabulate([
-                ["Active", ", ".join(active_symbols)],
-                ["Ignored", ", ".join(ignored_symbols)]
-            ], headers=["Status", "Symbols"], tablefmt="fancy_grid"))
-
-            # === TRADE EVENTS ===
-            print("\n=== TRADE EVENTS ===")
-            if trade_events:
-                print(tabulate(trade_events[-10:], headers="keys", tablefmt="fancy_grid"))
-            else:
-                print("No trades yet.")
-
-            # === OPEN POSITIONS ===
-            print("\n=== OPEN POSITIONS ===")
-            if open_positions:
-                print(tabulate(
-                    [[p["symbol"], f'{p["pnl"]:.2f}%', p["amount"], p["duration"], f'{p["trailing_stop"]}%']
-                     for p in open_positions.values()],
-                    headers=["Symbol", "PnL", "Amount", "Duration", "Trailing Stop"], tablefmt="fancy_grid"))
-            else:
-                print("No open positions yet.")
-
-    # Crée une task pour chaque symbol
-    tasks = [asyncio.create_task(handle_symbol(sym)) for sym in symbols_container.get("list", [])]
-    tasks.append(asyncio.create_task(render_dashboard()))
-
-    await asyncio.gather(*tasks)
+    
+    dashboard = OptimizedDashboard(symbols_container, pool, real_run, dry_run, args)
+    
+    # Créer les tâches
+    processor_task = asyncio.create_task(dashboard.symbol_processor())
+    render_task = asyncio.create_task(dashboard.render_dashboard())
+    
+    # Attendre que les deux tâches se terminent
+    await asyncio.gather(processor_task, render_task)
 
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
+    """Version optimisée de la boucle principale classique"""
+    last_symbols_check = 0
+    last_api_calls = {}  # timestamp du dernier appel par symbole
+    
     while True:
+        current_time = time.time()
+        
         if auto_select and symbols_container:
             symbols = symbols_container.get('list', [])
             log(f" Symbols list updated in main_loop: {symbols}")
 
-        active_symbols = []
-        ignored_symbols = []
-
-        for symbol in symbols:
-            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
-                active_symbols.append(symbol)
-                await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
-            else:
-                ignored_symbols.append(symbol)
-
-        if active_symbols:
-            log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="INFO")
-
-        ignored_details = []
-        if ignored_symbols:
-            for sym in ignored_symbols:
-                last_ts = await get_last_timestamp(pool, sym)
-                if last_ts is None:
-                    ignored_details.append(f"{sym} (table missing)")
+        # Vérifier les symboles actifs moins fréquemment
+        if current_time - last_symbols_check >= SYMBOLS_CHECK_INTERVAL:
+            active_symbols = []
+            ignored_symbols = []
+            
+            for symbol in symbols:
+                if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
+                    active_symbols.append(symbol)
                 else:
-                    now = datetime.now(timezone.utc)
-                    delay = now - last_ts
-                    seconds = int(delay.total_seconds())
-                    human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
-                    ignored_details.append(f"{sym} (inactive for {human_delay})")
-
-            if ignored_details:
-                log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="INFO")
-
+                    ignored_symbols.append(symbol)
+            
+            last_symbols_check = current_time
+            
+            if active_symbols:
+                log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="INFO")
+            
+            if ignored_symbols:
+                ignored_details = []
+                for sym in ignored_symbols:
+                    last_ts = await get_last_timestamp(pool, sym)
+                    if last_ts is None:
+                        ignored_details.append(f"{sym} (table missing)")
+                    else:
+                        now = datetime.now(timezone.utc)
+                        delay = now - last_ts
+                        seconds = int(delay.total_seconds())
+                        human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
+                        ignored_details.append(f"{sym} (inactive for {human_delay})")
+                
+                if ignored_details:
+                    log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="INFO")
+        
+        # Traiter les symboles actifs avec throttling
+        for symbol in active_symbols:
+            # Vérifier si assez de temps s'est écoulé depuis le dernier appel
+            if symbol in last_api_calls:
+                time_since_last = current_time - last_api_calls[symbol]
+                if time_since_last < API_CALL_INTERVAL:
+                    continue  # Skip ce symbole pour cette itération
+            
+            try:
+                await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
+                last_api_calls[symbol] = current_time
+            except Exception as e:
+                log(f"[ERROR] Erreur lors du traitement de {symbol}: {e}", level="ERROR")
+        
         if not active_symbols:
             log(f" No active symbols for this iteration", level="INFO")
 
-        await asyncio.sleep(1)
+        # Attendre avant la prochaine itération
+        await asyncio.sleep(max(1, API_CALL_INTERVAL // len(symbols) if symbols else 1))
 
 
 async def async_main(args):
@@ -279,7 +425,7 @@ async def async_main(args):
 
             # Choix du mode textdashboard ou mode classique
             if getattr(args, "mode", None) == "textdashboard":
-                # Mode textdashboard
+                # Mode textdashboard optimisé
                 if args.auto_select:
                     task = asyncio.create_task(
                         main_loop_textdashboard(
@@ -298,7 +444,7 @@ async def async_main(args):
                         watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
                     )
             else:
-                # Mode classique (main_loop normal)
+                # Mode classique optimisé
                 if args.auto_select:
                     task = asyncio.create_task(
                         main_loop(
