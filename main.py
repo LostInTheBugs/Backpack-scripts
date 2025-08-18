@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 import asyncpg
 import signal
 import sys
-import re
 
 from utils.logger import log
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
@@ -14,7 +13,6 @@ from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
 from live.live_engine import handle_live_symbol
 from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
-from utils.symbol_filter import filter_symbols_by_config
 from utils.update_symbols_periodically import start_symbol_updater
 from utils.watch_symbols_file import watch_symbols_file
 
