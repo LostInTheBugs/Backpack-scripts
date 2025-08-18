@@ -34,7 +34,25 @@ def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int
         print(f"[ERROR] get_ohlcv(): {e}")
         return None
 
+def merge_symbols_with_config(auto_symbols: list) -> list:
+    from config.settings import get_config
+    config = get_config()
+    """Fusionne auto-select avec include, puis enlève exclude."""
+    include_list = [s.upper() for s in getattr(config.symbols, "include", [])]
+    exclude_list = [s.upper() for s in getattr(config.symbols, "exclude", [])]
 
+    # Normaliser les auto_symbols
+    symbols_upper = [s.upper() for s in auto_symbols]
+
+    # Ajouter tous les includes absents
+    for s in include_list:
+        if s not in symbols_upper:
+            auto_symbols.append(s)
+
+    # Retirer les excludes
+    final_symbols = [s for s in auto_symbols if s.upper() not in exclude_list]
+
+    return final_symbols
 
 def format_table_name(symbol: str) -> str:
     parts = symbol.lower().split("_")
