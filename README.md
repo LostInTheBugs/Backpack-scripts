@@ -13,7 +13,7 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 *  Creation of a dedicated sub-account on Backpack Exchange and API access for the bot
 *  Be sure to define your environment variables before launching (DSN and API Access)
 
-**Scripts**
+**Scripts**  
   python3 ScriptDatabase/pgsql_ohlcv.py  
      This script is designed to insert 1-second candles into a PostgreSQL database.  
      Database connection information is provided via environment variables.  
@@ -33,7 +33,7 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
           --config config/settings.yaml  
 
 
-**To Do**
+**To Do**  
 
 * Restore positions after restarting
 * Manage opened position when the top 10 change
