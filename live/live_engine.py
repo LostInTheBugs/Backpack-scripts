@@ -277,7 +277,7 @@ async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
         log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}% | Min for trailing: {MIN_PNL_FOR_TRAILING:.1f}%", level="INFO")
         MAX_PNL_TRACKER[symbol] = max_pnl
 
-    log(f"[{symbol}] ⚠️ Position already open — Monitoring (trailing stop active)", level="WARNING")
+    log(f"[{symbol}] ⚠️ Position already open — Monitoring (trailing stop active)", level="DEBUG")
 
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
