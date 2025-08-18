@@ -87,9 +87,6 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         await asyncio.sleep(1)
 
 
-
-
-
 async def async_main(args):
     db_config = config.database
     pg_dsn = config.pg_dsn or os.environ.get("PG_DSN")
