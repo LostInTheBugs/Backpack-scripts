@@ -59,11 +59,6 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
     """
     Boucle principale pour le dashboard texte en live, version optimisée pour limiter les appels API.
     """
-    from backpack_sdk import Account, Public  # Adapter selon ton SDK/API
-
-    account = Account(public_key=public_key, secret_key=secret_key)
-    public = Public()
-
     trade_events = []        # stockage des derniers trades
     open_positions = {}      # positions ouvertes par symbol
     tickers_cache = {}       # dernier prix connu pour limiter fetch API
@@ -82,11 +77,11 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
                 now = datetime.now().strftime("%H:%M:%S")
 
                 # 1. Récupère toutes les positions ouvertes
-                positions = await account.get_positions()
+                positions = await Account.get_positions()
 
                 # 2. Récupère les tickers uniquement toutes les 5 sec
                 if (datetime.now().timestamp() - last_ticker_fetch) > 5:
-                    tickers_cache = await public.get_tickers()
+                    tickers_cache = await Public.get_tickers()
                     last_ticker_fetch = datetime.now().timestamp()
 
                 # 3. Détecte ouverture / mise à jour de positions
