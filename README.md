@@ -28,7 +28,7 @@ The script runs with the command:
 *   There are three operating modes:  
 *--real-run* : Enable real execution  
 *--dry-run* : Simulation mode without executing trades  
-*--backtest* : Backtest duration (ex: 10m, 2h, 3d, 1w, or just a number = minutes)  
+*--backtest* : Backtest duration (ex: *10m, 2h, 3d, 1w, or just a number = minutes*)  
 *   Token selection can be done in two ways:  
 By simply specifying the tokens to be traded : *BTC_USDC_PERP,SOL_USDC_PERP...*  
 Or let the bot choose the most volatile tokens with the option: *--auto-select*. Later, it will be possible to specify that there is no limit on the number of cryptos selected via *--no-limit*.  
