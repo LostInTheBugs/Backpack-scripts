@@ -68,7 +68,7 @@ async def delete_old_data(conn, symbol, retention_days=RETENTION_DAYS):
     table_name = table_name_from_symbol(symbol)
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     result = await conn.execute(f"DELETE FROM {table_name} WHERE timestamp < $1;", cutoff)
-    log(f"🗑️ Suppression données > {retention_days} jours dans {table_name} : {result}", level="DEBUG")
+    log(f"🗑️ Suppression données > {retention_days} jours dans {table_name} : {result}", level="INFO")
 
 class OHLCVAggregator:
     def __init__(self, symbol, interval_sec):
@@ -122,7 +122,7 @@ class OHLCVAggregator:
                 ON CONFLICT (symbol, interval_sec, timestamp) DO NOTHING
             """, self.symbol, dt, self.interval_sec, self.open, self.high, self.low, self.close, self.volume)
 
-            log(f"⏳ Bougie insérée {dt} {self.symbol} O:{self.open} H:{self.high} L:{self.low} C:{self.close} V:{self.volume}", level="DEBUG")
+            log(f"⏳ Bougie insérée {dt} {self.symbol} O:{self.open} H:{self.high} L:{self.low} C:{self.close} V:{self.volume}", level="INFO")
 
 async def subscribe_and_aggregate(symbol: str, pool, stop_event: asyncio.Event):
     ws_url = "wss://ws.backpack.exchange"
