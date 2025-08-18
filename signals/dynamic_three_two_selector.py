@@ -54,12 +54,42 @@ def prepare_indicators_sync(df, symbol):
     
     return df
 
+def prepare_indicators_clean(df, symbol=None):
+    """Version propre sans RSI - seulement EMA"""
+    if symbol is None:
+        log("⚠️ Symbol manquant dans prepare_indicators_clean", level="WARNING")
+        ema_short = 20
+        ema_medium = 50  
+        ema_long = 200
+    else:
+        ema_short = strategy_cfg.ema_periods['short']
+        ema_medium = strategy_cfg.ema_periods['medium']
+        ema_long = strategy_cfg.ema_periods['long']
+        
+    df['EMA20'] = df['close'].ewm(span=ema_short).mean()
+    df['EMA50'] = df['close'].ewm(span=ema_medium).mean()  
+    df['EMA200'] = df['close'].ewm(span=ema_long).mean()
+    
+    # ✅ Pas de RSI ici - sera géré dans detect_market_context
+    return df
+
 async def detect_market_context(df, symbol):
     ema20 = df['EMA20'].iloc[-1]
     ema50 = df['EMA50'].iloc[-1]
     ema200 = df['EMA200'].iloc[-1]
     
-    rsi = await get_cached_rsi(symbol, interval="5m")
+    # ✅ Récupérer le bon RSI via API
+    try:
+        rsi = await get_cached_rsi(symbol, interval="5m")
+        if rsi is None:
+            rsi = 50.0
+            log(f"[{symbol}] ⚠️ RSI API indisponible, fallback à 50 pour contexte", level="WARNING")
+        else:
+            log(f"[{symbol}] ✅ RSI contexte récupéré: {rsi:.2f}", level="INFO")
+    except Exception as e:
+        rsi = 50.0
+        log(f"[{symbol}] ⚠️ Erreur RSI contexte: {e}, fallback à 50", level="WARNING")
+    
     log(f"[{symbol}] [DEBUG] EMA20: {ema20:.4f}, EMA50: {ema50:.4f}, EMA200: {ema200:.4f}, RSI: {rsi:.2f}", level="INFO")
 
     if ema20 > ema50 and rsi > 50:
@@ -70,7 +100,10 @@ async def detect_market_context(df, symbol):
         return 'range'
 
 async def get_combined_signal(df, symbol):
-    df = prepare_indicators(df, symbol)
+    # ✅ Préparer seulement les EMA (sans RSI)
+    df = prepare_indicators_clean(df, symbol)
+    
+    # ✅ detect_market_context récupère son propre RSI
     context = await detect_market_context(df, symbol)
 
     if context in ['bull', 'bear']:
@@ -94,12 +127,13 @@ async def get_combined_signal(df, symbol):
     return signal, details
 
 def get_combined_signal_sync(df, symbol):
+    """Version synchrone - garde l'ancienne logique pour compatibilité"""
     df = prepare_indicators_sync(df, symbol)
     
     ema20 = df['EMA20'].iloc[-1]
     ema50 = df['EMA50'].iloc[-1]
 
-    # --- RSI handling ---
+    # --- RSI handling synchrone ---
     rsi_value = None
     try:
         if not inspect.iscoroutinefunction(get_cached_rsi):
