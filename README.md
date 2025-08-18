@@ -50,7 +50,7 @@ Default, Trix, Combo, Auto, Range, RangeSoft, ThreeOutOfFour, TwoOutOfFourScalp 
 
 Example to launch the bot:  
         
-    python3 main.py --real-run --auto-select --config config/settings.yaml
+    python3 main.py --real-run --auto-select
 
 ## Unit test  
 test_api_fallback_check.py  
