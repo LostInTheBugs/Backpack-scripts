@@ -20,6 +20,8 @@ This script is designed to insert 1-second candles into a PostgreSQL database.
 Database connection information is provided via environment variables.  
 export PG_DSN="postgresql://$username:$password@$postgresqlserver:$port/$database  
 
+The script runs with the command: 
+
     python3 ScriptDatabase/pgsql_ohlcv.py   
 
 ## Robot
@@ -35,6 +37,8 @@ Default, Trix, Combo, Auto, Range, RangeSoft, ThreeOutOfFour, TwoOutOfFourScalp 
 *   Par defaut, les parametres sont à mettre dans le fichier de configuration dont l'option est --config.  
 --config config/settings.yaml  
 
+Example to launch the bot:  
+        
         python3 main.py --real-run --auto-select --config config/settings.yaml
 
 # To Do  
