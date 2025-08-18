@@ -23,8 +23,14 @@ config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-# Sécurise auto_symbols
-auto_symbols = fetch_top_n_volatility_volume(n=getattr(config.strategy, "auto_select_top_n", 10)) or []
+# Sécurise auto_symbols avec gestion d'erreur améliorée
+try:
+    auto_symbols_result = fetch_top_n_volatility_volume(n=getattr(config.strategy, "auto_select_top_n", 10))
+    auto_symbols = auto_symbols_result if auto_symbols_result is not None else []
+    log(f"[DEBUG] Auto symbols récupérés avec succès: {auto_symbols}", level="DEBUG")
+except Exception as e:
+    log(f"[ERROR] Erreur lors de la récupération des auto_symbols: {e}", level="ERROR")
+    auto_symbols = []
 
 # Vérifier si include et exclude existent dans la config
 include_symbols = getattr(config.strategy, 'include', []) or []
