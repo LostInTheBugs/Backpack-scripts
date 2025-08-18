@@ -4,9 +4,9 @@ This is my first (unprofitable) bot on the Backpack exchange.
 
 
 Prerequisites
-* python 3  
-* pip install -r requirements.txt (To be tested)  
-* postgresql  
+*  python 3  
+*  pip install -r requirements.txt (To be tested)  
+*  postgresql  
 
 Scripts
   python3 ScriptDatabase/pgsql_ohlcv.py  
