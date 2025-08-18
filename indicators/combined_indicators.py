@@ -15,7 +15,7 @@ def calculate_macd(df, fast=12, slow=26, signal=9, symbol="UNKNOWN"):
     df['ema_slow'] = df['close'].ewm(span=slow, adjust=False).mean()
     df['macd'] = df['ema_fast'] - df['ema_slow']
     df['signal'] = df['macd'].ewm(span=signal, adjust=False).mean()
-    log(f"[{symbol}] ✅ MACD calculé automatiquement.", level="INFO")
+    log(f"[{symbol}] ✅ MACD calculé automatiquement.", level="DEBUG")
     return df
 
 async def calculate_rsi_api(df, symbol="UNKNOWN"):
@@ -25,7 +25,7 @@ async def calculate_rsi_api(df, symbol="UNKNOWN"):
     try:
         rsi_value = await get_cached_rsi(symbol, interval="5m")
         df['rsi'] = rsi_value  # Assigne la même valeur à toute la série
-        log(f"[{symbol}] ✅ RSI récupéré via API: {rsi_value:.2f}", level="INFO")
+        log(f"[{symbol}] ✅ RSI récupéré via API: {rsi_value:.2f}", level="DEBUG")
         return df
     except Exception as e:
         log(f"[{symbol}] ⚠️ Erreur RSI API, valeur neutre utilisée: {e}", level="WARNING")
