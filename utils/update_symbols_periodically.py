@@ -19,7 +19,7 @@ def update_symbols_periodically(symbols_container: dict):
 
         while True:
             try:
-                log("🔄 Mise à jour des symboles...", level="INFO")
+                log("🔄 Mise à jour des symboles...", level="DEBUG")
                 
                 # Récupère les symboles auto avec gestion d'erreur robuste
                 try:
@@ -65,7 +65,7 @@ def update_symbols_periodically(symbols_container: dict):
                 # Met à jour le container partagé de manière thread-safe
                 if symbols_container is not None and isinstance(symbols_container, dict):
                     symbols_container['list'] = symbols
-                    log(f"✅ Symboles mis à jour ({len(symbols)}): {symbols}", level="INFO")
+                    log(f"✅ Symboles mis à jour ({len(symbols)}): {symbols}", level="DEBUG")
                 else:
                     log(f"❌ symbols_container invalide ou None", level="ERROR")
 
@@ -85,7 +85,7 @@ def update_symbols_periodically(symbols_container: dict):
     # Créer et lancer le thread daemon
     thread = threading.Thread(target=_update_loop, daemon=True, name="SymbolsUpdater")
     thread.start()
-    log(f"🚀 Thread de mise à jour des symboles démarré", level="INFO")
+    log(f"🚀 Thread de mise à jour des symboles démarré", level="DEBUG")
     return thread
 
 
@@ -97,7 +97,7 @@ def manual_update_symbols(symbols_container: dict):
     :return: list des symboles mis à jour
     """
     try:
-        log(f"🔄 Mise à jour manuelle des symboles...", level="INFO")
+        log(f"🔄 Mise à jour manuelle des symboles...", level="DEBUG")
         
         auto_symbols = fetch_top_n_volatility_volume(
             n=getattr(config.strategy, "auto_select_top_n", 10)
@@ -113,7 +113,7 @@ def manual_update_symbols(symbols_container: dict):
             
         symbols_container['list'] = symbols
         
-        log(f"✅ Mise à jour manuelle terminée : {symbols}", level="INFO")
+        log(f"✅ Mise à jour manuelle terminée : {symbols}", level="DEBUG")
         return symbols
         
     except Exception as e:
