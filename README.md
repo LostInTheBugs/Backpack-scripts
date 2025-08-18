@@ -52,6 +52,16 @@ Example to launch the bot:
         
     python3 main.py --real-run --auto-select --config config/settings.yaml
 
+** Unit test
+test_api_fallback_check.py
+test_api_fallback.py
+test_count_days.py
+test_data_1s.py
+test_load_and_compute.py
+test_rsi_fallback.py
+test_strategy.py
+
+
 # To Do  
 * Restore positions after restarting
 * Manage opened position when the top 10 change
