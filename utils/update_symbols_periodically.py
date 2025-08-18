@@ -18,10 +18,18 @@ def update_symbols_periodically(symbols_container: dict):
         try:
             log("[INFO] 🔄 Mise à jour des symboles...", level="INFO")
             
-            # Récupère les symboles auto, force à [] si None
+            # Récupère les symboles auto
             auto_symbols = fetch_top_n_volatility_volume(
                 n=getattr(config.strategy, "auto_select_top_n", 10)
-            ) or []
+            )
+
+            # Garantit que auto_symbols est une liste
+            if auto_symbols is None:
+                log("[WARNING] ⚠️ fetch_top_n_volatility_volume a retourné None, remplacement par []", level="WARNING")
+                auto_symbols = []
+            elif not isinstance(auto_symbols, list):
+                log(f"[WARNING] ⚠️ fetch_top_n_volatility_volume a retourné un type inattendu ({type(auto_symbols)}), conversion en liste", level="WARNING")
+                auto_symbols = list(auto_symbols)
 
             # Merge avec la configuration (includes/excludes)
             symbols = merge_symbols_with_config(auto_symbols)
