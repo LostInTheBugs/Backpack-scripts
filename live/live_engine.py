@@ -96,6 +96,9 @@ def import_strategy_signal(strategy):
 
 
 async def ensure_indicators(df, symbol):
+    """
+    ✅ CORRECTION: Cette fonction est maintenant async car elle appelle get_cached_rsi
+    """
     required_cols = ["EMA20", "EMA50", "EMA200", "RSI", "MACD"]
     for period, col in [(20,"EMA20"),(50,"EMA50"),(200,"EMA200")]:
         if col not in df.columns:
@@ -166,14 +169,34 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[INFO] [{symbol}] 📊 Strategy manually selected: {selected_strategy}", level="INFO")
 
         get_combined_signal = import_strategy_signal(selected_strategy)
+        
+        # ✅ CORRECTION: ensure_indicators est maintenant async, donc on peut l'awaiter
         df = await ensure_indicators(df, symbol)
         if df is None:
+            log(f"[ERROR] [{symbol}] ❌ Indicators calculation failed", level="ERROR")
             return
 
-        if inspect.iscoroutinefunction(get_combined_signal):
-            result = await get_combined_signal(df, symbol)
-        else:
-            result = get_combined_signal(df, symbol)
+        # ✅ CORRECTION: Vérification robuste du type de df avant de l'utiliser
+        if not isinstance(df, pd.DataFrame):
+            log(f"[ERROR] [{symbol}] ❌ Expected DataFrame but got {type(df)}", level="ERROR")
+            return
+            
+        if df.empty:
+            log(f"[WARNING] [{symbol}] ⚠️ DataFrame is empty after indicators calculation", level="WARNING")
+            return
+
+        # ✅ CORRECTION: Vérification si get_combined_signal est async et gestion appropriée
+        try:
+            if inspect.iscoroutinefunction(get_combined_signal):
+                log(f"[DEBUG] [{symbol}] 🔄 Calling async strategy function", level="DEBUG")
+                result = await get_combined_signal(df, symbol)
+            else:
+                log(f"[DEBUG] [{symbol}] 🔄 Calling sync strategy function", level="DEBUG")
+                result = get_combined_signal(df, symbol)
+        except Exception as e:
+            log(f"[ERROR] [{symbol}] ❌ Error calling strategy function: {e}", level="ERROR")
+            traceback.print_exc()
+            return
 
         # Vérifie si result est un tuple/list à deux éléments
         if isinstance(result, (tuple, list)) and len(result) == 2:
@@ -195,7 +218,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[DEBUG] {symbol} ❌ No actionable signal detected: {signal}", level="DEBUG")
 
     except Exception as e:
-        log(f"[{symbol}] 💥 Error: {e}")
+        log(f"[{symbol}] 💥 Error: {e}", level="ERROR")
         traceback.print_exc()
 
 
