@@ -74,39 +74,44 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
         Gère les trades pour un symbol et met à jour trade_events / open_positions
         """
         while True:
-            await asyncio.sleep(10)  # intervalle entre vérifications / trades
+            await asyncio.sleep(1)  # vérifie toutes les secondes
 
-            # Exemple simple : signal simulé BUY (tu peux brancher ton vrai signal ici)
-            action = "BUY"
-            amount = 10  # montant USDC
-            price = 100  # prix fictif pour l'exemple
+            try:
+                # récupère le signal et l'état de la position depuis ton moteur live
+                result = await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
 
-            # Exécution réelle ou dry run
-            if not dry_run:
-                try:
-                    result = await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
-                    if result and "price" in result:
-                        price = result["price"]
-                        action = result.get("signal", action)
-                except Exception as e:
-                    log(f"[ERROR] Impossible de traiter {symbol}: {e}")
+                if result:
+                    action = result.get("signal", "N/A")
+                    price = result.get("price", 0.0)
+                    pnl = result.get("pnl", 0.0)  # % ou valeur selon ton moteur
+                    amount = result.get("amount", 0.0)
+                    duration = result.get("duration", "0s")
+                    trailing_stop = result.get("trailing_stop", 0.0)
 
-            # Ajout du trade_event
-            trade_events.append({
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "symbol": symbol,
-                "action": action,
-                "price": price
-            })
+                    # Ajoute le trade_event si un signal est présent
+                    if action in ["BUY", "SELL"]:
+                        trade_events.append({
+                            "time": datetime.now().strftime("%H:%M:%S"),
+                            "symbol": symbol,
+                            "action": action,
+                            "price": price
+                        })
 
-            # Mise à jour open_positions
-            open_positions[symbol] = {
-                "symbol": symbol,
-                "pnl": 0.0,  # tu peux récupérer le PnL réel
-                "amount": amount,
-                "duration": "0s",
-                "trailing_stop": 0.0
-            }
+                    # Met à jour open_positions
+                    open_positions[symbol] = {
+                        "symbol": symbol,
+                        "pnl": pnl,
+                        "amount": amount,
+                        "duration": duration,
+                        "trailing_stop": trailing_stop
+                    }
+                else:
+                    # supprime la position si fermée
+                    if symbol in open_positions:
+                        del open_positions[symbol]
+
+            except Exception as e:
+                log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
 
     async def render_dashboard():
         """
