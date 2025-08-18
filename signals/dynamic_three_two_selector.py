@@ -139,7 +139,7 @@ def get_combined_signal_sync(df, symbol):
         if not inspect.iscoroutinefunction(get_cached_rsi):
             rsi_value = get_cached_rsi(symbol, interval="5m")
             if rsi_value is not None:
-                log(f"[{symbol}] ✅ RSI utilisé en sync: {rsi_value:.2f}", level="INFO")
+                log(f"[{symbol}] ✅ RSI utilisé en sync: {rsi_value:.2f}", level="DEBUG")
     except Exception as e:
         log(f"[{symbol}] ⚠️ Erreur récupération RSI sync: {e}", level="WARNING")
 
