@@ -1,12 +1,15 @@
 # Backpack-scripts
 
-This is my first (unprofitable) bot on the Backpack exchange.
+This is my first (unprofitable) bot on the Backpack exchange.  
+
+The script is based on the Python API client available at: https://support.backpack.exchange/exchange/api-and-developer-docs/api-clients  
+The documentation for Backpack Exchange APIs is available here: https://docs.backpack.exchange/  
 
 
 Prerequisites
 *  python 3  
 *  pip install -r requirements.txt (To be tested)  
-*  postgresql  
+*  postgresql
 
 Scripts
   python3 ScriptDatabase/pgsql_ohlcv.py  
