@@ -1,6 +1,6 @@
 # Backpack-scripts
 
-This is my first (unprofitable) bot on the Backpack exchange.  
+This is my first (unprofitable) bot on the Backpack exchange. The project is currently under development: the strategies are still experimental.  
 
 The script is based on the Python API client available at: https://support.backpack.exchange/exchange/api-and-developer-docs/api-clients  
 The documentation for Backpack Exchange APIs is available here: https://docs.backpack.exchange/  
@@ -9,13 +9,15 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 Prerequisites
 *  python 3 (tested with Python 3.10.12 on Ubuntu 22.04)  
 *  pip install -r requirements.txt (To be tested)  
-*  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)  
+*  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)
+*  Creation of a dedicated sub-account on Backpack Exchange and API access for the bot
+*  Be sure to define your environment variables before launching (DSN and API Access)
 
 Scripts
-    python3 ScriptDatabase/pgsql_ohlcv.py  
-        This script is designed to insert 1-second candles into a PostgreSQL database.  
-    Database connection information is provided via environment variables.  
-    export PG_DSN="postgresql://$username:$password@$postgresqlserver:$port/$database  
+  python3 ScriptDatabase/pgsql_ohlcv.py  
+     This script is designed to insert 1-second candles into a PostgreSQL database.  
+     Database connection information is provided via environment variables.  
+     export PG_DSN="postgresql://$username:$password@$postgresqlserver:$port/$database  
   
   python3 main.py --real-run --auto-select --config config/settings.yaml  
      *   There are three operating modes:  
