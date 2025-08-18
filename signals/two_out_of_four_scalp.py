@@ -1,3 +1,4 @@
+#signals/two_out_of_four_scalp.py
 from indicators.combined_indicators import compute_all
 import pandas as pd
 

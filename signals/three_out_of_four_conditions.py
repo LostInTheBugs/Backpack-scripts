@@ -1,17 +1,29 @@
+# signals/three_out_of_four_conditions.py - Version simple
 from indicators.combined_indicators import compute_all
+from indicators.rsi_calculator import get_cached_rsi
 import pandas as pd
 
-# Paramètres par défaut (si besoin)
 STOP_LOSS_PERCENT = 0.5
 TAKE_PROFIT_PERCENT = 1.0
 
 async def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=None):
     df = df.copy()
     
-    # ⚠️ await compute_all car c'est une coroutine
+    # 1. Calculer tous les indicateurs SAUF RSI
     df = await compute_all(df, symbol=symbol)
+    
+    # 2. APRÈS compute_all, récupérer et ÉCRASER le RSI avec la bonne valeur
+    try:
+        rsi_value = await get_cached_rsi(symbol, interval="5m")
+        if rsi_value is not None:
+            df['rsi'] = rsi_value  # ✅ Écraser le RSI de compute_all
+            print(f"[{symbol}] 🎯 RSI écrasé avec valeur API: {rsi_value:.2f}")
+        else:
+            print(f"[{symbol}] ⚠️ RSI API indisponible, utilisation compute_all")
+    except Exception as e:
+        print(f"[{symbol}] ❌ Erreur RSI API: {e}")
 
-    if len(df) < 50:  # besoin d'assez de données pour EMA50
+    if len(df) < 50:
         return None, {}
 
     # Calcul EMA50
@@ -20,15 +32,14 @@ async def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=No
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # Filtre tendance
+    # Le reste du code reste identique...
     price_above_ema = last['close'] > last['ema50']
     price_below_ema = last['close'] < last['ema50']
 
-    # Conditions assouplies
     macd_buy = prev['macd'] < prev['signal'] and last['macd'] > last['signal']
     macd_sell = prev['macd'] > prev['signal'] and last['macd'] < last['signal']
 
-    rsi_buy = last['rsi'] < 50
+    rsi_buy = last['rsi'] < 50  # ✅ Utilisera le bon RSI
     rsi_sell = last['rsi'] > 50
 
     breakout_buy = last['close'] > df['high_breakout'][-20:-1].max()
@@ -50,7 +61,7 @@ async def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=No
     indicators = {
         "MACD": last['macd'],
         "MACD_signal": last['signal'],
-        "RSI": last['rsi'],
+        "RSI": last['rsi'],  # ✅ Le RSI correct
         "TRIX": last['trix'],
         "HighBreakout": df['high_breakout'][-20:-1].max(),
         "LowBreakout": df['low_breakout'][-20:-1].min(),
