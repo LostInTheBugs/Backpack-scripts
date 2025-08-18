@@ -9,7 +9,7 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 # Prerequisites
 *  python 3 (tested with Python 3.10.12 on Ubuntu 22.04)
 *  python packages and bpx-py
-  *pip install .*  or old command : *pip install -r requirements.txt*  
+  `*pip install .*`  or old command : `*pip install -r requirements.txt*`  
 *  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)
 *  Creation of a dedicated sub-account on Backpack Exchange and API access for the bot
 *  Be sure to define your environment variables before launching (DSN and API Access)  
