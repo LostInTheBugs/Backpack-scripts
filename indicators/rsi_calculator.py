@@ -23,7 +23,7 @@ async def fetch_rsi_data(symbol: str, interval: str = "5m") -> pd.DataFrame:
         # 6 jours maximum selon la limite API
         start_time = end_time - (6 * 24 * 3600)
         
-        log(f"[{symbol}] Récupération données RSI via API Backpack ({interval}) sur 6 jours", level="INFO")
+        log(f"[{symbol}] Récupération données RSI via API Backpack ({interval}) sur 6 jours", level="DEBUG")
         
         # Appel API
         data = await asyncio.to_thread(
@@ -55,7 +55,7 @@ async def fetch_rsi_data(symbol: str, interval: str = "5m") -> pd.DataFrame:
         # Tri par timestamp
         df = df.sort_values("timestamp").reset_index(drop=True)
         
-        log(f"[{symbol}] ✅ {len(df)} bougies récupérées pour RSI", level="INFO")
+        log(f"[{symbol}] ✅ {len(df)} bougies récupérées pour RSI", level="DEBUG")
         return df
         
     except Exception as e:
@@ -97,7 +97,7 @@ def calculate_rsi_optimized(df: pd.DataFrame, period: int = RSI_PERIOD, symbol: 
         valid_rsi = df['rsi'].dropna()
         if len(valid_rsi) > 0:
             current_rsi = valid_rsi.iloc[-1]
-            log(f"[{symbol}] ✅ RSI calculé: {current_rsi:.2f} (sur {len(valid_rsi)} points valides)", level="INFO")
+            log(f"[{symbol}] ✅ RSI calculé: {current_rsi:.2f} (sur {len(valid_rsi)} points valides)", level="DEBUG")
         else:
             log(f"[{symbol}] ⚠️ RSI calculé mais toutes valeurs NaN", level="WARNING")
             
