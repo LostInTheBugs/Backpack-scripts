@@ -1,3 +1,4 @@
+#execute/open_position_usdc.py
 import math
 import os
 from decimal import Decimal
@@ -37,7 +38,6 @@ async def open_position(symbol: str, usdc_amount: float, direction: str, dry_run
     headers = ["Symbol", "Order type", "Quantity Executed/Ordered", "Amount Executed/Ordered", "Status"]
     table = []
 
-    # Récupération des marchés et ticker dans un thread pour éviter blocage
     markets = await asyncio.to_thread(public.get_markets)
     if not isinstance(markets, list):
         log(t("order.market_list_failed"))
@@ -63,7 +63,7 @@ async def open_position(symbol: str, usdc_amount: float, direction: str, dry_run
     quantity = round_to_step(raw_quantity, step_size) if step_size < 1 else int(raw_quantity // step_size * step_size)
 
     quantity_decimals = get_decimal_places(quantity_filter.get("stepSize", "1"))
-    tick_decimals = get_decimal_places(market_info.get("filters", {}).get("price", {}).get("tickSize", "0.01"))
+    tick_decimals = get_decimal_places(market_info.get("filters", {}).get("tickSize", "0.01"))
     quantity_str = f"{quantity:.{quantity_decimals}f}" if step_size < 1 else str(int(quantity))
 
     log(t("order.market_info", symbol), level="DEBUG")
@@ -78,11 +78,10 @@ async def open_position(symbol: str, usdc_amount: float, direction: str, dry_run
         return
 
     valid_qty, valid_price = is_order_valid_for_market(quantity, mark_price, step_size, tick_size)
-    if not valid_qty or not valid_price:
-        if not valid_qty:
-            quantity = adjust_to_step(quantity, step_size)
-        if not valid_price:
-            mark_price = adjust_to_step(mark_price, tick_size)
+    if not valid_qty:
+        quantity = adjust_to_step(quantity, step_size)
+    if not valid_price:
+        mark_price = adjust_to_step(mark_price, tick_size)
 
     side = "Bid" if direction.lower() == "long" else "Ask"
     order_type = "Market"
@@ -91,7 +90,7 @@ async def open_position(symbol: str, usdc_amount: float, direction: str, dry_run
         log(t("order.dry_run", order_type, side, symbol, usdc_amount, quantity_str))
         return
 
-    # Exécution de l'ordre dans un thread
+    # Exécution de l'ordre
     response = await asyncio.to_thread(
         account.execute_order,
         symbol=symbol,
@@ -106,6 +105,11 @@ async def open_position(symbol: str, usdc_amount: float, direction: str, dry_run
     status = response.get("status", "UNKNOWN")
     table.append([symbol, side, f"{executed_quantity:.6f} / {quantity_str}",
                   f"{executed_quote_quantity:.2f} / {usdc_amount:.2f}", status])
-
     print(tabulate(table, headers=headers, tablefmt="grid"))
+
+    if executed_quantity == 0:
+        log(f"[WARNING] [{symbol}] ❌ Order not executed — possible liquidity issue", level="WARNING")
+        return None
+
+    log(f"[INFO] [{symbol}] ✅ Position opened successfully ({executed_quantity:.6f} executed)")
     return response
