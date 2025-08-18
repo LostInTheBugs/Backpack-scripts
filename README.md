@@ -12,9 +12,9 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 
        pip install .
 
-or old command :
+   or old command :
 
-    pip install -r requirements.txt
+       pip install -r requirements.txt
 
 *  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)
 *  Creation of a dedicated sub-account on Backpack Exchange and API access for the bot
