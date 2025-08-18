@@ -56,64 +56,114 @@ symbols_container = {'list': final_symbols}
 update_symbols_periodically(symbols_container)
 
 async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None):
-    trade_events = []    # stocke les derniers événements d'achat/vente
-    open_positions = []  # stocke les positions ouvertes
+    """
+    Boucle principale pour le dashboard texte en live.
+    Affiche :
+        - Symbols actifs
+        - Trade events récents
+        - Open positions
+    """
+    trade_events = []        # stockage des derniers trades
+    open_positions = {}      # positions ouvertes par symbol
 
-    while True:
-        if symbols_container:
-            symbols = symbols_container.get('list', [])
+    if symbols_container is None:
+        symbols_container = {"list": symbols}
 
-        active_symbols = []
-        ignored_symbols = []
+    async def handle_symbol(symbol):
+        """
+        Gère les trades pour un symbol et met à jour trade_events / open_positions
+        """
+        while True:
+            await asyncio.sleep(10)  # intervalle entre vérifications / trades
 
-        # récupération des données
-        for symbol in symbols:
-            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
-                active_symbols.append(symbol)
-                pos = await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
-                if pos:
-                    open_positions.append(pos)
-                    if "signal" in pos:
-                        trade_events.append({
-                            "time": datetime.now().strftime("%H:%M:%S"),
-                            "symbol": symbol,
-                            "action": pos["signal"],
-                            "price": pos.get("price", 0)
-                        })
+            # Exemple simple : signal simulé BUY (tu peux brancher ton vrai signal ici)
+            action = "BUY"
+            amount = 10  # montant USDC
+            price = 100  # prix fictif pour l'exemple
+
+            # Exécution réelle ou dry run
+            if not dry_run:
+                try:
+                    result = await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
+                    if result and "price" in result:
+                        price = result["price"]
+                        action = result.get("signal", action)
+                except Exception as e:
+                    log(f"[ERROR] Impossible de traiter {symbol}: {e}")
+
+            # Ajout du trade_event
+            trade_events.append({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "symbol": symbol,
+                "action": action,
+                "price": price
+            })
+
+            # Mise à jour open_positions
+            open_positions[symbol] = {
+                "symbol": symbol,
+                "pnl": 0.0,  # tu peux récupérer le PnL réel
+                "amount": amount,
+                "duration": "0s",
+                "trailing_stop": 0.0
+            }
+
+    async def render_dashboard():
+        """
+        Redessine le dashboard toutes les secondes
+        """
+        while True:
+            await asyncio.sleep(1)
+            if symbols_container:
+                symbols = symbols_container.get("list", [])
+
+            active_symbols = []
+            ignored_symbols = []
+
+            # vérification symboles actifs
+            for symbol in symbols:
+                try:
+                    if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
+                        active_symbols.append(symbol)
+                    else:
+                        ignored_symbols.append(symbol)
+                except Exception as e:
+                    ignored_symbols.append(symbol)
+                    log(f"[ERROR] check_table_and_fresh_data {symbol}: {e}", level="ERROR")
+
+            # clear terminal
+            os.system("clear")
+
+            # === SYMBOLS ===
+            print("=== SYMBOLS ===")
+            print(tabulate([
+                ["Active", ", ".join(active_symbols)],
+                ["Ignored", ", ".join(ignored_symbols)]
+            ], headers=["Status", "Symbols"], tablefmt="fancy_grid"))
+
+            # === TRADE EVENTS ===
+            print("\n=== TRADE EVENTS ===")
+            if trade_events:
+                print(tabulate(trade_events[-10:], headers="keys", tablefmt="fancy_grid"))
             else:
-                ignored_symbols.append(symbol)
+                print("No trades yet.")
 
-        # détails des symboles ignorés
-        ignored_details = []
-        for sym in ignored_symbols:
-            last_ts = await get_last_timestamp(pool, sym)
-            if last_ts is None:
-                ignored_details.append(f"{sym} (table missing)")
+            # === OPEN POSITIONS ===
+            print("\n=== OPEN POSITIONS ===")
+            if open_positions:
+                print(tabulate(
+                    [[p["symbol"], f'{p["pnl"]:.2f}%', p["amount"], p["duration"], f'{p["trailing_stop"]}%']
+                     for p in open_positions.values()],
+                    headers=["Symbol", "PnL", "Amount", "Duration", "Trailing Stop"], tablefmt="fancy_grid"))
             else:
-                now = datetime.now(timezone.utc)
-                delay = now - last_ts
-                seconds = int(delay.total_seconds())
-                human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
-                ignored_details.append(f"{sym} (inactive for {human_delay})")
+                print("No open positions yet.")
 
-        # ---- Affichage dashboard ----
-        os.system('clear')  # ou 'cls' sur Windows
+    # Crée une task pour chaque symbol
+    tasks = [asyncio.create_task(handle_symbol(sym)) for sym in symbols_container.get("list", [])]
+    tasks.append(asyncio.create_task(render_dashboard()))
 
-        print("=== SYMBOLS ===")
-        print(tabulate([["Active", ", ".join(active_symbols)],
-                        ["Ignored", ", ".join(ignored_details)]],
-                       headers=["Status", "Symbols"], tablefmt="fancy_grid"))
+    await asyncio.gather(*tasks)
 
-        print("\n=== TRADE EVENTS ===")
-        print(tabulate([[e["time"], e["symbol"], e["action"], e["price"]] for e in trade_events[-10:]],
-                       headers=["Time", "Symbol", "Action", "Price"], tablefmt="fancy_grid"))
-
-        print("\n=== OPEN POSITIONS ===")
-        print(tabulate([[p["symbol"], f'{p["pnl"]:.2f}%', p["amount"], p.get("duration", "-"), f'{p["trailing_stop"]}%']
-                        for p in open_positions],
-                       headers=["Symbol", "PnL", "Amount", "Duration", "Trailing Stop"], tablefmt="fancy_grid"))
-
-        await asyncio.sleep(1)
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
     while True:
