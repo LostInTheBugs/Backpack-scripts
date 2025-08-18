@@ -9,7 +9,7 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 Prerequisites
 *  python 3 (tested with Python 3.10.12 on Ubuntu 22.04)  
 *  pip install -r requirements.txt (To be tested)  
-*  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)
+*  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)  
 
 Scripts
   python3 ScriptDatabase/pgsql_ohlcv.py  
