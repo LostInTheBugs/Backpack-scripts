@@ -5,7 +5,6 @@ from typing import Dict, List, Optional
 import yaml
 import os
 from pathlib import Path
-from utils.logger import log
 
 class TradingConfig(BaseSettings):
     """Trading configuration settings"""
@@ -162,7 +161,7 @@ def save_default_config(config_path: str = "config/settings.yaml"):
     with open(config_file, 'w') as f:
         yaml.dump(default_config, f, default_flow_style=False, indent=2)
     
-    log(f"✅ Default configuration saved to {config_path}", level="DEBUG")
+    print(f"✅ Default configuration saved to {config_path}")
 
 def get_config() -> Config:
     """Get the current configuration instance"""
