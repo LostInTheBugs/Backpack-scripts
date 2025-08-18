@@ -12,7 +12,7 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 
        pip install .
    
-or old command : 
+or old command :
 
     pip install -r requirements.txt  
        
