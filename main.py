@@ -17,18 +17,18 @@ from utils.update_symbols_periodically import start_symbol_updater
 from utils.watch_symbols_file import watch_symbols_file
 from utils.i18n import t, set_locale, get_available_locales
 
-
 # Charge la config au démarrage
 config = load_config()
 
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-auto_symbols = fetch_top_n_volatility_volume(n=config.strategy.auto_select_top_n)
+# Sécurise auto_symbols
+auto_symbols = fetch_top_n_volatility_volume(n=getattr(config.strategy, "auto_select_top_n", 10)) or []
 
 # Vérifier si include et exclude existent dans la config
-include_symbols = getattr(config.strategy, 'include', [])
-exclude_symbols = getattr(config.strategy, 'exclude', [])
+include_symbols = getattr(config.strategy, 'include', []) or []
+exclude_symbols = getattr(config.strategy, 'exclude', []) or []
 
 log(f"[DEBUG] Auto symbols: {auto_symbols}", level="DEBUG")
 log(f"[DEBUG] Include symbols: {include_symbols}", level="DEBUG")
@@ -40,12 +40,13 @@ all_symbols = list(set(auto_symbols + include_symbols))
 # On applique le filtre exclude (retire les symboles interdits)
 final_symbols = [s for s in all_symbols if s not in exclude_symbols]
 
-log("[DEBUG] Final symbols: {final_symbols}", level="DEBUG")
+log(f"[DEBUG] Final symbols: {final_symbols}", level="DEBUG")
 
 symbols_container = {'list': final_symbols}
 
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 start_symbol_updater(symbols_container)
+
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
     while True:
@@ -102,7 +103,7 @@ async def async_main(args):
 
     # Choix des symbols à scanner
     if args.auto_select:
-        initial_symbols = auto_symbols  # liste volatile auto récupérée en début main.py
+        initial_symbols = auto_symbols
     elif args.symbols:
         initial_symbols = args.symbols.split(",")
     else:
@@ -148,7 +149,6 @@ async def async_main(args):
         else:
             log("[DEBUG] Mode live (pas de backtest)", level="DEBUG")
             if args.auto_select:
-                # Ne lance PAS update_symbols_periodically ici car thread déjà lancé
                 task = asyncio.create_task(
                     main_loop([], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container)
                 )
@@ -183,11 +183,9 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, default="config/settings.yaml", help="Configuration file path")
     args = parser.parse_args()
 
-    # Recharge config si chemin personnalisé
     if args.config != "config/settings.yaml":
         config = load_config(args.config)
 
-    # Utilise la stratégie par défaut si non passée en CLI
     if args.strategie is None:
         args.strategie = config.strategy.default_strategy
 

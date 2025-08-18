@@ -1,8 +1,8 @@
 import time
-import threading
 from utils.logger import log
 from config.settings import get_config
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
+from utils.public import merge_symbols_with_config
 
 config = get_config()
 
@@ -25,26 +25,31 @@ def merge_symbols_with_config(auto_symbols: list) -> list:
     return final_symbols
 
 def update_symbols_periodically(symbols_container: dict):
+    """
+    Thread qui met à jour périodiquement la liste des symboles.
+
+    :param symbols_container: dict partagé pour stocker la liste des symboles
+    """
     interval = getattr(config.strategy, "auto_select_update_interval", 300)
 
     while True:
         try:
             log("[INFO] 🔄 Mise à jour des symboles...", level="INFO")
+            
+            # Récupère les symboles auto, force à [] si None
             auto_symbols = fetch_top_n_volatility_volume(
-                n=config.strategy.auto_select_top_n
-            )
+                n=getattr(config.strategy, "auto_select_top_n", 10)
+            ) or []
+
+            # Merge avec la configuration (includes/excludes)
             symbols = merge_symbols_with_config(auto_symbols)
+
+            # Met à jour le container partagé
             symbols_container['list'] = symbols
+
             log(f"[INFO] ✅ Symboles mis à jour : {symbols}", level="INFO")
+
         except Exception as e:
             log(f"[ERROR] ❌ Erreur mise à jour symboles : {e}", level="ERROR")
-        time.sleep(interval)
 
-def start_symbol_updater(symbols_container: dict):
-    t = threading.Thread(
-        target=update_symbols_periodically,
-        args=(symbols_container,),
-        daemon=True
-    )
-    t.start()
-    log("[INFO] 🚀 Thread de mise à jour des symboles démarré", level="INFO")
+        time.sleep(interval)
