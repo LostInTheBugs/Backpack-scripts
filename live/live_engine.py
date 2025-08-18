@@ -46,9 +46,9 @@ async def scan_all_symbols(pool, symbols):
         else:
             log(f"⚠️ Unexpected result in scan_all_symbols: {res}", level="WARNING")
 
-    log(f"✅ OK: {ok_symbols}", level="INFO")
-    log(f"❌ KO: {ko_symbols}", level="INFO")
-    log(f"📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.", level="INFO")
+    log(f"✅ OK: {ok_symbols}", level="DEBUG")
+    log(f"❌ KO: {ko_symbols}", level="DEBUG")
+    log(f"📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.", level="DEBUG")
 
 
 async def scan_symbol(pool, symbol):
@@ -267,14 +267,14 @@ async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
         if real_run:
             try:
                 await close_position_percent_async(symbol, percent=100)
-                log(f"[{symbol}] ✅ Position closed successfully via trailing stop", level="INFO")
+                log(f"[{symbol}] ✅ Position closed successfully via trailing stop", level="DEBUG")
             except Exception as e:
                 log(f"[{symbol}] ❌ Error closing position: {e}", level="ERROR")
         else:
-            log(f"[{symbol}] 🧪 DRY-RUN: Simulated close via trailing stop", level="INFO")
+            log(f"[{symbol}] 🧪 DRY-RUN: Simulated close via trailing stop", level="DEBUG")
         MAX_PNL_TRACKER.pop(symbol, None)
     else:
-        log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}% | Min for trailing: {MIN_PNL_FOR_TRAILING:.1f}%", level="INFO")
+        log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}% | Min for trailing: {MIN_PNL_FOR_TRAILING:.1f}%", level="DEBUG")
         MAX_PNL_TRACKER[symbol] = max_pnl
 
     log(f"[{symbol}] ⚠️ Position already open — Monitoring (trailing stop active)", level="DEBUG")
@@ -288,13 +288,13 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
         return
 
     if dry_run:
-        log(f"[{symbol}] 🧪 DRY-RUN: Simulated {direction.upper()} position opening", level="INFO")
+        log(f"[{symbol}] 🧪 DRY-RUN: Simulated {direction.upper()} position opening", level="DEBUG")
     elif real_run:
-        log(f"[{symbol}] ✅ REAL position opening: {direction.upper()}", level="INFO")
+        log(f"[{symbol}] ✅ REAL position opening: {direction.upper()}", level="DEBUG")
         try:
             await open_position_async(symbol, POSITION_AMOUNT_USDC, direction)
             MAX_PNL_TRACKER[symbol] = 0.0
-            log(f"[{symbol}] ✅ Position opened successfully", level="INFO")
+            log(f"[{symbol}] ✅ Position opened successfully", level="DEBUG")
         except Exception as e:
             log(f"[{symbol}] ❌ Error opening position: {e}", level="ERROR")
     else:

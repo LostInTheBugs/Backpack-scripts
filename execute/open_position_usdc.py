@@ -111,5 +111,5 @@ async def open_position(symbol: str, usdc_amount: float, direction: str, dry_run
         log(f"[WARNING] [{symbol}] ❌ Order not executed — possible liquidity issue", level="WARNING")
         return None
 
-    log(f"[INFO] [{symbol}] ✅ Position opened successfully ({executed_quantity:.6f} executed)")
+    log(f"[{symbol}] ✅ Position opened successfully ({executed_quantity:.6f} executed)", level="DEBUG")
     return response

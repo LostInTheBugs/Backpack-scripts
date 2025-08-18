@@ -105,7 +105,7 @@ def fetch_top_n_volatility_volume(n=None):
 
     # Log des résultats
     if symbols_list:
-        log(f"✅ {len(symbols_list)} symboles récupérés : {symbols_list[:5]}{'...' if len(symbols_list) > 5 else ''}", level="INFO")
+        log(f"✅ {len(symbols_list)} symboles récupérés : {symbols_list[:5]}{'...' if len(symbols_list) > 5 else ''}", level="DEBUG")
     else:
         log(f"⚠️ Aucun symbole retourné", level="WARNING")
 
@@ -124,7 +124,7 @@ def save_symbols_to_file(symbols_list, filename=OUTPUT_FILE):
         with open(filename, "w") as f:
             for symbol in symbols_list:
                 f.write(f"{symbol}\n")
-        log(f"💾 Symboles sauvegardés dans {filename}", level="INFO")
+        log(f"💾 Symboles sauvegardés dans {filename}", level="DEBUG")
     except Exception as e:
         log(f"❌ Erreur lors de la sauvegarde dans {filename} : {e}", level="ERROR")
 

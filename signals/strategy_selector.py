@@ -63,31 +63,31 @@ def strategy_auto(df, mode='normal'):
 
     if context == 'bull':
         if (price > high * (1 - breakout_thresh) and macd > macd_signal and rsi > rsi_buy) or (trix > trix_buy):
-            log("[INFO] 🐂 BUY (Bull) | " + context_info, level="INFO")
+            log(f"🐂 BUY (Bull) | " + context_info, level="DEBUG")
             return 'BUY'
         else:
-            log("[INFO] 🐂 HOLD (Bull) | " + context_info, level="INFO")
+            log(f"🐂 HOLD (Bull) | " + context_info, level="DEBUG")
             return 'HOLD'
 
     elif context == 'bear':
         if (price < low * (1 + breakout_thresh) and macd < macd_signal and rsi < rsi_sell) or (trix < trix_sell):
-            log("[INFO] 🐻 SELL (Bear) | " + context_info, level="INFO")
+            log(f"🐻 SELL (Bear) | " + context_info, level="DEBUG")
             return 'SELL'
         else:
-            log("[INFO] 🐻 HOLD (Bear) | " + context_info, level="INFO")
+            log("🐻 HOLD (Bear) | " + context_info, level="DEBUG")
             return 'HOLD'
 
     elif context == 'range':
         support = low
         resistance = high
         if price < support * 1.01 and rsi < 35 and trix > 0:
-            log("🔄 BUY (Range) | " + context_info)
+            log(f"🔄 BUY (Range) | " + context_info, level="DEBUG")
             return 'BUY'
         elif price > resistance * 0.99 and rsi > 65 and trix < 0:
-            log("🔄 SELL (Range) | " + context_info)
+            log(f"🔄 SELL (Range) | " + context_info, level="DEBUG")
             return 'SELL'
         else:
-            log("🔄 HOLD (Range) | " + context_info)
+            log(f"🔄 HOLD (Range) | " + context_info, level="DEBUG")
             return 'HOLD'
 
     return 'HOLD'
