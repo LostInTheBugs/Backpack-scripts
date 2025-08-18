@@ -13,9 +13,9 @@ from utils.public import check_table_and_fresh_data, get_last_timestamp, load_sy
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
 from live.live_engine import handle_live_symbol
 from backtest.backtest_engine import run_backtest_async
-from config.settings import load_config, get_config
+from config.settings import load_config
 from utils.symbol_filter import filter_symbols_by_config
-from utils.update_symbols_periodically import start_symbol_updater  # Import thread
+from utils.update_symbols_periodically import start_symbol_updater
 
 
 

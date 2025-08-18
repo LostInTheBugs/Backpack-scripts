@@ -1,5 +1,7 @@
 import asyncio
 import asyncpg
+import re
+import argparse
 import pandas as pd
 import os
 import json
@@ -83,6 +85,34 @@ def get_signal_function(strategy_name):
     else:
         module = import_module("signals.macd_rsi_breakout")
     return module.get_combined_signal
+
+def parse_backtest(value):
+    if ":" in value and re.match(r"^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$", value):
+        start_str, end_str = value.split(":")
+        from datetime import datetime
+        start_dt = datetime.strptime(start_str, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_str, "%Y-%m-%d")
+        if start_dt >= end_dt:
+            raise argparse.ArgumentTypeError("La date de début doit être avant la date de fin.")
+        return (start_dt, end_dt)
+
+    match = re.match(r"^(\d+)([smhdw]?)$", value.lower())
+    if not match:
+        raise argparse.ArgumentTypeError(
+            "Format invalide. Utilise par ex: 10m, 2h, 3d, 1w, juste un nombre (minutes), "
+            "ou plage de dates YYYY-MM-DD:YYYY-MM-DD"
+        )
+    amount, unit = match.groups()
+    amount = int(amount)
+    multipliers_in_hours = {
+        "": 1/60,  # minutes par défaut
+        "s": 1/3600,
+        "m": 1/60,
+        "h": 1,
+        "d": 24,
+        "w": 168
+    }
+    return amount * multipliers_in_hours[unit]
 
 async def fetch_ohlcv_from_db(pool, symbol):
     table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
