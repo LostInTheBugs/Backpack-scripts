@@ -43,7 +43,7 @@ def prepare_indicators_sync(df, symbol):
             rsi_value = get_cached_rsi(symbol, interval="5m")
             if rsi_value is not None:
                 df['RSI'] = rsi_value
-                log(f"[{symbol}] ✅ RSI récupéré en sync: {rsi_value:.2f}", level="INFO")
+                log(f"[{symbol}] ✅ RSI récupéré en sync: {rsi_value:.2f}", level="DEBUG")
     except Exception as e:
         log(f"[{symbol}] ⚠️ Erreur récupération RSI sync: {e}", level="WARNING")
 
@@ -85,7 +85,7 @@ async def detect_market_context(df, symbol):
             rsi = 50.0
             log(f"[{symbol}] ⚠️ RSI API indisponible, fallback à 50 pour contexte", level="WARNING")
         else:
-            log(f"[{symbol}] ✅ RSI contexte récupéré: {rsi:.2f}", level="INFO")
+            log(f"[{symbol}] ✅ RSI contexte récupéré: {rsi:.2f}", level="DEBUG")
     except Exception as e:
         rsi = 50.0
         log(f"[{symbol}] ⚠️ Erreur RSI contexte: {e}, fallback à 50", level="WARNING")

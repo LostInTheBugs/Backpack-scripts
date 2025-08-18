@@ -17,9 +17,9 @@ async def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=No
         rsi_value = await get_cached_rsi(symbol, interval="5m")
         if rsi_value is not None:
             df['rsi'] = rsi_value  # ✅ Écraser le RSI de compute_all
-            print(f"[{symbol}] 🎯 RSI écrasé avec valeur API: {rsi_value:.2f}")
+            print(f"[{symbol}] 🎯 RSI écrasé avec valeur API: {rsi_value:.2f}", level="DEBUG")
         else:
-            print(f"[{symbol}] ⚠️ RSI API indisponible, utilisation compute_all")
+            print(f"[{symbol}] ⚠️ RSI API indisponible, utilisation compute_all", level="ERROR")
     except Exception as e:
         print(f"[{symbol}] ❌ Erreur RSI API: {e}")
 
