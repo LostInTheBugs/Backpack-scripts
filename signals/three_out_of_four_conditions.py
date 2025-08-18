@@ -1,6 +1,7 @@
 # signals/three_out_of_four_conditions.py - Version simple
 from indicators.combined_indicators import compute_all
 from indicators.rsi_calculator import get_cached_rsi
+from utils.logger import log
 import pandas as pd
 
 STOP_LOSS_PERCENT = 0.5
@@ -17,9 +18,9 @@ async def get_combined_signal(df, symbol, stop_loss_pct=None, take_profit_pct=No
         rsi_value = await get_cached_rsi(symbol, interval="5m")
         if rsi_value is not None:
             df['rsi'] = rsi_value  # ✅ Écraser le RSI de compute_all
-            print(f"[{symbol}] 🎯 RSI écrasé avec valeur API: {rsi_value:.2f}", level="DEBUG")
+            log(f"[{symbol}] 🎯 RSI écrasé avec valeur API: {rsi_value:.2f}", level="DEBUG")
         else:
-            print(f"[{symbol}] ⚠️ RSI API indisponible, utilisation compute_all", level="ERROR")
+            log(f"[{symbol}] ⚠️ RSI API indisponible, utilisation compute_all", level="ERROR")
     except Exception as e:
         print(f"[{symbol}] ❌ Erreur RSI API: {e}")
 
