@@ -16,7 +16,7 @@ from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
 from utils.symbol_filter import filter_symbols_by_config
 from utils.update_symbols_periodically import start_symbol_updater
-
+from utils.watch_symbols_file import watch_symbols_file
 
 
 # Charge la config au démarrage
@@ -89,28 +89,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         await asyncio.sleep(1)
 
 
-async def watch_symbols_file(filepath: str = "symbol.lst", pool=None, real_run: bool = False, dry_run: bool = False):
-    last_modified = None
-    symbols = []
 
-    while True:
-        try:
-            current_modified = os.path.getmtime(filepath)
-            if current_modified != last_modified:
-                symbols = load_symbols_from_file(filepath)
-                symbols = filter_symbols_by_config(symbols)
-                log(f"Symbol file reloaded: {symbols}")
-                last_modified = current_modified
-
-            await main_loop(symbols, pool, real_run=real_run, dry_run=dry_run)
-        except KeyboardInterrupt:
-            log(f"[INFO] Manual stop requested", level="INFO")
-            break
-        except Exception as e:
-            log(f"[ERROR] Error in watcher: {e}", level="ERROR")
-            traceback.print_exc()
-
-        await asyncio.sleep(1)
 
 
 async def async_main(args):
