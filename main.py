@@ -15,6 +15,7 @@ from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
 from utils.update_symbols_periodically import start_symbol_updater
 from utils.watch_symbols_file import watch_symbols_file
+from utils.i18n import t, set_locale, get_available_locales
 
 
 # Charge la config au démarrage
