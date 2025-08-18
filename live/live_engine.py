@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import os
 import inspect
+import asyncio
 
 from utils.position_utils import position_already_open, get_real_pnl, get_open_positions
 from utils.logger import log
@@ -31,35 +32,45 @@ secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
 async def scan_all_symbols(pool, symbols):
     log("[INFO] 🔍 Lancement du scan indicateurs…", level="INFO")
+    tasks = [scan_symbol(pool, symbol) for symbol in symbols]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     ok_symbols, ko_symbols = [], []
-
-    for symbol in symbols:
-        try:
-            end_ts = datetime.now(timezone.utc)
-            start_ts = end_ts - timedelta(seconds=60)
-            df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
-            if df is None or df.empty:
-                ko_symbols.append((symbol, "No data"))
-                continue
-
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            if df['timestamp'].dt.tz is None:
-                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
-            df.set_index('timestamp', inplace=True)
-            df[['open','high','low','close','volume']] = df[['open','high','low','close','volume']].astype(float)
-
-            df_checked = await ensure_indicators(df, symbol)
-            if df_checked is None:
-                ko_symbols.append((symbol, "Missing/NaN indicators"))
-            else:
+    for res in results:
+        if isinstance(res, tuple) and len(res) == 2:
+            symbol, status = res
+            if status == "OK":
                 ok_symbols.append(symbol)
-
-        except Exception as e:
-            ko_symbols.append((symbol, f"Error: {e}"))
+            else:
+                ko_symbols.append((symbol, status))
+        else:
+            log(f"[WARNING] ⚠️ Unexpected result in scan_all_symbols: {res}", level="WARNING")
 
     log(f"[INFO] ✅ OK: {ok_symbols}", level="INFO")
     log(f"[INFO] ❌ KO: {ko_symbols}", level="INFO")
     log(f"[INFO] 📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.", level="INFO")
+
+
+async def scan_symbol(pool, symbol):
+    try:
+        end_ts = datetime.now(timezone.utc)
+        start_ts = end_ts - timedelta(seconds=60)
+        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+        if df is None or df.empty:
+            return symbol, "No data"
+
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        if df['timestamp'].dt.tz is None:
+            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+        df.set_index('timestamp', inplace=True)
+        df[['open','high','low','close','volume']] = df[['open','high','low','close','volume']].astype(float)
+
+        df_checked = await ensure_indicators(df, symbol)
+        if df_checked is None:
+            return symbol, "Missing/NaN indicators"
+        return symbol, "OK"
+    except Exception as e:
+        return symbol, f"Error: {e}"
 
 
 def import_strategy_signal(strategy):
@@ -103,7 +114,7 @@ async def ensure_indicators(df, symbol):
             log(f"[INFO] [{symbol}] 🔄 RSI calculé localement: {rsi_value.iloc[-1]:.2f}", level="INFO")
         except Exception as e2:
             df['RSI'] = 50
-            log(f"[ERROR] [{symbol}] ⚠️ Impossible de calculer RSI localement, utilisation valeur neutre: {e2}", level="ERROR")
+            log(f"[ERROR] [{symbol}] ⚠️ Impossible de calculer RSI localement, valeur neutre: {e2}", level="ERROR")
 
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
         short_window, long_window, signal_window = 12,26,9
@@ -155,7 +166,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(f"[INFO] [{symbol}] 📊 Strategy manually selected: {selected_strategy}", level="INFO")
 
         get_combined_signal = import_strategy_signal(selected_strategy)
-
         df = await ensure_indicators(df, symbol)
         if df is None:
             return
@@ -185,7 +195,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
     pnl_usdc, _ = await get_real_pnl(symbol)
     pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100
-
     max_pnl = MAX_PNL_TRACKER.get(symbol, pnl_percent)
     if pnl_percent > max_pnl:
         MAX_PNL_TRACKER[symbol] = pnl_percent
@@ -232,7 +241,7 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
 
 async def check_position_limit() -> bool:
     try:
-        positions = await get_open_positions()  # async version
+        positions = await get_open_positions()
         current_positions = len([p for p in positions.values() if p])
         return current_positions < trading_config.max_positions
     except Exception as e:
@@ -254,3 +263,12 @@ async def get_position_stats() -> dict:
     except Exception as e:
         log(f"[ERROR] ⚠️ Error getting position stats: {e}", level="ERROR")
         return {}
+
+
+async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: bool, args=None):
+    """
+    Parcours tous les symboles et déclenche la stratégie en parallèle.
+    """
+    log("[INFO] 🔍 Lancement du scan indicateurs et trading en parallèle…", level="INFO")
+    tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
+    await asyncio.gather(*tasks, return_exceptions=True)
