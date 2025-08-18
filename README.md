@@ -15,10 +15,11 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
   
   
 # Scripts  
-  *python3 ScriptDatabase/pgsql_ohlcv.py*  
+## Database  
      This script is designed to insert 1-second candles into a PostgreSQL database.  
      Database connection information is provided via environment variables.  
      export PG_DSN="postgresql://$username:$password@$postgresqlserver:$port/$database  
+  *python3 ScriptDatabase/pgsql_ohlcv.py*  
   
   *python3 main.py --real-run --auto-select --config config/settings.yaml*  
      *   There are three operating modes:  
