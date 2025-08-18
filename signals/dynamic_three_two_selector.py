@@ -98,8 +98,23 @@ def get_combined_signal_sync(df, symbol):
     
     ema20 = df['EMA20'].iloc[-1]
     ema50 = df['EMA50'].iloc[-1]
-    rsi = df['RSI'].iloc[-1] if 'RSI' in df else 50.0
 
+    # --- RSI handling ---
+    rsi_value = None
+    try:
+        if not inspect.iscoroutinefunction(get_cached_rsi):
+            rsi_value = get_cached_rsi(symbol, interval="5m")
+            if rsi_value is not None:
+                log(f"[{symbol}] ✅ RSI utilisé en sync: {rsi_value:.2f}", level="INFO")
+    except Exception as e:
+        log(f"[{symbol}] ⚠️ Erreur récupération RSI sync: {e}", level="WARNING")
+
+    # fallback si pas dispo
+    rsi = rsi_value if rsi_value is not None else 50.0
+    if rsi_value is None:
+        log(f"[{symbol}] ⚠️ RSI fixé à 50 (fallback sync dans get_combined_signal_sync)", level="WARNING")
+
+    # --- Détection du contexte ---
     if ema20 > ema50 and rsi > 50:
         context = 'bull'
     elif ema20 < ema50 and rsi < 50:
@@ -107,6 +122,7 @@ def get_combined_signal_sync(df, symbol):
     else:
         context = 'range'
 
+    # --- Application stratégie ---
     if context in ['bull', 'bear']:
         stop_loss = strategy_cfg.three_out_of_four.stop_loss_pct
         take_profit = strategy_cfg.three_out_of_four.take_profit_pct
