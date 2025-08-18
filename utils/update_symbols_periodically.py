@@ -23,13 +23,10 @@ def update_symbols_periodically(symbols_container: dict):
                 n=getattr(config.strategy, "auto_select_top_n", 10)
             )
 
-            # Garantit que auto_symbols est une liste
-            if auto_symbols is None:
-                log("[WARNING] ⚠️ fetch_top_n_volatility_volume a retourné None, remplacement par []", level="WARNING")
+            # ✅ Protection contre None
+            if not auto_symbols:
+                log("[WARNING] ⚠️ Aucun symbole récupéré, auto_symbols remplacé par []", level="WARNING")
                 auto_symbols = []
-            elif not isinstance(auto_symbols, list):
-                log(f"[WARNING] ⚠️ fetch_top_n_volatility_volume a retourné un type inattendu ({type(auto_symbols)}), conversion en liste", level="WARNING")
-                auto_symbols = list(auto_symbols)
 
             # Merge avec la configuration (includes/excludes)
             symbols = merge_symbols_with_config(auto_symbols)
