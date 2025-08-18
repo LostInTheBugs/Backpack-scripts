@@ -171,7 +171,19 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         get_combined_signal = import_strategy_signal(selected_strategy)
         
         # ✅ CORRECTION: ensure_indicators est maintenant async, donc on peut l'awaiter
-        df = await ensure_indicators(df, symbol)
+        df_result = await ensure_indicators(df, symbol)
+        
+        # 🔍 DEBUG: Vérification détaillée du type de retour
+        log(f"[DEBUG] [{symbol}] ensure_indicators returned type: {type(df_result)}", level="DEBUG")
+        log(f"[DEBUG] [{symbol}] Is coroutine? {asyncio.iscoroutine(df_result)}", level="DEBUG")
+        
+        # Si c'est une coroutine, on l'await
+        if asyncio.iscoroutine(df_result):
+            log(f"[DEBUG] [{symbol}] Awaiting coroutine from ensure_indicators...", level="DEBUG")
+            df = await df_result
+        else:
+            df = df_result
+            
         if df is None:
             log(f"[ERROR] [{symbol}] ❌ Indicators calculation failed", level="ERROR")
             return
@@ -184,17 +196,37 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if df.empty:
             log(f"[WARNING] [{symbol}] ⚠️ DataFrame is empty after indicators calculation", level="WARNING")
             return
+            
+        # 🔍 DEBUG: Validation finale du DataFrame
+        log(f"[DEBUG] [{symbol}] DataFrame validated - shape: {df.shape}, columns: {list(df.columns)}", level="DEBUG")
 
         # ✅ CORRECTION: Vérification si get_combined_signal est async et gestion appropriée
         try:
+            # 🔍 DEBUG: Logs détaillés avant l'appel
+            log(f"[DEBUG] [{symbol}] About to call strategy: {selected_strategy}", level="DEBUG")
+            log(f"[DEBUG] [{symbol}] Function type: {type(get_combined_signal)}", level="DEBUG")
+            log(f"[DEBUG] [{symbol}] Is coroutine function? {inspect.iscoroutinefunction(get_combined_signal)}", level="DEBUG")
+            log(f"[DEBUG] [{symbol}] DataFrame type before call: {type(df)}", level="DEBUG")
+            log(f"[DEBUG] [{symbol}] DataFrame shape: {df.shape}", level="DEBUG")
+            
             if inspect.iscoroutinefunction(get_combined_signal):
                 log(f"[DEBUG] [{symbol}] 🔄 Calling async strategy function", level="DEBUG")
                 result = await get_combined_signal(df, symbol)
             else:
                 log(f"[DEBUG] [{symbol}] 🔄 Calling sync strategy function", level="DEBUG")
                 result = get_combined_signal(df, symbol)
+                
+            log(f"[DEBUG] [{symbol}] Strategy returned: {type(result)} - {result}", level="DEBUG")
+            
         except Exception as e:
             log(f"[ERROR] [{symbol}] ❌ Error calling strategy function: {e}", level="ERROR")
+            log(f"[ERROR] [{symbol}] DataFrame info at time of error:", level="ERROR")
+            log(f"[ERROR] [{symbol}]   - Type: {type(df)}", level="ERROR")
+            log(f"[ERROR] [{symbol}]   - Is coroutine? {asyncio.iscoroutine(df)}", level="ERROR")
+            if hasattr(df, 'shape'):
+                log(f"[ERROR] [{symbol}]   - Shape: {df.shape}", level="ERROR")
+            if hasattr(df, 'columns'):
+                log(f"[ERROR] [{symbol}]   - Columns: {list(df.columns)}", level="ERROR")
             traceback.print_exc()
             return
 
