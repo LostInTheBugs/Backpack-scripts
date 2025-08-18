@@ -90,7 +90,7 @@ async def detect_market_context(df, symbol):
         rsi = 50.0
         log(f"[{symbol}] ⚠️ Erreur RSI contexte: {e}, fallback à 50", level="WARNING")
     
-    log(f"[{symbol}] [DEBUG] EMA20: {ema20:.4f}, EMA50: {ema50:.4f}, EMA200: {ema200:.4f}, RSI: {rsi:.2f}", level="INFO")
+    log(f"[{symbol}]EMA20: {ema20:.4f}, EMA50: {ema50:.4f}, EMA200: {ema200:.4f}, RSI: {rsi:.2f}", level="DEBUG")
 
     if ema20 > ema50 and rsi > 50:
         return 'bull'
