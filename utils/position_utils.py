@@ -22,7 +22,7 @@ async def position_already_open(symbol: str) -> bool:
                 return True
         return False
     except Exception as e:
-        log(f"[ERROR] Erreur vérif position ouverte : {e}", level="error")
+        log(f"Erreur vérif position ouverte : {e}", level="error")
         return False
 
 
@@ -47,7 +47,7 @@ async def get_open_positions():
                 }
         return positions
     except Exception as e:
-        log(f"[ERROR] ⚠️ Erreur get_open_positions(): {e}", level="error")
+        log(f"⚠️ Erreur get_open_positions(): {e}", level="error")
         return {}
 
 
@@ -64,7 +64,7 @@ async def get_real_pnl(symbol: str):
                 return pnl_unrealized, notional
         return 0.0, 1.0
     except Exception as e:
-        log(f"[ERROR] ⚠️ Erreur get_real_pnl({symbol}): {e}", level="error")
+        log(f"⚠️ Erreur get_real_pnl({symbol}): {e}", level="error")
         return 0.0, 1.0
 
 

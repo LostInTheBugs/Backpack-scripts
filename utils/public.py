@@ -6,7 +6,7 @@ import asyncpg
 
 def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = None):
     if startTime is not None:
-        print(f"[DEBUG] get_ohlcv called with startTime={startTime}")
+        print(f" get_ohlcv called with startTime={startTime}")
         startTime_ms = int(startTime * 1000)
     else:
         startTime_ms = None
@@ -31,7 +31,7 @@ def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
-        print(f"[ERROR] get_ohlcv(): {e}")
+        print(f" get_ohlcv(): {e}")
         return None
 
 def merge_symbols_with_config(auto_symbols: list) -> list:
@@ -52,10 +52,10 @@ def merge_symbols_with_config(auto_symbols: list) -> list:
         
         # Sécurité : s'assurer qu'auto_symbols est une liste valide
         if auto_symbols is None:
-            log("[WARNING] ⚠️ merge_symbols_with_config: auto_symbols est None, utilisation d'une liste vide", level="WARNING")
+            log(" ⚠️ merge_symbols_with_config: auto_symbols est None, utilisation d'une liste vide", level="WARNING")
             auto_symbols = []
         elif not isinstance(auto_symbols, list):
-            log(f"[WARNING] ⚠️ merge_symbols_with_config: auto_symbols n'est pas une liste ({type(auto_symbols)}), conversion", level="WARNING")
+            log(f" ⚠️ merge_symbols_with_config: auto_symbols n'est pas une liste ({type(auto_symbols)}), conversion", level="WARNING")
             auto_symbols = list(auto_symbols) if auto_symbols else []
         
         # Créer une copie pour éviter de modifier l'original
@@ -66,17 +66,17 @@ def merge_symbols_with_config(auto_symbols: list) -> list:
             include_list = getattr(config.symbols, "include", []) or []
             exclude_list = getattr(config.symbols, "exclude", []) or []
         except AttributeError as e:
-            log(f"[WARNING] ⚠️ Erreur d'accès à config.symbols: {e}, utilisation de listes vides", level="WARNING")
+            log(f" ⚠️ Erreur d'accès à config.symbols: {e}, utilisation de listes vides", level="WARNING")
             include_list = []
             exclude_list = []
         
         # Sécurité : s'assurer que include et exclude sont des listes
         if not isinstance(include_list, list):
-            log(f"[WARNING] ⚠️ include_list n'est pas une liste ({type(include_list)}), conversion", level="WARNING")
+            log(f" ⚠️ include_list n'est pas une liste ({type(include_list)}), conversion", level="WARNING")
             include_list = list(include_list) if include_list else []
             
         if not isinstance(exclude_list, list):
-            log(f"[WARNING] ⚠️ exclude_list n'est pas une liste ({type(exclude_list)}), conversion", level="WARNING")
+            log(f" ⚠️ exclude_list n'est pas une liste ({type(exclude_list)}), conversion", level="WARNING")
             exclude_list = list(exclude_list) if exclude_list else []
         
         # Normaliser toutes les listes en majuscules pour la comparaison
@@ -84,16 +84,16 @@ def merge_symbols_with_config(auto_symbols: list) -> list:
         include_upper = [str(s).upper() for s in include_list]
         exclude_upper = [str(s).upper() for s in exclude_list]
         
-        log(f"[DEBUG] 📋 Auto symbols: {working_symbols}", level="DEBUG")
-        log(f"[DEBUG] ➕ Include list: {include_list}", level="DEBUG")
-        log(f"[DEBUG] ➖ Exclude list: {exclude_list}", level="DEBUG")
+        log(f" 📋 Auto symbols: {working_symbols}", level="DEBUG")
+        log(f" ➕ Include list: {include_list}", level="DEBUG")
+        log(f" ➖ Exclude list: {exclude_list}", level="DEBUG")
         
         # Ajouter tous les symboles include qui ne sont pas déjà présents
         for original_symbol, upper_symbol in zip(include_list, include_upper):
             if upper_symbol not in symbols_upper:
                 working_symbols.append(original_symbol)
                 symbols_upper.append(upper_symbol)
-                log(f"[DEBUG] ➕ Ajout du symbole forcé: {original_symbol}", level="DEBUG")
+                log(f" ➕ Ajout du symbole forcé: {original_symbol}", level="DEBUG")
         
         # Retirer tous les symboles exclude
         final_symbols = []
@@ -102,16 +102,16 @@ def merge_symbols_with_config(auto_symbols: list) -> list:
             if symbol_upper not in exclude_upper:
                 final_symbols.append(symbol)
             else:
-                log(f"[DEBUG] ➖ Exclusion du symbole: {symbol}", level="DEBUG")
+                log(f" ➖ Exclusion du symbole: {symbol}", level="DEBUG")
         
-        log(f"[DEBUG] ✅ Symboles finaux après merge: {final_symbols}", level="DEBUG")
+        log(f" ✅ Symboles finaux après merge: {final_symbols}", level="DEBUG")
         
         return final_symbols
         
     except Exception as e:
-        log(f"[ERROR] ❌ Erreur dans merge_symbols_with_config: {e}", level="ERROR")
+        log(f" ❌ Erreur dans merge_symbols_with_config: {e}", level="ERROR")
         import traceback
-        log(f"[ERROR] Stack trace: {traceback.format_exc()}", level="ERROR")
+        log(f" Stack trace: {traceback.format_exc()}", level="ERROR")
         
         # En cas d'erreur, retourner au moins auto_symbols ou une liste vide
         if auto_symbols is not None and isinstance(auto_symbols, list):

@@ -16,32 +16,32 @@ def fetch_top_n_volatility_volume(n=None):
         list: Liste des symboles triés par score (volatilité * volume normalisé)
     """
     try:
-        log("[DEBUG] 🔄 Récupération des données depuis l'API Backpack...", level="DEBUG")
+        log("🔄 Récupération des données depuis l'API Backpack...", level="DEBUG")
         resp = requests.get(API_URL, timeout=30)
         resp.raise_for_status()
     except requests.exceptions.RequestException as e:
-        log(f"[ERROR] ❌ Erreur lors de la récupération des données API : {e}", level="ERROR")
+        log(f"❌ Erreur lors de la récupération des données API : {e}", level="ERROR")
         return []
     except Exception as e:
-        log(f"[ERROR] ❌ Erreur inattendue lors de la récupération des données : {e}", level="ERROR")
+        log(f"❌ Erreur inattendue lors de la récupération des données : {e}", level="ERROR")
         return []
 
     try:
         data = resp.json()
     except Exception as e:
-        log(f"[ERROR] ❌ Erreur lors du parsing JSON : {e}", level="ERROR")
+        log(f"❌ Erreur lors du parsing JSON : {e}", level="ERROR")
         return []
 
     if not isinstance(data, list):
-        log(f"[ERROR] ❌ Format de données inattendu. Attendu: liste, reçu: {type(data)}", level="ERROR")
+        log(f"❌ Format de données inattendu. Attendu: liste, reçu: {type(data)}", level="ERROR")
         return []
 
     # Filtrer uniquement les contrats perpétuels
     perp_tickers = [t for t in data if isinstance(t, dict) and "_PERP" in t.get("symbol", "")]
-    log(f"[DEBUG] 📊 {len(perp_tickers)} contrats perpétuels trouvés", level="DEBUG")
+    log(f"📊 {len(perp_tickers)} contrats perpétuels trouvés", level="DEBUG")
 
     if not perp_tickers:
-        log("[ERROR] ❌ Aucun contrat perpétuel trouvé", level="ERROR")
+        log(f"❌ Aucun contrat perpétuel trouvé", level="ERROR")
         return []
 
     tickers_data = []
@@ -55,11 +55,11 @@ def fetch_top_n_volatility_volume(n=None):
             if volume > 0 and price_change_percent >= 0:
                 tickers_data.append((symbol, price_change_percent, volume))
         except (ValueError, TypeError, KeyError) as e:
-            log(f"[DEBUG] ⚠️ Données invalides pour un ticker : {e}", level="DEBUG")
+            log(f"⚠️ Données invalides pour un ticker : {e}", level="DEBUG")
             continue
 
     if not tickers_data:
-        log("[ERROR] ❌ Aucune donnée de ticker valide trouvée", level="ERROR")
+        log(f"❌ Aucune donnée de ticker valide trouvée", level="ERROR")
         return []
 
     # Filtrer par volume minimum (1 million)
@@ -71,16 +71,16 @@ def fetch_top_n_volatility_volume(n=None):
     ]
 
     if not tickers_data:
-        log(f"[ERROR] ❌ Aucun ticker avec un volume >= {min_volume:,}", level="ERROR")
+        log(f"❌ Aucun ticker avec un volume >= {min_volume:,}", level="ERROR")
         return []
 
-    log(f"[DEBUG] 📈 {len(tickers_data)} tickers avec volume >= {min_volume:,}", level="DEBUG")
+    log(f"📈 {len(tickers_data)} tickers avec volume >= {min_volume:,}", level="DEBUG")
 
     # Calculer les scores (volatilité * volume normalisé)
     max_volume = max(t[2] for t in tickers_data)
     
     if max_volume == 0:
-        log("[ERROR] ❌ Volume maximum est 0, impossible de calculer les scores", level="ERROR")
+        log(f"❌ Volume maximum est 0, impossible de calculer les scores", level="ERROR")
         return []
 
     scored_tickers = []
@@ -95,19 +95,19 @@ def fetch_top_n_volatility_volume(n=None):
     # Limiter le nombre de résultats si spécifié
     if n is None:
         top_n = scored_tickers
-        log(f"[DEBUG] 📋 Tous les {len(scored_tickers)} symboles retournés (pas de limite)", level="DEBUG")
+        log(f"📋 Tous les {len(scored_tickers)} symboles retournés (pas de limite)", level="DEBUG")
     else:
         top_n = scored_tickers[:n]
-        log(f"[DEBUG] 📋 Top {len(top_n)} symboles retournés", level="DEBUG")
+        log(f"📋 Top {len(top_n)} symboles retournés", level="DEBUG")
 
     # Extraire uniquement les symboles
     symbols_list = [symbol for symbol, score in top_n]
 
     # Log des résultats
     if symbols_list:
-        log(f"[INFO] ✅ {len(symbols_list)} symboles récupérés : {symbols_list[:5]}{'...' if len(symbols_list) > 5 else ''}", level="INFO")
+        log(f"✅ {len(symbols_list)} symboles récupérés : {symbols_list[:5]}{'...' if len(symbols_list) > 5 else ''}", level="INFO")
     else:
-        log("[WARNING] ⚠️ Aucun symbole retourné", level="WARNING")
+        log(f"⚠️ Aucun symbole retourné", level="WARNING")
 
     return symbols_list
 
@@ -124,9 +124,9 @@ def save_symbols_to_file(symbols_list, filename=OUTPUT_FILE):
         with open(filename, "w") as f:
             for symbol in symbols_list:
                 f.write(f"{symbol}\n")
-        log(f"[INFO] 💾 Symboles sauvegardés dans {filename}", level="INFO")
+        log(f"💾 Symboles sauvegardés dans {filename}", level="INFO")
     except Exception as e:
-        log(f"[ERROR] ❌ Erreur lors de la sauvegarde dans {filename} : {e}", level="ERROR")
+        log(f"❌ Erreur lors de la sauvegarde dans {filename} : {e}", level="ERROR")
 
 
 if __name__ == "__main__":

@@ -10,5 +10,5 @@ def get_top_symbols(top_n=10):
         symbols = fetch_top_n_volatility_volume(n=top_n)
         return symbols
     except Exception as e:
-        log(f"[ERROR] ❌ Erreur récupération des symboles : {e}", level="ERROR")
+        log(f"❌ Erreur récupération des symboles : {e}", level="ERROR")
         return []

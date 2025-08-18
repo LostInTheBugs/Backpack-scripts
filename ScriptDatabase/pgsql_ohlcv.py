@@ -62,13 +62,13 @@ async def create_table_if_not_exists(conn, symbol):
     try:
         await conn.execute(f"SELECT create_hypertable('{table_name}', 'timestamp', if_not_exists => TRUE);")
     except Exception as e:
-        log(f"[ERROR] ⚠️ Erreur création hypertable pour {table_name}: {e}", level="ERROR")
+        log(f"⚠️ Erreur création hypertable pour {table_name}: {e}", level="ERROR")
 
 async def delete_old_data(conn, symbol, retention_days=RETENTION_DAYS):
     table_name = table_name_from_symbol(symbol)
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     result = await conn.execute(f"DELETE FROM {table_name} WHERE timestamp < $1;", cutoff)
-    log(f"[DEBUG] 🗑️ Suppression données > {retention_days} jours dans {table_name} : {result}", level="DEBUG")
+    log(f"🗑️ Suppression données > {retention_days} jours dans {table_name} : {result}", level="DEBUG")
 
 class OHLCVAggregator:
     def __init__(self, symbol, interval_sec):
@@ -122,7 +122,7 @@ class OHLCVAggregator:
                 ON CONFLICT (symbol, interval_sec, timestamp) DO NOTHING
             """, self.symbol, dt, self.interval_sec, self.open, self.high, self.low, self.close, self.volume)
 
-            log(f"[DEBUG] ⏳ Bougie insérée {dt} {self.symbol} O:{self.open} H:{self.high} L:{self.low} C:{self.close} V:{self.volume}", level="DEBUG")
+            log(f"⏳ Bougie insérée {dt} {self.symbol} O:{self.open} H:{self.high} L:{self.low} C:{self.close} V:{self.volume}", level="DEBUG")
 
 async def subscribe_and_aggregate(symbol: str, pool, stop_event: asyncio.Event):
     ws_url = "wss://ws.backpack.exchange"
@@ -137,7 +137,7 @@ async def subscribe_and_aggregate(symbol: str, pool, stop_event: asyncio.Event):
                     "id": 1,
                 }
                 await ws.send(json.dumps(sub_msg))
-                log(f"[INFO]✅ Subscribed to trade.{symbol}", level="INFO")
+                log(f"✅ Subscribed to trade.{symbol}", level="INFO")
 
                 while not stop_event.is_set():
                     try:
@@ -153,14 +153,14 @@ async def subscribe_and_aggregate(symbol: str, pool, stop_event: asyncio.Event):
                         await aggregator.process_trade(price, size, timestamp_ms, pool)
 
         except (websockets.ConnectionClosed, asyncio.CancelledError):
-            log(f"[ERROR] 🔴 WebSocket closed for {symbol}", level="ERROR")
+            log(f"🔴 WebSocket closed for {symbol}", level="ERROR")
             if stop_event.is_set():
                 break
-            log(f"[DEBUG] ♻️ Tentative de reconnexion pour {symbol} dans 5 secondes...", level="DEBUG")
+            log(f"♻️ Tentative de reconnexion pour {symbol} dans 5 secondes...", level="DEBUG")
             await asyncio.sleep(5)
         except Exception as e:
-            log(f"[ERROR] ❌ Erreur websocket {symbol}: {e}", level="ERROR")
-            log(f"[DEBUG] ♻️ Tentative de reconnexion pour {symbol} dans 5 secondes...", level="DEBUG")
+            log(f"❌ Erreur websocket {symbol}: {e}", level="ERROR")
+            log(f"♻️ Tentative de reconnexion pour {symbol} dans 5 secondes...", level="DEBUG")
             await asyncio.sleep(5)
 
 async def periodic_cleanup(pool, get_symbols_func, retention_days=RETENTION_DAYS):
@@ -183,7 +183,7 @@ async def fetch_all_symbols() -> list[str]:
                     return []
                 data = await resp.json()
     except Exception as e:
-        log(f"[ERROR] ❌ Exception lors de la récupération des symboles : {e}", level="ERROR")
+        log(f"❌ Exception lors de la récupération des symboles : {e}", level="ERROR")
         return []
 
     symbols = [t["symbol"] for t in data if "_PERP" in t.get("symbol", "")]
@@ -208,7 +208,7 @@ async def monitor_symbols(pool, get_symbols_func):
 
         # Démarrer abonnements pour nouveaux symboles
         for sym in to_start:
-            log(f"[DEBUG]▶️ Démarrage abonnement {sym}", level="DEBUG")
+            log(f"▶️ Démarrage abonnement {sym}", level="DEBUG")
             stop_event = asyncio.Event()
             task = asyncio.create_task(subscribe_and_aggregate(sym, pool, stop_event))
             current_tasks[sym] = (task, stop_event)
@@ -236,4 +236,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        log("[INFO] \n👋 Arrêt demandé, fin du programme.", level="INFO")
+        log(f"\n👋 Arrêt demandé, fin du programme.", level="INFO")

@@ -20,18 +20,18 @@ async def get_combined_signal(df, symbol):
         
     except Exception as e:
         from utils.logger import log
-        log(f"[ERROR] [{symbol}] Error in compute_all: {e}", level="ERROR")
+        log(f"[{symbol}] Error in compute_all: {e}", level="ERROR")
         return "HOLD"
 
     # Vérification que compute_all a bien retourné un DataFrame
     if not isinstance(df, pd.DataFrame):
         from utils.logger import log
-        log(f"[ERROR] [{symbol}] compute_all returned {type(df)} instead of DataFrame", level="ERROR")
+        log(f"[{symbol}] compute_all returned {type(df)} instead of DataFrame", level="ERROR")
         return "HOLD"
 
     if df.empty:
         from utils.logger import log
-        log(f"[WARNING] [{symbol}] compute_all returned empty DataFrame", level="WARNING")
+        log(f"[{symbol}] compute_all returned empty DataFrame", level="WARNING")
         return "HOLD"
 
     # Vérification des colonnes nécessaires
@@ -39,7 +39,7 @@ async def get_combined_signal(df, symbol):
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
         from utils.logger import log
-        log(f"[WARNING] [{symbol}] Missing columns after compute_all: {missing_columns}", level="WARNING")
+        log(f"[{symbol}] Missing columns after compute_all: {missing_columns}", level="WARNING")
         return "HOLD"
 
     try:
@@ -68,7 +68,7 @@ async def get_combined_signal(df, symbol):
 
     except Exception as e:
         from utils.logger import log
-        log(f"[ERROR] [{symbol}] Error processing signal: {e}", level="ERROR")
+        log(f"[{symbol}] Error processing signal: {e}", level="ERROR")
         return "HOLD"
 
 def get_combined_signal_sync(df, symbol):
@@ -96,18 +96,18 @@ def get_combined_signal_sync(df, symbol):
         
     except Exception as e:
         from utils.logger import log
-        log(f"[ERROR] [{symbol}] Error in compute_all: {e}", level="ERROR")
+        log(f"[{symbol}] Error in compute_all: {e}", level="ERROR")
         return "HOLD"
 
     # Vérification que compute_all a bien retourné un DataFrame
     if not isinstance(df, pd.DataFrame):
         from utils.logger import log
-        log(f"[ERROR] [{symbol}] compute_all returned {type(df)} instead of DataFrame", level="ERROR")
+        log(f"[{symbol}] compute_all returned {type(df)} instead of DataFrame", level="ERROR")
         return "HOLD"
 
     if df.empty:
         from utils.logger import log
-        log(f"[WARNING] [{symbol}] compute_all returned empty DataFrame", level="WARNING")
+        log(f"[{symbol}] compute_all returned empty DataFrame", level="WARNING")
         return "HOLD"
 
     # Vérification des colonnes nécessaires
@@ -115,7 +115,7 @@ def get_combined_signal_sync(df, symbol):
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
         from utils.logger import log
-        log(f"[WARNING] [{symbol}] Missing columns after compute_all: {missing_columns}", level="WARNING")
+        log(f"[{symbol}] Missing columns after compute_all: {missing_columns}", level="WARNING")
         return "HOLD"
 
     try:
@@ -144,5 +144,5 @@ def get_combined_signal_sync(df, symbol):
 
     except Exception as e:
         from utils.logger import log
-        log(f"[ERROR] [{symbol}] Error processing signal: {e}", level="ERROR")
+        log(f"[{symbol}] Error processing signal: {e}", level="ERROR")
         return "HOLD"

@@ -49,7 +49,7 @@ async def main():
     pool = await asyncpg.create_pool(dsn=PG_DSN)
     await update_markets_table(pool)
     await pool.close()
-    log(f"[DEBUG] Mise à jour terminée", level="DEBUG")
+    log(f"Mise à jour terminée", level="DEBUG")
 
 if __name__ == "__main__":
     asyncio.run(main())

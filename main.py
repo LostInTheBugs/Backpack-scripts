@@ -27,18 +27,18 @@ secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 try:
     auto_symbols_result = fetch_top_n_volatility_volume(n=getattr(config.strategy, "auto_select_top_n", 10))
     auto_symbols = auto_symbols_result if auto_symbols_result is not None else []
-    log(f"[DEBUG] Auto symbols récupérés avec succès: {auto_symbols}", level="DEBUG")
+    log(f"Auto symbols récupérés avec succès: {auto_symbols}", level="DEBUG")
 except Exception as e:
-    log(f"[ERROR] Erreur lors de la récupération des auto_symbols: {e}", level="ERROR")
+    log(f"Erreur lors de la récupération des auto_symbols: {e}", level="ERROR")
     auto_symbols = []
 
 # Vérifier si include et exclude existent dans la config
 include_symbols = getattr(config.strategy, 'include', []) or []
 exclude_symbols = getattr(config.strategy, 'exclude', []) or []
 
-log(f"[DEBUG] Auto symbols: {auto_symbols}", level="DEBUG")
-log(f"[DEBUG] Include symbols: {include_symbols}", level="DEBUG")
-log(f"[DEBUG] Exclude symbols: {exclude_symbols}", level="DEBUG")
+log(f"Auto symbols: {auto_symbols}", level="DEBUG")
+log(f" Include symbols: {include_symbols}", level="DEBUG")
+log(f" Exclude symbols: {exclude_symbols}", level="DEBUG")
 
 # On fusionne avec include (ajoute les symboles forcés)
 all_symbols = list(set(auto_symbols + include_symbols))
@@ -46,7 +46,7 @@ all_symbols = list(set(auto_symbols + include_symbols))
 # On applique le filtre exclude (retire les symboles interdits)
 final_symbols = [s for s in all_symbols if s not in exclude_symbols]
 
-log(f"[DEBUG] Final symbols: {final_symbols}", level="DEBUG")
+log(f" Final symbols: {final_symbols}", level="DEBUG")
 
 symbols_container = {'list': final_symbols}
 
@@ -58,7 +58,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
     while True:
         if auto_select and symbols_container:
             symbols = symbols_container.get('list', [])
-            log(f"[DEBUG] Symbols list updated in main_loop: {symbols}")
+            log(f" Symbols list updated in main_loop: {symbols}")
 
         active_symbols = []
         ignored_symbols = []
@@ -71,7 +71,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                 ignored_symbols.append(symbol)
 
         if active_symbols:
-            log(f"[INFO] Active symbols ({len(active_symbols)}): {active_symbols}", level="INFO")
+            log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="INFO")
 
         ignored_details = []
         if ignored_symbols:
@@ -87,10 +87,10 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                     ignored_details.append(f"{sym} (inactive for {human_delay})")
 
             if ignored_details:
-                log(f"[INFO] Ignored symbols ({len(ignored_details)}): {ignored_details}", level="INFO")
+                log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="INFO")
 
         if not active_symbols:
-            log(f"[INFO] No active symbols for this iteration", level="INFO")
+            log(f" No active symbols for this iteration", level="INFO")
 
         await asyncio.sleep(1)
 
@@ -115,7 +115,7 @@ async def async_main(args):
     else:
         initial_symbols = load_symbols_from_file()
 
-    log(f"[DEBUG] Initial scan of symbols before main loop: {initial_symbols}", level="DEBUG")
+    log(f" Initial scan of symbols before main loop: {initial_symbols}", level="DEBUG")
     await scan_all_symbols(pool, initial_symbols)
 
     loop = asyncio.get_running_loop()
@@ -130,30 +130,30 @@ async def async_main(args):
 
     try:
         if args.backtest:
-            log("[DEBUG] Mode backtest activé", level="DEBUG")
-            log(f"[DEBUG] Backtest demandé avec valeur: {args.backtest}", level="DEBUG")
+            log(" Mode backtest activé", level="DEBUG")
+            log(f" Backtest demandé avec valeur: {args.backtest}", level="DEBUG")
             if args.symbols:
                 symbols = args.symbols.split(",")
-                log(f"[DEBUG] Symboles passés en argument: {symbols}", level="DEBUG")
+                log(f" Symboles passés en argument: {symbols}", level="DEBUG")
             else:
                 symbols = load_symbols_from_file()
-                log(f"[DEBUG] Symboles chargés depuis fichier: {symbols}", level="DEBUG")
+                log(f" Symboles chargés depuis fichier: {symbols}", level="DEBUG")
 
             if not symbols:
-                log("[ERROR] Liste de symboles vide, backtest annulé", level="ERROR")
+                log(" Liste de symboles vide, backtest annulé", level="ERROR")
                 return
 
             if isinstance(args.backtest, tuple):
                 start_dt, end_dt = args.backtest
                 for symbol in symbols:
-                    log(f"[DEBUG] [{symbol}] Starting backtest from {start_dt.date()} to {end_dt.date()} with {args.strategie} strategy", level="DEBUG")
+                    log(f" [{symbol}] Starting backtest from {start_dt.date()} to {end_dt.date()} with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, (start_dt, end_dt), pg_dsn, args.strategie)
             else:
                 for symbol in symbols:
-                    log(f"[DEBUG] [{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy", level="DEBUG")
+                    log(f" [{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
         else:
-            log("[DEBUG] Mode live (pas de backtest)", level="DEBUG")
+            log(" Mode live (pas de backtest)", level="DEBUG")
             if args.auto_select:
                 task = asyncio.create_task(
                     main_loop([], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container)
@@ -174,7 +174,7 @@ async def async_main(args):
         traceback.print_exc()
     finally:
         await pool.close()
-        log(f"[ERROR] Connection pool closed, program terminated", level="ERROR")
+        log(f" Connection pool closed, program terminated", level="ERROR")
 
 
 if __name__ == "__main__":

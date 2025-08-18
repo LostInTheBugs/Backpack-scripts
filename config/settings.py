@@ -1,6 +1,7 @@
 # config/settings.py
 from pydantic_settings import BaseSettings
 from pydantic import Field
+from utils.logger import log
 from typing import Dict, List, Optional
 import yaml
 import os
@@ -161,7 +162,7 @@ def save_default_config(config_path: str = "config/settings.yaml"):
     with open(config_file, 'w') as f:
         yaml.dump(default_config, f, default_flow_style=False, indent=2)
     
-    print(f"✅ Default configuration saved to {config_path}")
+    log(f"✅ Default configuration saved to {config_path}", level="DEBUG")
 
 def get_config() -> Config:
     """Get the current configuration instance"""

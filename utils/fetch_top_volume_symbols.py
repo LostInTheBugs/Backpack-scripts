@@ -22,7 +22,7 @@ def fetch_top_n_perp(n):
         for t in top_n:
             f.write(t["symbol"] + "\n")
 
-    log(f"[DEBUG] ✅ Écrit {len(top_n)} symboles PERP dans {OUTPUT_FILE}", level="DEBUG")
+    log(f"✅ Écrit {len(top_n)} symboles PERP dans {OUTPUT_FILE}", level="DEBUG")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

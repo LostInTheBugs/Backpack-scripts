@@ -18,13 +18,13 @@ def get_combined_signal(df, symbol):
     trix_sell_threshold = 0.05
 
     if price < support * (1 + breakout_buffer) and rsi < rsi_low_threshold and trix > trix_buy_threshold:
-        log(f"[INFO] 🟢 BUY (RangeSoft, rebond support souple) | Price={price:.4f} Support={support:.4f} RSI={rsi:.2f} TRIX={trix:.4f}", level="INFO")
+        log(f"🟢 BUY (RangeSoft, rebond support souple) | Price={price:.4f} Support={support:.4f} RSI={rsi:.2f} TRIX={trix:.4f}", level="INFO")
         return "BUY"
 
     elif price > resistance * (1 - breakout_buffer) and rsi > rsi_high_threshold and trix < trix_sell_threshold:
-        log(f"[INFO] 🔴 SELL (RangeSoft, rejet resistance souple) | Price={price:.4f} Resistance={resistance:.4f} RSI={rsi:.2f} TRIX={trix:.4f}", level="INFO")
+        log(f"🔴 SELL (RangeSoft, rejet resistance souple) | Price={price:.4f} Resistance={resistance:.4f} RSI={rsi:.2f} TRIX={trix:.4f}", level="INFO")
         return "SELL"
 
     else:
-        log(f"[INFO] ⚪ HOLD (RangeSoft) | Price={price:.4f} RSI={rsi:.2f} TRIX={trix:.4f}", level="INFO")
+        log(f"⚪ HOLD (RangeSoft) | Price={price:.4f} RSI={rsi:.2f} TRIX={trix:.4f}", level="INFO")
         return "HOLD"
