@@ -13,9 +13,9 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 *  Creation of a dedicated sub-account on Backpack Exchange and API access for the bot
 *  Be sure to define your environment variables before launching (DSN and API Access)
 Example in .bashrc :
-*export bpx_bot_public_key="MYPUBLICKEY"*
-*export bpx_bot_secret_key="MYSECRETKEY"*
-*export PG_DSN="postgresql://$username:$password@$postgresqlserver:$port/$database"*
+*export bpx_bot_public_key="MYPUBLICKEY"*  
+*export bpx_bot_secret_key="MYSECRETKEY"*  
+*export PG_DSN="postgresql://$username:$password@$postgresqlserver:$port/$database"*  
   
   
 # Scripts  
