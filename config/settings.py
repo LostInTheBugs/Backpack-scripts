@@ -1,11 +1,11 @@
 # config/settings.py
 from pydantic_settings import BaseSettings
 from pydantic import Field
-from utils.logger import log
 from typing import Dict, List, Optional
 import yaml
 import os
 from pathlib import Path
+from utils.logger import log
 
 class TradingConfig(BaseSettings):
     """Trading configuration settings"""
