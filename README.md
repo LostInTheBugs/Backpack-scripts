@@ -12,7 +12,8 @@ The documentation for Backpack Exchange APIs is available here: https://docs.bac
 *  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)
 *  Creation of a dedicated sub-account on Backpack Exchange and API access for the bot
 *  Be sure to define your environment variables before launching (DSN and API Access)
-
+  
+  
 **Scripts**  
   python3 ScriptDatabase/pgsql_ohlcv.py  
      This script is designed to insert 1-second candles into a PostgreSQL database.  
