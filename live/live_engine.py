@@ -171,9 +171,16 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             return
 
         if inspect.iscoroutinefunction(get_combined_signal):
-            signal, details = await get_combined_signal(df, symbol)
+            result = await get_combined_signal(df, symbol)
         else:
-            signal, details = get_combined_signal(df, symbol)
+            result = get_combined_signal(df, symbol)
+
+        # Vérifie si result est un tuple/list à deux éléments
+        if isinstance(result, (tuple, list)) and len(result) == 2:
+            signal, details = result
+        else:
+            signal = result
+            details = {}  # valeur vide si la stratégie ne renvoie pas de détails
 
         log(f"[INFO] [{symbol}] 🎯 Signal detected: {signal} | Details: {details}", level="INFO")
 
