@@ -61,26 +61,30 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
     """
     trade_events = []        # stockage des derniers trades
     open_positions = {}      # positions ouvertes par symbol
+    tickers_cache = {}       # dernier prix connu pour limiter fetch API
 
     if symbols_container is None:
         symbols_container = {"list": symbols}
 
     async def update_symbols():
         """
-        Met à jour open_positions et trade_events en récupérant les infos en lot
+        Met à jour open_positions et trade_events en limitant les appels API.
         """
+        last_ticker_fetch = 0
         while True:
-            await asyncio.sleep(2)  # on peut ajuster à 2-3 sec
+            await asyncio.sleep(2)
             try:
-                # 1. Récupère toutes les positions ouvertes en un seul call
-                positions = await Account.get_positions()  # adapter selon ton API
-
-                # 2. Récupère tous les tickers / prix en un seul call
-                tickers = await Public.get_tickers()  # adapter selon ton API
-
                 now = datetime.now().strftime("%H:%M:%S")
 
-                # 3. Met à jour open_positions
+                # 1. Récupère toutes les positions ouvertes
+                positions = await Account.get_positions()
+
+                # 2. Récupère les tickers uniquement toutes les 5 sec
+                if (datetime.now().timestamp() - last_ticker_fetch) > 5:
+                    tickers_cache = await Public.get_tickers()
+                    last_ticker_fetch = datetime.now().timestamp()
+
+                # 3. Détecte ouverture / mise à jour de positions
                 for pos in positions:
                     symbol = pos["symbol"]
                     pnl = pos.get("pnl", 0.0)
@@ -88,15 +92,16 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
                     duration = pos.get("duration", "0s")
                     trailing_stop = pos.get("trailing_stop", 0.0)
 
-                    # Détecte un nouveau trade pour trade_events
                     if symbol not in open_positions:
+                        # Nouvelle position ouverte
                         trade_events.append({
                             "time": now,
                             "symbol": symbol,
                             "action": "OPEN",
-                            "price": tickers.get(symbol, {}).get("price", 0.0)
+                            "price": tickers_cache.get(symbol, {}).get("price", 0.0)
                         })
 
+                    # Update open_positions
                     open_positions[symbol] = {
                         "symbol": symbol,
                         "pnl": pnl,
@@ -105,14 +110,14 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
                         "trailing_stop": trailing_stop
                     }
 
-                # 4. Supprime les positions fermées
+                # 4. Détecte positions fermées
                 closed_symbols = set(open_positions) - set(pos["symbol"] for pos in positions)
                 for sym in closed_symbols:
                     trade_events.append({
                         "time": now,
                         "symbol": sym,
                         "action": "CLOSE",
-                        "price": tickers.get(sym, {}).get("price", 0.0)
+                        "price": tickers_cache.get(sym, {}).get("price", 0.0)
                     })
                     del open_positions[sym]
 
@@ -121,7 +126,7 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
 
     async def render_dashboard():
         """
-        Redessine le dashboard toutes les 2 secondes
+        Redessine le dashboard toutes les 2 sec.
         """
         while True:
             await asyncio.sleep(2)
@@ -131,7 +136,6 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
             active_symbols = []
             ignored_symbols = []
 
-            # vérification symboles actifs
             for symbol in symbols:
                 try:
                     if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
@@ -142,7 +146,6 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
                     ignored_symbols.append(symbol)
                     log(f"[ERROR] check_table_and_fresh_data {symbol}: {e}", level="ERROR")
 
-            # clear terminal
             os.system("clear")
 
             # === SYMBOLS ===
@@ -174,8 +177,8 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
         asyncio.create_task(update_symbols()),
         asyncio.create_task(render_dashboard())
     ]
-
     await asyncio.gather(*tasks)
+
 
 
 
