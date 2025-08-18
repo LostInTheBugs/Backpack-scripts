@@ -12,7 +12,7 @@ from utils.logger import log
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
 from live.live_engine import handle_live_symbol
-from backtest.backtest_engine import run_backtest_async
+from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
 from utils.symbol_filter import filter_symbols_by_config
 from utils.update_symbols_periodically import start_symbol_updater
@@ -47,36 +47,6 @@ symbols_container = {'list': final_symbols}
 
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 start_symbol_updater(symbols_container)
-
-
-def parse_backtest(value):
-    if ":" in value and re.match(r"^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$", value):
-        start_str, end_str = value.split(":")
-        from datetime import datetime
-        start_dt = datetime.strptime(start_str, "%Y-%m-%d")
-        end_dt = datetime.strptime(end_str, "%Y-%m-%d")
-        if start_dt >= end_dt:
-            raise argparse.ArgumentTypeError("La date de début doit être avant la date de fin.")
-        return (start_dt, end_dt)
-
-    match = re.match(r"^(\d+)([smhdw]?)$", value.lower())
-    if not match:
-        raise argparse.ArgumentTypeError(
-            "Format invalide. Utilise par ex: 10m, 2h, 3d, 1w, juste un nombre (minutes), "
-            "ou plage de dates YYYY-MM-DD:YYYY-MM-DD"
-        )
-    amount, unit = match.groups()
-    amount = int(amount)
-    multipliers_in_hours = {
-        "": 1/60,  # minutes par défaut
-        "s": 1/3600,
-        "m": 1/60,
-        "h": 1,
-        "d": 24,
-        "w": 168
-    }
-    return amount * multipliers_in_hours[unit]
-
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
     while True:
