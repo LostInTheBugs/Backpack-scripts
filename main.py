@@ -1,3 +1,4 @@
+#main.py
 import argparse
 import os
 import traceback
@@ -6,6 +7,7 @@ from datetime import datetime, timezone
 import asyncpg
 import signal
 import sys
+from tabulate import tabulate
 
 from utils.logger import log
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
@@ -53,6 +55,65 @@ symbols_container = {'list': final_symbols}
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 update_symbols_periodically(symbols_container)
 
+async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None):
+    trade_events = []    # stocke les derniers événements d'achat/vente
+    open_positions = []  # stocke les positions ouvertes
+
+    while True:
+        if symbols_container:
+            symbols = symbols_container.get('list', [])
+
+        active_symbols = []
+        ignored_symbols = []
+
+        # récupération des données
+        for symbol in symbols:
+            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
+                active_symbols.append(symbol)
+                pos = await handle_live_symbol(symbol, pool, real_run, dry_run, args=args)
+                if pos:
+                    open_positions.append(pos)
+                    if "signal" in pos:
+                        trade_events.append({
+                            "time": datetime.now().strftime("%H:%M:%S"),
+                            "symbol": symbol,
+                            "action": pos["signal"],
+                            "price": pos.get("price", 0)
+                        })
+            else:
+                ignored_symbols.append(symbol)
+
+        # détails des symboles ignorés
+        ignored_details = []
+        for sym in ignored_symbols:
+            last_ts = await get_last_timestamp(pool, sym)
+            if last_ts is None:
+                ignored_details.append(f"{sym} (table missing)")
+            else:
+                now = datetime.now(timezone.utc)
+                delay = now - last_ts
+                seconds = int(delay.total_seconds())
+                human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
+                ignored_details.append(f"{sym} (inactive for {human_delay})")
+
+        # ---- Affichage dashboard ----
+        os.system('clear')  # ou 'cls' sur Windows
+
+        print("=== SYMBOLS ===")
+        print(tabulate([["Active", ", ".join(active_symbols)],
+                        ["Ignored", ", ".join(ignored_details)]],
+                       headers=["Status", "Symbols"], tablefmt="fancy_grid"))
+
+        print("\n=== TRADE EVENTS ===")
+        print(tabulate([[e["time"], e["symbol"], e["action"], e["price"]] for e in trade_events[-10:]],
+                       headers=["Time", "Symbol", "Action", "Price"], tablefmt="fancy_grid"))
+
+        print("\n=== OPEN POSITIONS ===")
+        print(tabulate([[p["symbol"], f'{p["pnl"]:.2f}%', p["amount"], p.get("duration", "-"), f'{p["trailing_stop"]}%']
+                        for p in open_positions],
+                       headers=["Symbol", "PnL", "Amount", "Duration", "Trailing Stop"], tablefmt="fancy_grid"))
+
+        await asyncio.sleep(1)
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
     while True:
@@ -130,6 +191,9 @@ async def async_main(args):
 
     try:
         if args.backtest:
+            # -------------------------
+            # Mode backtest
+            # -------------------------
             log(" Mode backtest activé", level="DEBUG")
             log(f" Backtest demandé avec valeur: {args.backtest}", level="DEBUG")
             if args.symbols:
@@ -153,28 +217,59 @@ async def async_main(args):
                     log(f" [{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
         else:
+            # -------------------------
+            # Mode live
+            # -------------------------
             log(" Mode live (pas de backtest)", level="DEBUG")
-            if args.auto_select:
-                task = asyncio.create_task(
-                    main_loop([], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container)
-                )
-            elif args.symbols:
-                symbols = args.symbols.split(",")
-                task = asyncio.create_task(
-                    main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run)
-                )
-            else:
-                task = asyncio.create_task(
-                    watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
-                )
 
+            # Choix du mode textdashboard ou mode classique
+            if getattr(args, "mode", None) == "textdashboard":
+                # Mode textdashboard
+                if args.auto_select:
+                    task = asyncio.create_task(
+                        main_loop_textdashboard(
+                            [], pool, real_run=args.real_run, dry_run=args.dry_run, symbols_container=symbols_container
+                        )
+                    )
+                elif args.symbols:
+                    symbols = args.symbols.split(",")
+                    task = asyncio.create_task(
+                        main_loop_textdashboard(
+                            symbols, pool, real_run=args.real_run, dry_run=args.dry_run
+                        )
+                    )
+                else:
+                    task = asyncio.create_task(
+                        watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
+                    )
+            else:
+                # Mode classique (main_loop normal)
+                if args.auto_select:
+                    task = asyncio.create_task(
+                        main_loop(
+                            [], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container
+                        )
+                    )
+                elif args.symbols:
+                    symbols = args.symbols.split(",")
+                    task = asyncio.create_task(
+                        main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run)
+                    )
+                else:
+                    task = asyncio.create_task(
+                        watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
+                    )
+
+            # Attente Ctrl+C ou fin de tâche
             stop_task = asyncio.create_task(stop_event.wait())
             await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
+
     except Exception:
         traceback.print_exc()
     finally:
         await pool.close()
         log(f" Connection pool closed, program terminated", level="ERROR")
+
 
 
 if __name__ == "__main__":
@@ -187,6 +282,7 @@ if __name__ == "__main__":
     parser.add_argument('--strategie', type=str, default=None, help='Strategy name (Default, Trix, Combo, Auto, Range, RangeSoft, ThreeOutOfFour, TwoOutOfFourScalp and DynamicThreeTwo.)')
     parser.add_argument("--no-limit", action="store_true", help="Disable symbol count limit")
     parser.add_argument("--config", type=str, default="config/settings.yaml", help="Configuration file path")
+    parser.add_argument("--mode", type=str, default="text", choices=["text", "textdashboard", "webdashboard"], help="Mode d'affichage")
     args = parser.parse_args()
 
     if args.config != "config/settings.yaml":
