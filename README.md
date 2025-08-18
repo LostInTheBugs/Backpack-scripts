@@ -12,8 +12,8 @@ Prerequisites
 *  postgresql (tested with postgresql 14.18 on Ubuntu 22.04)  
 
 Scripts
-  python3 ScriptDatabase/pgsql_ohlcv.py  
-    This script is designed to insert 1-second candles into a PostgreSQL database.  
+    python3 ScriptDatabase/pgsql_ohlcv.py  
+        This script is designed to insert 1-second candles into a PostgreSQL database.  
     Database connection information is provided via environment variables.  
     export PG_DSN="postgresql://$username:$password@$postgresqlserver:$port/$database  
   
