@@ -25,10 +25,22 @@ config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-# Configuration des intervalles (en secondes)
-API_CALL_INTERVAL = getattr(config, 'api_call_interval', 5)  # Intervalle entre les appels API
-DASHBOARD_REFRESH_INTERVAL = getattr(config, 'dashboard_refresh_interval', 2)  # Intervalle de rafraîchissement du dashboard
-SYMBOLS_CHECK_INTERVAL = getattr(config, 'symbols_check_interval', 30)  # Vérification des symboles actifs
+# Configuration des intervalles (en secondes) - avec valeurs par défaut
+API_CALL_INTERVAL = 5  # Minimum entre appels API par symbole
+DASHBOARD_REFRESH_INTERVAL = 2  # Rafraîchissement du dashboard
+SYMBOLS_CHECK_INTERVAL = 30  # Vérification du statut des symboles
+
+# Essayer de charger depuis la config si disponible
+try:
+    if hasattr(config, 'performance') and hasattr(config.performance, 'api_call_interval'):
+        API_CALL_INTERVAL = config.performance.api_call_interval
+    if hasattr(config, 'performance') and hasattr(config.performance, 'dashboard_refresh_interval'):
+        DASHBOARD_REFRESH_INTERVAL = config.performance.dashboard_refresh_interval
+    if hasattr(config, 'performance') and hasattr(config.performance, 'symbols_check_interval'):
+        SYMBOLS_CHECK_INTERVAL = config.performance.symbols_check_interval
+except AttributeError:
+    # Utiliser les valeurs par défaut si la config n'a pas ces champs
+    pass
 
 # Sécurise auto_symbols avec gestion d'erreur améliorée
 try:
@@ -484,7 +496,21 @@ if __name__ == "__main__":
     parser.add_argument("--no-limit", action="store_true", help="Disable symbol count limit")
     parser.add_argument("--config", type=str, default="config/settings.yaml", help="Configuration file path")
     parser.add_argument("--mode", type=str, default="text", choices=["text", "textdashboard", "webdashboard"], help="Mode d'affichage")
+    
+    # Arguments pour les intervalles de performance
+    parser.add_argument("--api-interval", type=int, default=None, help="API call interval in seconds (default: 5)")
+    parser.add_argument("--dashboard-interval", type=int, default=None, help="Dashboard refresh interval in seconds (default: 2)")
+    parser.add_argument("--symbols-check-interval", type=int, default=None, help="Symbols status check interval in seconds (default: 30)")
+    
     args = parser.parse_args()
+
+    # Override des intervalles si spécifiés en ligne de commande
+    if args.api_interval:
+        API_CALL_INTERVAL = args.api_interval
+    if args.dashboard_interval:
+        DASHBOARD_REFRESH_INTERVAL = args.dashboard_interval
+    if args.symbols_check_interval:
+        SYMBOLS_CHECK_INTERVAL = args.symbols_check_interval
 
     if args.config != "config/settings.yaml":
         config = load_config(args.config)

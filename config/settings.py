@@ -6,6 +6,11 @@ import yaml
 import os
 from pathlib import Path
 
+class PerformanceConfig(BaseSettings):
+    api_call_interval: int = 5
+    dashboard_refresh_interval: int = 2
+    symbols_check_interval: int = 30
+
 class TradingConfig(BaseSettings):
     """Trading configuration settings"""
     position_amount_usdc: float = Field(50.0, description="Position size in USDC")
@@ -75,6 +80,7 @@ class Config(BaseSettings):
     risk: RiskConfig = RiskConfig()
     logging: LoggingConfig = LoggingConfig()
     symbols: SymbolsConfig = SymbolsConfig()
+    performance: PerformanceConfig = PerformanceConfig()
     
     bpx_bot_public_key: Optional[str] = Field(None, env="bpx_bot_public_key")
     bpx_bot_secret_key: Optional[str] = Field(None, env="bpx_bot_secret_key")

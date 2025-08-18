@@ -1,8 +1,9 @@
 # config/settings.yaml
 # Trading Bot Configuration File
-api_call_interval: 5          # Minimum entre appels API par symbole
-dashboard_refresh_interval: 2  # Rafraîchissement dashboard
-symbols_check_interval: 30     # Vérification statut symboles
+performance:
+  api_call_interval: 5          # Minimum entre appels API par symbole
+  dashboard_refresh_interval: 2  # Rafraîchissement dashboard
+  symbols_check_interval: 30     # Vérification statut symboles
 
 trading:
   position_amount_usdc: 50.0      # Position size in USDC
