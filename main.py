@@ -13,7 +13,7 @@ from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
 from live.live_engine import handle_live_symbol
 from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
-from utils.update_symbols_periodically import start_symbol_updater
+from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
 from utils.i18n import t, set_locale, get_available_locales
 
@@ -45,7 +45,7 @@ log(f"[DEBUG] Final symbols: {final_symbols}", level="DEBUG")
 symbols_container = {'list': final_symbols}
 
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
-start_symbol_updater(symbols_container)
+update_symbols_periodically(symbols_container)
 
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
