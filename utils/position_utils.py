@@ -71,27 +71,30 @@ async def get_real_pnl(symbol: str):
         return 0.0, 1.0
 
 
+def safe_float(val, default=0.0):
+    """Convertit val en float, même si c'est une string non valide."""
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
 async def get_real_positions():
     """Retourne une liste de positions ouvertes avec détails pour dashboard."""
     positions = await get_open_positions()
     positions_list = []
 
     for symbol, p in positions.items():
-        net_qty = p["net_qty"]
+        net_qty = safe_float(p.get("net_qty", 0))
         if net_qty != 0:
-            entry_price = p["entry_price"]
-            side = p["side"]
-            trailing_stop = p.get("trailingStopPct", 0.0)
-            duration_seconds = p.get("durationSeconds", 0)
+            entry_price = safe_float(p.get("entry_price", 0))
+            side = p.get("side", "long" if net_qty > 0 else "short")
+            trailing_stop = safe_float(p.get("trailingStopPct", 0.0))
+            duration_seconds = int(p.get("durationSeconds", 0))
 
             # Calcul du PnL réel en pourcentage
-            try:
-                pnl_usdc = float(p.get("pnlUnrealized", 0.0))
-                notional = abs(net_qty) * entry_price
-                pnl_percent = (pnl_usdc / notional) * 100 if notional != 0 else 0.0
-            except Exception as e:
-                log(f"[ERROR] Calcul PnL réel {symbol}: {e}", level="ERROR")
-                pnl_percent = 0.0
+            pnl_usdc = safe_float(p.get("pnlUnrealized", 0.0))
+            notional = abs(net_qty) * entry_price
+            pnl_percent = (pnl_usdc / notional * 100) if notional != 0 else 0.0
 
             # Formatage durée
             h = duration_seconds // 3600
