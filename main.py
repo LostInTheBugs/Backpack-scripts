@@ -208,10 +208,8 @@ async def async_main(args):
 
             async def dashboard_loop():
                 """Boucle pour le mode textdashboard avec positions ouvertes"""
-                dashboard = OptimizedDashboard(pool, symbols_container, args)
                 while not stop_event.is_set():
-
-                    await dashboard.render_dashboard()
+                    await refresh_dashboard()
 
                     # Détermination des symboles à traiter
                     if args.auto_select:
