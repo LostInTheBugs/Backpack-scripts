@@ -152,6 +152,7 @@ async def async_main(args):
     )
 
     from utils.scan_all_symbols import scan_all_symbols  # Ajuste chemin si besoin
+    from utils.position_utils import get_open_positions  # Pour positions live
 
     # Choix des symbols à scanner
     if args.auto_select:
@@ -180,14 +181,7 @@ async def async_main(args):
             # Mode backtest
             # -------------------------
             log(" Mode backtest activé", level="DEBUG")
-            log(f" Backtest demandé avec valeur: {args.backtest}", level="DEBUG")
-            if args.symbols:
-                symbols = args.symbols.split(",")
-                log(f" Symboles passés en argument: {symbols}", level="DEBUG")
-            else:
-                symbols = load_symbols_from_file()
-                log(f" Symboles chargés depuis fichier: {symbols}", level="DEBUG")
-
+            symbols = args.symbols.split(",") if args.symbols else load_symbols_from_file()
             if not symbols:
                 log(" Liste de symboles vide, backtest annulé", level="ERROR")
                 return
@@ -211,8 +205,9 @@ async def async_main(args):
             async def dashboard_loop():
                 """Boucle pour le mode textdashboard avec positions ouvertes"""
                 while not stop_event.is_set():
-                    # Refresh des positions ouvertes et affichage
-                    await refresh_dashboard()
+                    # Refresh des positions ouvertes
+                    open_positions = await get_open_positions()
+                    await refresh_dashboard(open_positions=open_positions)
 
                     # Détermination des symboles à traiter
                     current_symbols = []
@@ -222,14 +217,12 @@ async def async_main(args):
                         current_symbols = args.symbols.split(",")
 
                     for symbol in current_symbols:
-                        await get_handle_live_symbol(
-                            symbol=symbol,
-                            signal=None,  # signal géré par handle_live_symbol
-                            amount_usdc=config.trading.position_amount_usdc,
-                            leverage=config.trading.leverage,
-                            dry_run=not args.real_run
-                        )
-
+                        handle_fn = get_handle_live_symbol()  # récupérer la fonction
+                        await handle_fn(symbol=symbol,
+                                        pool=pool,
+                                        real_run=args.real_run,
+                                        dry_run=args.dry_run,
+                                        args=args)
                     await asyncio.sleep(config.performance.dashboard_refresh_interval)
 
             # Choix du mode textdashboard ou mode classique
@@ -252,11 +245,17 @@ async def async_main(args):
                 elif args.symbols:
                     symbols = args.symbols.split(",")
                     task = asyncio.create_task(
-                        main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, args=args)
+                        main_loop(symbols,
+                                  pool,
+                                  real_run=args.real_run,
+                                  dry_run=args.dry_run,
+                                  args=args)
                     )
                 else:
                     task = asyncio.create_task(
-                        watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
+                        watch_symbols_file(pool=pool,
+                                           real_run=args.real_run,
+                                           dry_run=args.dry_run)
                     )
 
             # Attente Ctrl+C ou fin de tâche
