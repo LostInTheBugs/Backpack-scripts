@@ -286,7 +286,26 @@ class OptimizedDashboard:
                 log(f"Erreur dans render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
 
+async def refresh_dashboard():
+    """
+    Récupère et affiche toutes les positions ouvertes au format tableau.
+    """
+    positions = await get_real_positions()
+    if not positions:
+        log("[INFO] No open positions at this time")
+        return
 
+    from tabulate import tabulate
+    table = tabulate(
+        [
+            [p["symbol"], p["side"], p["entry_price"], f'{p["pnl"]:.2f}%', p["amount"], p["duration"], f'{p["trailing_stop"]:.2f}%']
+            for p in positions
+        ],
+        headers=["Symbol", "Side", "Entry", "PnL%", "Amount", "Duration", "Trailing Stop"],
+        tablefmt="pretty"
+    )
+    log("\n" + table)
+    
 # ---------------- MAIN LOOP ----------------
 async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None, args=None):
     if symbols_container is None:

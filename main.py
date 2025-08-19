@@ -18,7 +18,7 @@ from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
 from utils.i18n import t, set_locale, get_available_locales
 from live.live_engine import get_handle_live_symbol
-from dashboard.textdashboard import main_loop_textdashboard
+from dashboard.textdashboard import refresh_dashboard
 
 # Charge la config au démarrage
 config = load_config()
@@ -201,38 +201,52 @@ async def async_main(args):
                 for symbol in symbols:
                     log(f" [{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
+
         else:
             # -------------------------
             # Mode live
             # -------------------------
             log(" Mode live (pas de backtest)", level="DEBUG")
 
+            async def dashboard_loop():
+                """Boucle pour le mode textdashboard avec positions ouvertes"""
+                while not stop_event.is_set():
+                    # Refresh des positions ouvertes et affichage
+                    await refresh_dashboard()
+
+                    # Détermination des symboles à traiter
+                    current_symbols = []
+                    if args.auto_select:
+                        current_symbols = symbols_container.get('list', [])
+                    elif args.symbols:
+                        current_symbols = args.symbols.split(",")
+
+                    for symbol in current_symbols:
+                        await get_handle_live_symbol(
+                            symbol=symbol,
+                            signal=None,  # signal géré par handle_live_symbol
+                            amount_usdc=config.trading.position_amount_usdc,
+                            leverage=config.trading.leverage,
+                            dry_run=not args.real_run
+                        )
+
+                    await asyncio.sleep(config.performance.dashboard_refresh_interval)
+
             # Choix du mode textdashboard ou mode classique
             if getattr(args, "mode", None) == "textdashboard":
-                # Mode textdashboard optimisé
-                if args.auto_select:
-                    task = asyncio.create_task(
-                        main_loop_textdashboard(
-                            [], pool, real_run=args.real_run, dry_run=args.dry_run, symbols_container=symbols_container, args=args
-                        )
-                    )
-                elif args.symbols:
-                    symbols = args.symbols.split(",")
-                    task = asyncio.create_task(
-                        main_loop_textdashboard(
-                            symbols, pool, real_run=args.real_run, dry_run=args.dry_run, args=args
-                        )
-                    )
-                else:
-                    task = asyncio.create_task(
-                        watch_symbols_file(pool=pool, real_run=args.real_run, dry_run=args.dry_run)
-                    )
+                task = asyncio.create_task(dashboard_loop())
             else:
                 # Mode classique optimisé
                 if args.auto_select:
                     task = asyncio.create_task(
                         main_loop(
-                            [], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container, args=args
+                            [],
+                            pool,
+                            real_run=args.real_run,
+                            dry_run=args.dry_run,
+                            auto_select=True,
+                            symbols_container=symbols_container,
+                            args=args
                         )
                     )
                 elif args.symbols:
