@@ -331,12 +331,39 @@ async def refresh_dashboard():
         return
 
     from tabulate import tabulate
+    table_data = []
+    for p in positions:
+        entry = p.get("entry_price", 0.0)
+        price = p.get("current_price", entry)  # ou récupère le dernier prix réel
+        side = p.get("side", "N/A")
+        amount = p.get("amount", 0.0)
+
+        # Calcul PnL$ et ret%
+        if side.lower() == "long":
+            pnl_usdc = (price - entry) * amount
+            ret_pct = (price - entry) / entry * 100 if entry != 0 else 0
+        elif side.lower() == "short":
+            pnl_usdc = (entry - price) * amount
+            ret_pct = (entry - price) / entry * 100 if entry != 0 else 0
+        else:
+            pnl_usdc = 0
+            ret_pct = 0
+
+        table_data.append([
+            p.get("symbol", "N/A"),
+            side,
+            f'{entry:.6f}',
+            f'{p.get("pnl", 0.0):.2f}%',        # PnL% marge
+            f'{pnl_usdc:.2f}$',                  # PnL$ en USDC
+            f'({ret_pct:.2f}%)',                 # ret% réel
+            amount,
+            p.get("duration", "0s"),
+            f'{p.get("trailing_stop", 0.0):.2f}%'
+        ])
+
     table = tabulate(
-        [
-            [p["symbol"], p["side"], p["entry_price"], f'{p["pnl"]:.2f}%', p["amount"], p["duration"], f'{p["trailing_stop"]:.2f}%']
-            for p in positions
-        ],
-        headers=["Syml", "Side", "Entry", "PnL%", "Amount", "Duration", "Trailing Stop"],
+        table_data,
+        headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
         tablefmt="pretty"
     )
     log("\n" + table)
