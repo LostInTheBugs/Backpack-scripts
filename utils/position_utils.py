@@ -169,3 +169,20 @@ async def get_real_positions() -> List[Dict[str, Any]]:
 async def position_already_open(symbol: str) -> bool:
     positions = await get_open_positions()
     return symbol in positions
+
+def get_real_pnl(symbol: str, side: str, entry_price: float, amount: float, leverage: float = 1.0) -> dict:
+    """
+    Calcul du PnL réel en USDC et en % pour une position.
+    """
+    from utils.get_market import get_market
+    mark_price = get_market(symbol)["price"]
+    if mark_price is None or mark_price == 0:
+        mark_price = entry_price  # fallback
+
+    if side.lower() == "long":
+        pnl_usd = (mark_price - entry_price) * amount
+    else:  # short
+        pnl_usd = (entry_price - mark_price) * amount
+
+    pnl_percent = (pnl_usd / (entry_price * amount)) * leverage * 100
+    return {"pnl_usd": pnl_usd, "pnl_percent": pnl_percent}
