@@ -18,7 +18,7 @@ from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
 from utils.i18n import t, set_locale, get_available_locales
 from live.live_engine import get_handle_live_symbol
-from dashboard.textdashboard import refresh_dashboard
+from dashboard.textdashboard import refresh_dashboard, OptimizedDashboard
 
 # Charge la config au démarrage
 config = load_config()
@@ -208,8 +208,10 @@ async def async_main(args):
 
             async def dashboard_loop():
                 """Boucle pour le mode textdashboard avec positions ouvertes"""
+                dashboard = OptimizedDashboard(pool, symbols_container, args)
                 while not stop_event.is_set():
-                    await refresh_dashboard()
+
+                    await dashboard.render_dashboard()
 
                     # Détermination des symboles à traiter
                     if args.auto_select:
