@@ -19,7 +19,7 @@ account = Account(public_key=public_key, secret_key=secret_key, window=5000, deb
 async def get_raw_positions():
     """Récupère toutes les positions depuis l'API Backpack (asynchrone)."""
     try:
-        positions = await asyncio.to_thread(account.positions)
+        positions = account.get_open_positions()
         return positions or []
     except Exception as e:
         log(f"[ERROR] Failed to fetch positions: {e}", level="ERROR")
