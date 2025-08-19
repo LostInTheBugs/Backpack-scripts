@@ -49,11 +49,11 @@ async def get_open_positions():
             }
     return result
 
-def position_already_open(symbol: str):
+async def position_already_open(symbol: str):
     """
     Vérifie si une position est déjà ouverte pour le symbole.
     """
-    positions = get_real_positions()
+    positions = await get_real_positions()
     for pos in positions:
         if pos["symbol"] == symbol:
             return True
