@@ -1,20 +1,20 @@
+# utils/position_utils.py
 import os
 import asyncio
 from bpx.account import Account
 from utils.logger import log
+from config.settings import get_config
 
-public_key = os.getenv("bpx_bot_public_key")
-secret_key = os.getenv("bpx_bot_secret_key")
+# Charger la configuration
+config = get_config()
+public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
+secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-# Objet Account central
+# Création de l'objet Account central
 account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
 
 
 async def position_already_open(symbol: str) -> bool:
-    """
-    Vérifie si une position ouverte existe pour le symbole donné.
-    Retourne True si une position non nulle est ouverte, sinon False.
-    """
     try:
         positions = await asyncio.to_thread(account.get_open_positions)
         for p in positions:
@@ -27,10 +27,6 @@ async def position_already_open(symbol: str) -> bool:
 
 
 async def get_open_positions():
-    """
-    Récupère toutes les positions ouvertes sous forme de dict:
-    { symbol: {entry_price, side} }
-    """
     try:
         raw_positions = await asyncio.to_thread(account.get_open_positions)
         positions = {}
@@ -52,20 +48,14 @@ async def get_open_positions():
 
 
 async def get_real_pnl(symbol: str):
-    """
-    Retourne le PnL non réalisé et la valeur notionnelle pour le symbole donné.
-    """
     try:
         positions = await asyncio.to_thread(account.get_open_positions)
         for position in positions:
             if position["symbol"] == symbol and float(position.get("netQuantity", 0)) != 0:
                 pnl_unrealized = float(position.get("pnlUnrealized", 0))
-                notional = float(position.get("netExposureNotional", 1))  # fallback à 1 pour éviter div0
+                notional = float(position.get("netExposureNotional", 1))
                 return pnl_unrealized, notional
         return 0.0, 1.0
     except Exception as e:
         log(f"⚠️ Erreur get_real_pnl({symbol}): {e}", level="error")
         return 0.0, 1.0
-
-
-from utils.get_market import get_market  
