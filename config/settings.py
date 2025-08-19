@@ -17,7 +17,7 @@ class TradingConfig(BaseSettings):
     position_amount_usdc: float = Field(50.0, description="Position size in USDC")
     leverage: int = Field(2, description="Trading leverage")
     trailing_stop_trigger: float = Field(0.5, description="Trailing stop trigger in %")
-    max_positions: int = Field(5, description="Maximum simultaneous positions")
+    max_positions: int = Field(10, description="Maximum simultaneous positions")
     min_pnl_for_trailing: float = Field(0.3, description="Minimum PnL % before activating trailing stop")
 
 class DatabaseConfig(BaseSettings):
