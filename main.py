@@ -153,7 +153,7 @@ async def async_main(args):
 
     from utils.scan_all_symbols import scan_all_symbols
 
-    # Choix des symbols à scanner initialement
+    # Initial scan des symbols
     if args.auto_select:
         initial_symbols = auto_symbols
     elif args.symbols:
@@ -206,17 +206,15 @@ async def async_main(args):
             # -------------------------
             handle_live_symbol = get_handle_live_symbol()
 
-            async def text_dashboard_loop():
-                """Boucle pour le mode text simple → juste refresh_dashboard"""
+            async def dashboard_task():
+                """Tâche indépendante pour rafraîchir le dashboard"""
                 while not stop_event.is_set():
                     await refresh_dashboard()
                     await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
 
-            async def textdashboard_loop():
-                """Boucle pour le mode textdashboard → dashboard + handle_live_symbol"""
+            async def symbol_task():
+                """Tâche indépendante pour traiter les symboles"""
                 while not stop_event.is_set():
-                    await refresh_dashboard()
-                    # Détermination des symboles à traiter
                     if args.auto_select:
                         current_symbols = symbols_container.get('list', [])
                     elif args.symbols:
@@ -230,15 +228,15 @@ async def async_main(args):
                         except Exception as e:
                             log(f"[ERROR] Erreur lors du traitement de {symbol}: {e}", level="ERROR")
 
-                    await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
+                    # On throttle par symboles pour éviter surcharge API
+                    await asyncio.sleep(max(1, API_CALL_INTERVAL // len(current_symbols) if current_symbols else 1))
 
-            # Choix du mode live selon args.mode
+            # Lancer les deux tâches en parallèle pour texte dashboard
             if args.mode == "text":
-                task = asyncio.create_task(text_dashboard_loop())
+                task = asyncio.create_task(dashboard_task())
             elif args.mode == "textdashboard":
-                task = asyncio.create_task(textdashboard_loop())
+                task = asyncio.create_task(asyncio.gather(dashboard_task(), symbol_task()))
             elif args.mode == "webdashboard":
-                # On garde le main_loop classique pour webdashboard
                 if args.auto_select:
                     task = asyncio.create_task(
                         main_loop(
@@ -269,6 +267,7 @@ async def async_main(args):
     finally:
         await pool.close()
         log(f" Connection pool closed, program terminated", level="ERROR")
+
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from utils.logger import log
 from config.settings import load_config
 from utils.position_utils import get_real_positions
 from bpx.account import Account
+from utils.get_market import get_market
 
 config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
@@ -247,3 +248,58 @@ class OptimizedDashboard:
             except Exception as e:
                 log(f"Erreur render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
+
+async def refresh_dashboard():
+    """
+    Récupère et affiche toutes les positions ouvertes au format tableau avec PnL$ et ret%.
+    """
+    positions = await get_real_positions(account)
+    if not positions:
+        log("[INFO] No open positions at this time")
+        return
+
+    table_data = []
+    for p in positions:
+        symbol = p["symbol"]
+        market_info = await get_market(symbol)
+        if market_info is None:
+            continue
+
+        current_price = market_info.get("current_price", p["entry_price"])
+        entry_price = market_info.get("entry_price", p["entry_price"])
+        side = market_info.get("side", p["side"])
+        amount = p["amount"]
+
+        # PnL en pourcentage déjà calculé
+        pnl_percent = market_info.get("pnl", 0.0)
+
+        # PnL$ selon la direction
+        if side == "long":
+            pnl_usd = (current_price - entry_price) * amount
+        else:  # short
+            pnl_usd = (entry_price - current_price) * amount
+
+        # ret% (retour en % sur l'investissement)
+        try:
+            ret_percent = pnl_usd / (entry_price * amount) * 100
+        except ZeroDivisionError:
+            ret_percent = 0.0
+
+        table_data.append([
+            symbol,
+            side,
+            f"{entry_price:.6f}",
+            f"{pnl_percent:.2f}%",
+            f"{pnl_usd:.2f}$",
+            f"({ret_percent:.2f}%)",
+            amount,
+            p["duration"],
+            f"{p.get('trailing_stop', 0.0):.2f}%"
+        ])
+
+    table = tabulate(
+        table_data,
+        headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
+        tablefmt="pretty"
+    )
+    log("\n" + table)
