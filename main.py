@@ -153,7 +153,7 @@ async def async_main(args):
 
     from utils.scan_all_symbols import scan_all_symbols
 
-    # Choix des symbols à scanner initialement
+    # Choix des symbols à scanner
     if args.auto_select:
         initial_symbols = auto_symbols
     elif args.symbols:
@@ -204,18 +204,13 @@ async def async_main(args):
             # -------------------------
             # Mode live
             # -------------------------
-            handle_live_symbol = get_handle_live_symbol()
+            from live.live_engine import get_handle_live_symbol
 
-            async def text_dashboard_loop():
-                """Boucle pour le mode text simple → juste refresh_dashboard"""
+            async def dashboard_loop():
+                """Boucle pour le mode textdashboard avec positions ouvertes"""
                 while not stop_event.is_set():
                     await refresh_dashboard()
-                    await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
 
-            async def textdashboard_loop():
-                """Boucle pour le mode textdashboard → dashboard + handle_live_symbol"""
-                while not stop_event.is_set():
-                    await refresh_dashboard()
                     # Détermination des symboles à traiter
                     if args.auto_select:
                         current_symbols = symbols_container.get('list', [])
@@ -224,21 +219,17 @@ async def async_main(args):
                     else:
                         current_symbols = []
 
+                    handle_fn = get_handle_live_symbol()  # retourne la fonction handle_live_symbol
                     for symbol in current_symbols:
-                        try:
-                            await handle_live_symbol(symbol, pool, real_run, dry_run, args)
-                        except Exception as e:
-                            log(f"[ERROR] Erreur lors du traitement de {symbol}: {e}", level="ERROR")
+                        await handle_fn(symbol, pool, real_run, dry_run, args)
 
-                    await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
+                    await asyncio.sleep(config.performance.dashboard_refresh_interval)
 
-            # Choix du mode live selon args.mode
-            if args.mode == "text":
-                task = asyncio.create_task(text_dashboard_loop())
-            elif args.mode == "textdashboard":
-                task = asyncio.create_task(textdashboard_loop())
-            elif args.mode == "webdashboard":
-                # On garde le main_loop classique pour webdashboard
+            # Choix du mode textdashboard ou mode classique
+            if getattr(args, "mode", None) == "textdashboard":
+                task = asyncio.create_task(dashboard_loop())
+            else:
+                # Mode classique optimisé
                 if args.auto_select:
                     task = asyncio.create_task(
                         main_loop(
@@ -269,6 +260,8 @@ async def async_main(args):
     finally:
         await pool.close()
         log(f" Connection pool closed, program terminated", level="ERROR")
+
+
 
 
 if __name__ == "__main__":
