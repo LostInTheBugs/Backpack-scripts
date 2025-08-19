@@ -59,16 +59,11 @@ def position_already_open(symbol: str):
             return True
     return False
 
-def get_real_pnl(symbol: str, side: str, entry_price: float, amount: float, leverage: float = 1.0) -> dict:
-    """
-    Calcule le PnL réel en USD et en %.
-    """
-    # Import local pour éviter circular import
+async def get_real_pnl(symbol: str, side: str, entry_price: float, amount: float, leverage: float = 1.0) -> dict:
     from utils.get_market import get_market
 
-    mark_price = get_market(symbol)["price"]
-    if mark_price is None or mark_price == 0:
-        mark_price = entry_price
+    market = await get_market(symbol)
+    mark_price = market.get("price", entry_price) or entry_price
 
     if side.lower() == "long":
         pnl_usd = (mark_price - entry_price) * amount
@@ -77,7 +72,6 @@ def get_real_pnl(symbol: str, side: str, entry_price: float, amount: float, leve
 
     pnl_percent = (pnl_usd / (entry_price * amount)) * leverage * 100
     return {"pnl_usd": pnl_usd, "pnl_percent": pnl_percent}
-
 
 def safe_float(val, default=0.0):
     """Convertit val en float, même si c'est une string invalide ou vide."""
