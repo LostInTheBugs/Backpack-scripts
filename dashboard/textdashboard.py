@@ -336,7 +336,7 @@ async def refresh_dashboard():
             [p["symbol"], p["side"], p["entry_price"], f'{p["pnl"]:.2f}%', p["amount"], p["duration"], f'{p["trailing_stop"]:.2f}%']
             for p in positions
         ],
-        headers=["Symbol", "Side", "Entry", "PnL%", "Amount", "Duration", "Trailing Stop"],
+        headers=["Syml", "Side", "Entry", "PnL%", "Amount", "Duration", "Trailing Stop"],
         tablefmt="pretty"
     )
     log("\n" + table)
