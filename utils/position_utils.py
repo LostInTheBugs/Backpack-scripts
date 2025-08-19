@@ -4,6 +4,7 @@ import asyncio
 from bpx.account import Account
 from utils.logger import log
 from config.settings import get_config
+from typing import List, Dict, Any
 
 # Charger la configuration
 config = get_config()
@@ -72,45 +73,56 @@ async def get_real_pnl(symbol: str):
 
 
 def safe_float(val, default=0.0):
-    """Convertit val en float, même si c'est une string non valide."""
+    """Convertit val en float, même si c'est une string invalide ou vide."""
     try:
         return float(val)
     except (TypeError, ValueError):
         return default
 
-async def get_real_positions():
-    """Retourne une liste de positions ouvertes avec détails pour dashboard."""
-    positions = await get_open_positions()
+async def get_real_positions(account_client) -> List[Dict[str, Any]]:
+    """
+    Récupère les positions ouvertes depuis l'API Backpack et renvoie une liste de dicts
+    avec symbol, side, entry_price, pnl%, amount, duration et trailing_stop.
+    
+    account_client : instance de Account() ou objet similaire ayant get_open_positions()
+    """
+    try:
+        raw_positions = await account_client.get_open_positions()
+    except Exception as e:
+        log(f"[ERROR] Impossible de récupérer les positions : {e}", level="ERROR")
+        return []
+
     positions_list = []
 
-    for symbol, p in positions.items():
-        net_qty = safe_float(p.get("net_qty", 0))
-        if net_qty != 0:
-            entry_price = safe_float(p.get("entry_price", 0))
-            side = p.get("side", "long" if net_qty > 0 else "short")
-            trailing_stop = safe_float(p.get("trailingStopPct", 0.0))
-            duration_seconds = int(p.get("durationSeconds", 0))
+    for pos in raw_positions:
+        net_qty = safe_float(pos.get("netQuantity", 0))
+        if net_qty == 0:
+            continue
 
-            # Calcul du PnL réel en pourcentage
-            pnl_usdc = safe_float(p.get("pnlUnrealized", 0.0))
-            notional = abs(net_qty) * entry_price
-            pnl_percent = (pnl_usdc / notional * 100) if notional != 0 else 0.0
+        entry_price = safe_float(pos.get("entryPrice", 0))
+        pnl_usdc = safe_float(pos.get("pnlUnrealized", 0))
+        notional = abs(net_qty) * entry_price
+        pnl_percent = (pnl_usdc / notional * 100) if notional != 0 else 0.0
 
-            # Formatage durée
-            h = duration_seconds // 3600
-            m = (duration_seconds % 3600) // 60
-            s = duration_seconds % 60
-            duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
+        side = "long" if net_qty > 0 else "short"
+        trailing_stop = safe_float(pos.get("trailingStopPct", 0.0))
+        duration_seconds = int(pos.get("durationSeconds", 0))
 
-            positions_list.append({
-                "symbol": symbol,
-                "side": side,
-                "entry_price": entry_price,
-                "pnl": pnl_percent,
-                "amount": abs(net_qty),
-                "duration": duration,
-                "trailing_stop": trailing_stop
-            })
+        # Formatage durée en h m s
+        h = duration_seconds // 3600
+        m = (duration_seconds % 3600) // 60
+        s = duration_seconds % 60
+        duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
+
+        positions_list.append({
+            "symbol": pos.get("symbol", "UNKNOWN"),
+            "side": side,
+            "entry_price": entry_price,
+            "pnl": pnl_percent,
+            "amount": abs(net_qty),
+            "duration": duration,
+            "trailing_stop": trailing_stop
+        })
 
     log(f"Fetched {len(positions_list)} open positions from account", level="DEBUG")
     return positions_list
