@@ -153,7 +153,7 @@ async def async_main(args):
 
     from utils.scan_all_symbols import scan_all_symbols
 
-    # Choix des symboles initiaux
+    # Choix des symbols à scanner initialement
     if args.auto_select:
         initial_symbols = auto_symbols
     elif args.symbols:
@@ -161,7 +161,7 @@ async def async_main(args):
     else:
         initial_symbols = load_symbols_from_file()
 
-    log(f"Initial scan of symbols before main loop: {initial_symbols}", level="DEBUG")
+    log(f" Initial scan of symbols before main loop: {initial_symbols}", level="DEBUG")
     await scan_all_symbols(pool, initial_symbols)
 
     loop = asyncio.get_running_loop()
@@ -177,51 +177,19 @@ async def async_main(args):
     real_run = getattr(args, "real_run", False)
     dry_run = getattr(args, "dry_run", True)
 
-    latest_positions = {}  # symbol -> dict avec entry_price, side, amount, trailing_stop, pnl, current_price
-    symbols_container = {"list": initial_symbols}  # pour auto_select
-
-    handle_live_symbol = get_handle_live_symbol()
-
-    async def update_positions_loop():
-        """Met à jour les positions et PnL en parallèle, toutes les 0.5s"""
-        while not stop_event.is_set():
-            if args.auto_select:
-                current_symbols = symbols_container.get("list", [])
-            elif args.symbols:
-                current_symbols = args.symbols.split(",")
-            else:
-                current_symbols = []
-
-            for symbol in current_symbols:
-                try:
-                    pos = await handle_live_symbol(symbol, pool, real_run, dry_run, args)
-                    if pos:
-                        latest_positions[symbol] = pos
-                except Exception as e:
-                    log(f"[ERROR] Error updating {symbol}: {e}", level="ERROR")
-
-            await asyncio.sleep(0.5)
-
-    async def refresh_dashboard_loop():
-        """Rafraîchit le dashboard toutes les secondes"""
-        while not stop_event.is_set():
-            if latest_positions:
-                await refresh_dashboard(latest_positions)
-            else:
-                log("[INFO] No positions to display")
-            await asyncio.sleep(1)
-
     try:
         if args.backtest:
-            # Mode backtest (inchangé)
-            log("Mode backtest activé", level="DEBUG")
+            # -------------------------
+            # Mode backtest
+            # -------------------------
+            log(" Mode backtest activé", level="DEBUG")
             if args.symbols:
                 symbols = args.symbols.split(",")
             else:
                 symbols = load_symbols_from_file()
 
             if not symbols:
-                log("Liste de symboles vide, backtest annulé", level="ERROR")
+                log(" Liste de symboles vide, backtest annulé", level="ERROR")
                 return
 
             if isinstance(args.backtest, tuple):
@@ -233,52 +201,74 @@ async def async_main(args):
                     await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
 
         else:
+            # -------------------------
             # Mode live
-            tasks = [
-                asyncio.create_task(update_positions_loop()),
-                asyncio.create_task(refresh_dashboard_loop())
-            ]
+            # -------------------------
+            handle_live_symbol = get_handle_live_symbol()
 
-            # Pour webdashboard, ajouter main_loop si nécessaire
-            if args.mode == "webdashboard":
+            async def text_dashboard_loop():
+                """Boucle pour le mode text simple → juste refresh_dashboard"""
+                while not stop_event.is_set():
+                    await refresh_dashboard()
+                    await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
+
+            async def textdashboard_loop():
+                """Boucle pour le mode textdashboard → dashboard + handle_live_symbol"""
+                while not stop_event.is_set():
+                    await refresh_dashboard()
+                    # Détermination des symboles à traiter
+                    if args.auto_select:
+                        current_symbols = symbols_container.get('list', [])
+                    elif args.symbols:
+                        current_symbols = args.symbols.split(",")
+                    else:
+                        current_symbols = []
+
+                    for symbol in current_symbols:
+                        try:
+                            await handle_live_symbol(symbol, pool, real_run, dry_run, args)
+                        except Exception as e:
+                            log(f"[ERROR] Erreur lors du traitement de {symbol}: {e}", level="ERROR")
+
+                    await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
+
+            # Choix du mode live selon args.mode
+            if args.mode == "text":
+                task = asyncio.create_task(text_dashboard_loop())
+            elif args.mode == "textdashboard":
+                task = asyncio.create_task(textdashboard_loop())
+            elif args.mode == "webdashboard":
+                # On garde le main_loop classique pour webdashboard
                 if args.auto_select:
-                    tasks.append(
-                        asyncio.create_task(
-                            main_loop(
-                                [],
-                                pool,
-                                real_run=real_run,
-                                dry_run=dry_run,
-                                auto_select=True,
-                                symbols_container=symbols_container,
-                                args=args
-                            )
+                    task = asyncio.create_task(
+                        main_loop(
+                            [],
+                            pool,
+                            real_run=real_run,
+                            dry_run=dry_run,
+                            auto_select=True,
+                            symbols_container=symbols_container,
+                            args=args
                         )
                     )
                 elif args.symbols:
                     symbols = args.symbols.split(",")
-                    tasks.append(
-                        asyncio.create_task(
-                            main_loop(symbols, pool, real_run=real_run, dry_run=dry_run, args=args)
-                        )
+                    task = asyncio.create_task(
+                        main_loop(symbols, pool, real_run=real_run, dry_run=dry_run, args=args)
                     )
                 else:
-                    tasks.append(
-                        asyncio.create_task(
-                            watch_symbols_file(pool=pool, real_run=real_run, dry_run=dry_run)
-                        )
+                    task = asyncio.create_task(
+                        watch_symbols_file(pool=pool, real_run=real_run, dry_run=dry_run)
                     )
 
             stop_task = asyncio.create_task(stop_event.wait())
-            await asyncio.wait(tasks + [stop_task], return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
 
     except Exception:
         traceback.print_exc()
     finally:
         await pool.close()
-        log(f"Connection pool closed, program terminated", level="ERROR")
-
-
+        log(f" Connection pool closed, program terminated", level="ERROR")
 
 
 if __name__ == "__main__":
