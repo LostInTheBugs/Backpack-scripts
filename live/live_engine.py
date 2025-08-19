@@ -263,7 +263,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
 
 async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
-    pnl_usdc, _ = await get_real_pnl(symbol)
+    pnl_usdc, notional, margin, lev = await get_real_pnl(symbol)
     pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100
     max_pnl = MAX_PNL_TRACKER.get(symbol, pnl_percent)
     if pnl_percent > max_pnl:
