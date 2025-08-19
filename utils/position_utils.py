@@ -56,20 +56,26 @@ async def position_already_open(symbol: str) -> bool:
 
 
 async def get_real_pnl(symbol: str):
-    """Retourne le PnL non réalisé et la valeur notionnelle d'une position."""
+    """Retourne (unrealized_pnl_usdc, notional, margin, leverage) pour une position."""
     positions = await get_open_positions()
     pos = positions.get(symbol)
     if not pos:
-        return 0.0, 1.0
+        return 0.0, 1.0, 1.0, 1
 
     try:
-        pnl_unrealized = float(pos.get("pnlUnrealized", 0.0))
-        net_qty = float(pos.get("net_qty", 1.0))
-        notional = abs(net_qty) * float(pos.get("entry_price", 1.0))
-        return pnl_unrealized, notional
+        net_qty = float(pos.get("net_qty", 0.0))
+        entry_price = float(pos.get("entry_price", 0.0))
+        notional = abs(net_qty) * entry_price
+        # levier: essaye par position sinon config
+        lev = getattr(config.trading, "leverage", 1)
+        margin = notional / lev if lev > 0 else notional
+
+        # ✅ bonne clé:
+        pnl_unrealized = float(pos.get("pnlUnrealized", None) or pos.get("unrealizedPnl", 0.0))
+        return pnl_unrealized, notional, margin, lev
     except Exception as e:
         log(f"[ERROR] get_real_pnl({symbol}): {e}", level="ERROR")
-        return 0.0, 1.0
+        return 0.0, 1.0, 1.0, 1
 
 
 def safe_float(val, default=0.0):
@@ -78,6 +84,15 @@ def safe_float(val, default=0.0):
         return float(val)
     except (TypeError, ValueError):
         return default
+
+def _get_first_float(d, keys, default=0.0):
+    for k in keys:
+        if k in d and d[k] is not None:
+            try:
+                return float(d[k])
+            except (TypeError, ValueError):
+                pass
+    return default
 
 async def get_real_positions(account=None) -> List[Dict[str, Any]]:
     if account is None:
@@ -90,37 +105,61 @@ async def get_real_positions(account=None) -> List[Dict[str, Any]]:
         return []
 
     positions_list = []
-    leverage = getattr(config.trading, "leverage", 1)  # récupère le levier depuis settings.yaml
+    default_leverage = getattr(config.trading, "leverage", 1)
 
     for pos in raw_positions:
         net_qty = safe_float(pos.get("netQuantity", 0))
         if net_qty == 0:
             continue
 
-        entry_price = safe_float(pos.get("entryPrice", 0))
-        pnl_usdc = safe_float(pos.get("pnlUnrealized", 0))
+        # Champs principaux
+        symbol = pos.get("symbol", "UNKNOWN")
+        entry_price = _get_first_float(pos, ["entryPrice", "avgEntryPrice"], 0.0)
+        # Backpack peut exposer mark/index/last selon endpoints
+        mark_price = _get_first_float(pos, ["markPrice", "indexPrice", "lastPrice"], entry_price)
+        leverage = int(_get_first_float(pos, ["leverage"], default_leverage)) or 1
+
+        # Notional / Marge
         notional = abs(net_qty) * entry_price
         margin = notional / leverage if leverage > 0 else notional
+
+        # ✅ Bonne clé pour PnL USDC, avec fallback si manquant
+        pnl_usdc = _get_first_float(pos, ["unrealizedPnl", "pnlUnrealized"], None)
+        if pnl_usdc is None:
+            # Fallback: calcule via prix si API ne donne pas PnL
+            if net_qty > 0:  # long
+                pnl_usdc = (mark_price - entry_price) * net_qty
+            else:            # short
+                pnl_usdc = (entry_price - mark_price) * abs(net_qty)
+
+        # PnL% sur marge (aligné Backpack)
         pnl_percent = (pnl_usdc / margin * 100) if margin != 0 else 0.0
+
+        # Optionnel: % “côté-position” (ce qui apparaît entre parenthèses sur Backpack)
+        if net_qty > 0:  # long
+            ret_pct = ((mark_price - entry_price) / entry_price * 100) if entry_price else 0.0
+        else:            # short (inverse la variation)
+            ret_pct = ((entry_price - mark_price) / entry_price * 100) if entry_price else 0.0
 
         side = "long" if net_qty > 0 else "short"
         trailing_stop = safe_float(pos.get("trailingStopPct", 0.0))
         duration_seconds = int(pos.get("durationSeconds", 0))
-
-        # Formatage durée
         h = duration_seconds // 3600
         m = (duration_seconds % 3600) // 60
         s = duration_seconds % 60
         duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
 
         positions_list.append({
-            "symbol": pos.get("symbol", "UNKNOWN"),
+            "symbol": symbol,
             "side": side,
             "entry_price": entry_price,
-            "pnl": pnl_percent,
+            "pnl": pnl_percent,        # ← ta colonne PnL% (sur marge)
+            "pnl_usdc": pnl_usdc,      # ← utile pour un affichage PnL$
+            "ret_pct": ret_pct,        # ← optionnel: % “côté-position” (parenthèses Backpack)
             "amount": abs(net_qty),
             "duration": duration,
-            "trailing_stop": trailing_stop
+            "trailing_stop": trailing_stop,
+            "leverage": leverage
         })
 
     log(f"Fetched {len(positions_list)} open positions from account", level="DEBUG")
