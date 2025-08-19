@@ -101,7 +101,7 @@ async def get_open_positions() -> Dict[str, Dict[str, Any]]:
             continue
     return result
 
-async def get_real_pnl() -> List[Dict[str, Any]]:
+async def get_real_positions() -> List[Dict[str, Any]]:
     raw_positions = await get_raw_positions()
     positions_list = []
     default_leverage = getattr(config.trading, "leverage", 1)
