@@ -100,14 +100,23 @@ def get_real_positions():
     Récupère les positions ouvertes réelles depuis Backpack Exchange
     et calcule le PnL réel.
     """
-    positions = account.get_open_positions()
+    try:
+        positions = account.get_open_positions()  # méthode correcte
+    except Exception as e:
+        log(f"[ERROR] Failed to get real positions: {e}", level="ERROR")
+        positions = []
+
     result = []
 
     for pos in positions:
-        symbol = pos["symbol"]
-        side = pos["side"]
-        entry_price = pos["entry_price"]
-        amount = pos["amount"]
+        symbol = pos.get("symbol")
+        net_qty = float(pos.get("netQuantity", 0))
+        if net_qty == 0:
+            continue  # ignorer les positions nulles
+
+        side = "long" if net_qty > 0 else "short"
+        entry_price = float(pos.get("entryPrice", 0))
+        amount = abs(net_qty)
         leverage = pos.get("leverage", 1)
         timestamp = pos.get("timestamp", datetime.utcnow())
 
@@ -125,3 +134,4 @@ def get_real_positions():
         })
 
     return result
+
