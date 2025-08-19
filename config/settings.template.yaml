@@ -15,8 +15,8 @@ trading:
 database:
   retention_days: 90              # Data retention in days
   pool_min_size: 5                # Minimum pool connections
-  pool_max_size: 20               # Maximum pool connections
-  max_age_seconds: 600            # Max age for fresh data in seconds
+  pool_max_size: 15               # Maximum pool connections
+  max_age_seconds: 60             # Max age for fresh data in seconds
 
 strategy:
   default_strategy: "DynamicThreeTwo"     # Default trading strategy

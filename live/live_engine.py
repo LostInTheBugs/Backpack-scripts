@@ -55,7 +55,7 @@ async def scan_symbol(pool, symbol):
     try:
         end_ts = datetime.now(timezone.utc)
         start_ts = end_ts - timedelta(seconds=60)
-        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts, pool=pool)
         if df is None or df.empty:
             return symbol, "No data"
 
@@ -150,7 +150,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
         end_ts = datetime.now(timezone.utc)
         start_ts = end_ts - timedelta(seconds=600)
-        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts, pool=pool)
         if df is None or df.empty:
             log(f"[{symbol}] ❌ No 1s data retrieved from local database", level="ERROR")
             return

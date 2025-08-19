@@ -93,6 +93,10 @@ class OptimizedDashboard:
         # Verrous pour éviter les appels concurrents
         self.processing_symbols = set()
         
+        # Limite de concurrence pour éviter trop de connexions
+        self.max_concurrent_symbols = min(5, config.database.pool_max_size - 2)
+        self.symbol_semaphore = asyncio.Semaphore(self.max_concurrent_symbols)
+        
     async def check_symbols_status(self):
         """Vérifie le statut des symboles (actifs/ignorés) - moins fréquent"""
         current_time = time.time()
@@ -121,7 +125,7 @@ class OptimizedDashboard:
         log(f"Symbols status updated: {len(new_active)} active, {len(new_ignored)} ignored", level="DEBUG")
 
     async def process_symbol_with_throttling(self, symbol):
-        """Traite un symbole avec limitation du taux d'appels API"""
+        """Traite un symbole avec limitation du taux d'appels API et gestion des connexions"""
         current_time = time.time()
         
         # Vérifier si on doit attendre avant le prochain appel
@@ -133,80 +137,117 @@ class OptimizedDashboard:
         # Éviter les appels concurrents pour le même symbole
         if symbol in self.processing_symbols:
             return
-            
-        self.processing_symbols.add(symbol)
         
-        try:
-            # Marquer l'heure de l'appel
-            self.last_api_call[symbol] = current_time
+        # Limiter le nombre de symboles traités simultanément
+        async with self.symbol_semaphore:
+            self.processing_symbols.add(symbol)
             
-            # Appel à l'API
-            result = await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
-            
-            if result:
-                action = result.get("signal", "N/A")
-                price = result.get("price", 0.0)
-                pnl = result.get("pnl", 0.0)
-                amount = result.get("amount", 0.0)
-                duration = result.get("duration", "0s")
-                trailing_stop = result.get("trailing_stop", 0.0)
+            try:
+                # Marquer l'heure de l'appel
+                self.last_api_call[symbol] = current_time
                 
-                # Ajouter l'événement de trade si un signal est présent
-                if action in ["BUY", "SELL"]:
-                    self.trade_events.append({
-                        "time": datetime.now().strftime("%H:%M:%S"),
-                        "symbol": symbol,
-                        "action": action,
-                        "price": price
-                    })
-                    # Garder seulement les 20 derniers événements
-                    if len(self.trade_events) > 20:
-                        self.trade_events = self.trade_events[-20:]
+                # Appel à l'API avec le pool existant
+                result = await self.handle_live_symbol_with_pool(symbol)
                 
-                # Mettre à jour les positions ouvertes
-                self.open_positions[symbol] = {
-                    "symbol": symbol,
-                    "pnl": pnl,
-                    "amount": amount,
-                    "duration": duration,
-                    "trailing_stop": trailing_stop
-                }
-            else:
-                # Supprimer la position si fermée
-                if symbol in self.open_positions:
-                    del self.open_positions[symbol]
+                if result:
+                    action = result.get("signal", "N/A")
+                    price = result.get("price", 0.0)
+                    pnl = result.get("pnl", 0.0)
+                    amount = result.get("amount", 0.0)
+                    duration = result.get("duration", "0s")
+                    trailing_stop = result.get("trailing_stop", 0.0)
                     
+                    # Ajouter l'événement de trade si un signal est présent
+                    if action in ["BUY", "SELL"]:
+                        self.trade_events.append({
+                            "time": datetime.now().strftime("%H:%M:%S"),
+                            "symbol": symbol,
+                            "action": action,
+                            "price": price
+                        })
+                        # Garder seulement les 20 derniers événements
+                        if len(self.trade_events) > 20:
+                            self.trade_events = self.trade_events[-20:]
+                    
+                    # Mettre à jour les positions ouvertes
+                    self.open_positions[symbol] = {
+                        "symbol": symbol,
+                        "pnl": pnl,
+                        "amount": amount,
+                        "duration": duration,
+                        "trailing_stop": trailing_stop
+                    }
+                else:
+                    # Supprimer la position si fermée
+                    if symbol in self.open_positions:
+                        del self.open_positions[symbol]
+                        
+            except Exception as e:
+                log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
+                # En cas d'erreur de connexion, attendre plus longtemps
+                if "too many clients" in str(e).lower():
+                    log(f"[WARNING] Too many connections, increasing interval for {symbol}", level="WARNING")
+                    self.last_api_call[symbol] = current_time + API_CALL_INTERVAL * 2
+            finally:
+                self.processing_symbols.discard(symbol)
+
+    async def handle_live_symbol_with_pool(self, symbol):
+        """Version modifiée de handle_live_symbol qui utilise le pool existant"""
+        try:
+            # Au lieu d'appeler handle_live_symbol qui peut créer de nouvelles connexions,
+            # on utilise directement le pool existant
+            result = await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
+            return result
         except Exception as e:
-            log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
-        finally:
-            self.processing_symbols.discard(symbol)
+            # Si on a une erreur de connexion, on peut essayer de récupérer
+            if "too many clients" in str(e).lower():
+                log(f"[ERROR] Connection pool exhausted for {symbol}, will retry later", level="ERROR")
+                await asyncio.sleep(API_CALL_INTERVAL)
+            raise
 
     async def symbol_processor(self):
-        """Processeur principal pour tous les symboles avec throttling"""
+        """Processeur principal pour tous les symboles avec throttling et gestion des connexions"""
         while True:
             try:
                 # Vérifier le statut des symboles périodiquement
                 await self.check_symbols_status()
                 
-                # Traiter les symboles actifs avec throttling
+                # Limiter le nombre de symboles actifs si trop nombreux
+                active_symbols = self.active_symbols
+                if len(active_symbols) > self.max_concurrent_symbols:
+                    log(f"Too many active symbols ({len(active_symbols)}), processing only first {self.max_concurrent_symbols}", level="WARNING")
+                    active_symbols = active_symbols[:self.max_concurrent_symbols]
+                
+                # Traiter les symboles actifs avec throttling et limitation de concurrence
                 tasks = []
-                for symbol in self.active_symbols:
-                    task = asyncio.create_task(self.process_symbol_with_throttling(symbol))
+                for i, symbol in enumerate(active_symbols):
+                    # Étaler les appels dans le temps pour éviter les pics
+                    delay = (i * API_CALL_INTERVAL) / len(active_symbols) if active_symbols else 0
+                    task = asyncio.create_task(self._process_symbol_delayed(symbol, delay))
                     tasks.append(task)
                 
                 # Attendre que toutes les tâches se terminent (ou timeout)
                 if tasks:
                     try:
-                        await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=API_CALL_INTERVAL)
+                        await asyncio.wait_for(
+                            asyncio.gather(*tasks, return_exceptions=True), 
+                            timeout=API_CALL_INTERVAL * 2
+                        )
                     except asyncio.TimeoutError:
                         log("Some API calls timed out, continuing...", level="WARNING")
                 
                 # Attendre avant la prochaine itération
-                await asyncio.sleep(1)  # Check rapide pour les nouveaux symboles
+                await asyncio.sleep(max(1, API_CALL_INTERVAL // 2))
                 
             except Exception as e:
                 log(f"[ERROR] Erreur dans symbol_processor: {e}", level="ERROR")
                 await asyncio.sleep(5)  # Attendre plus longtemps en cas d'erreur
+
+    async def _process_symbol_delayed(self, symbol, delay):
+        """Traite un symbole avec un délai pour étaler les appels"""
+        if delay > 0:
+            await asyncio.sleep(delay)
+        await self.process_symbol_with_throttling(symbol)
 
     async def render_dashboard(self):
         """Rendu du dashboard avec intervalle contrôlé"""
@@ -280,6 +321,8 @@ class OptimizedDashboard:
                 print(f"\n=== STATS ===")
                 print(f"Total API calls tracked: {len(self.last_api_call)}")
                 print(f"Symbols currently processing: {len(self.processing_symbols)}")
+                print(f"Max concurrent symbols: {self.max_concurrent_symbols}")
+                print(f"Pool size: {config.database.pool_min_size}-{config.database.pool_max_size}")
                 print(f"Last symbols check: {int(current_time - self.last_symbols_check)}s ago")
                 
             except Exception as e:
