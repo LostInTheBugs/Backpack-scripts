@@ -124,16 +124,43 @@ async def process_symbol_with_throttling(self, symbol):
             log(f"handle_live_symbol({symbol}) returned: {result}", level="DEBUG")
 
             if result:
-                # Extraire toutes les infos utiles pour le dashboard
+                # Récupération des valeurs
+                side = result.get("side", "N/A")
+                entry = result.get("entry_price", 0.0)
+                amount = result.get("amount", 0.0)
+                pnl_pct = result.get("pnl", 0.0)   # % sur marge
+                duration = result.get("duration", "0s")
+                trailing_stop = result.get("trailing_stop", 0.0)
+                price = result.get("price", 0.0)
+
+                # Calcul PnL$ et retour %
+                if entry > 0 and amount > 0 and price > 0:
+                    if side.lower() == "long":
+                        pnl_usdc = (price - entry) * amount
+                        ret_pct = (price - entry) / entry * 100
+                    elif side.lower() == "short":
+                        pnl_usdc = (entry - price) * amount
+                        ret_pct = (entry - price) / entry * 100
+                    else:
+                        pnl_usdc = 0.0
+                        ret_pct = 0.0
+                else:
+                    pnl_usdc = 0.0
+                    ret_pct = 0.0
+
+                # Stockage dans le dictionnaire
                 self.open_positions[symbol] = {
                     "symbol": symbol,
-                    "side": result.get("side", "N/A"),
-                    "entry_price": result.get("entry_price", 0.0),
-                    "pnl": result.get("pnl", 0.0),
-                    "amount": result.get("amount", 0.0),
-                    "duration": result.get("duration", "0s"),
-                    "trailing_stop": result.get("trailing_stop", 0.0)
+                    "side": side,
+                    "entry_price": entry,
+                    "pnl": pnl_pct,
+                    "amount": amount,
+                    "duration": duration,
+                    "trailing_stop": trailing_stop,
+                    "pnl_usdc": pnl_usdc,
+                    "ret_pct": ret_pct,
                 }
+
 
                 action = result.get("signal", None)
                 price = result.get("price", 0.0)
@@ -259,10 +286,10 @@ async def process_symbol_with_throttling(self, symbol):
                         positions_data.append([
                             p.get("symbol", "N/A"),
                             p.get("side", "N/A"),
-                            f'{p.get("entry_price", 0.0):.6f}',
-                            f'{p.get("pnl", 0.0):.2f}%',                  # ✅ PnL% (marge)
-                            f'{p.get("pnl_usdc", 0.0):.2f}$',             # ✅ PnL$ en USDC
-                            f'({p.get("ret_pct", 0.0):.2f}%)',            # ✅ ret% (entre parenthèses comme Backpack)
+                            f'{p.get("entry_price", 0.0):.6f}',               # Entry
+                            f'{p.get("pnl", 0.0):.2f}%',                  # PnL% (marge)
+                            f'{p.get("pnl_usdc", 0.0):.2f}$',             # PnL$ en USDC
+                            f'({p.get("ret_pct", 0.0):.2f}%)',            # ret% (réel)
                             p.get("amount", 0.0),
                             p.get("duration", "0s"),
                             f'{p.get("trailing_stop", 0.0):.2f}%'
