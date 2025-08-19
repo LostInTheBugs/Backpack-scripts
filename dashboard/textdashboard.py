@@ -114,7 +114,7 @@ class OptimizedDashboard:
                 
                 # Appel à l'API avec le pool existant
                 result = await self.handle_live_symbol_with_pool(symbol)
-                
+                log(f"[DEBUG] handle_live_symbol({symbol}) returned: {result}")
                 if result:
                     action = result.get("signal", "N/A")
                     price = result.get("price", 0.0)
