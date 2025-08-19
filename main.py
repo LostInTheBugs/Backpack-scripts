@@ -151,8 +151,7 @@ async def async_main(args):
         max_size=db_config.pool_max_size
     )
 
-    from utils.scan_all_symbols import scan_all_symbols  # Ajuste chemin si besoin
-    from utils.position_utils import get_open_positions  # Pour positions live
+    from utils.scan_all_symbols import scan_all_symbols
 
     # Choix des symbols à scanner
     if args.auto_select:
@@ -175,13 +174,20 @@ async def async_main(args):
     loop.add_signal_handler(signal.SIGINT, shutdown)
     loop.add_signal_handler(signal.SIGTERM, shutdown)
 
+    real_run = getattr(args, "real_run", False)
+    dry_run = getattr(args, "dry_run", True)
+
     try:
         if args.backtest:
             # -------------------------
             # Mode backtest
             # -------------------------
             log(" Mode backtest activé", level="DEBUG")
-            symbols = args.symbols.split(",") if args.symbols else load_symbols_from_file()
+            if args.symbols:
+                symbols = args.symbols.split(",")
+            else:
+                symbols = load_symbols_from_file()
+
             if not symbols:
                 log(" Liste de symboles vide, backtest annulé", level="ERROR")
                 return
@@ -189,40 +195,34 @@ async def async_main(args):
             if isinstance(args.backtest, tuple):
                 start_dt, end_dt = args.backtest
                 for symbol in symbols:
-                    log(f" [{symbol}] Starting backtest from {start_dt.date()} to {end_dt.date()} with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, (start_dt, end_dt), pg_dsn, args.strategie)
             else:
                 for symbol in symbols:
-                    log(f" [{symbol}] Starting {args.backtest}h backtest with {args.strategie} strategy", level="DEBUG")
                     await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
 
         else:
             # -------------------------
             # Mode live
             # -------------------------
-            log(" Mode live (pas de backtest)", level="DEBUG")
+            from live.live_engine import get_handle_live_symbol
 
             async def dashboard_loop():
                 """Boucle pour le mode textdashboard avec positions ouvertes"""
                 while not stop_event.is_set():
-                    # Refresh des positions ouvertes
-                    open_positions = await get_open_positions()
-                    await refresh_dashboard(open_positions=open_positions)
+                    await refresh_dashboard()
 
                     # Détermination des symboles à traiter
-                    current_symbols = []
                     if args.auto_select:
                         current_symbols = symbols_container.get('list', [])
                     elif args.symbols:
                         current_symbols = args.symbols.split(",")
+                    else:
+                        current_symbols = []
 
+                    handle_fn = get_handle_live_symbol()  # retourne la fonction handle_live_symbol
                     for symbol in current_symbols:
-                        handle_fn = get_handle_live_symbol()  # récupérer la fonction
-                        await handle_fn(symbol=symbol,
-                                        pool=pool,
-                                        real_run=args.real_run,
-                                        dry_run=args.dry_run,
-                                        args=args)
+                        await handle_fn(symbol, pool, real_run, dry_run, args)
+
                     await asyncio.sleep(config.performance.dashboard_refresh_interval)
 
             # Choix du mode textdashboard ou mode classique
@@ -235,8 +235,8 @@ async def async_main(args):
                         main_loop(
                             [],
                             pool,
-                            real_run=args.real_run,
-                            dry_run=args.dry_run,
+                            real_run=real_run,
+                            dry_run=dry_run,
                             auto_select=True,
                             symbols_container=symbols_container,
                             args=args
@@ -245,20 +245,13 @@ async def async_main(args):
                 elif args.symbols:
                     symbols = args.symbols.split(",")
                     task = asyncio.create_task(
-                        main_loop(symbols,
-                                  pool,
-                                  real_run=args.real_run,
-                                  dry_run=args.dry_run,
-                                  args=args)
+                        main_loop(symbols, pool, real_run=real_run, dry_run=dry_run, args=args)
                     )
                 else:
                     task = asyncio.create_task(
-                        watch_symbols_file(pool=pool,
-                                           real_run=args.real_run,
-                                           dry_run=args.dry_run)
+                        watch_symbols_file(pool=pool, real_run=real_run, dry_run=dry_run)
                     )
 
-            # Attente Ctrl+C ou fin de tâche
             stop_task = asyncio.create_task(stop_event.wait())
             await asyncio.wait([task, stop_task], return_when=asyncio.FIRST_COMPLETED)
 
@@ -267,6 +260,7 @@ async def async_main(args):
     finally:
         await pool.close()
         log(f" Connection pool closed, program terminated", level="ERROR")
+
 
 
 
