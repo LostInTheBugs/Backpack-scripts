@@ -80,7 +80,9 @@ def safe_float(val, default=0.0):
         return default
 
 async def get_real_positions(account=None) -> List[Dict[str, Any]]:
-
+    if account is None:
+        from .position_utils import account as default_account
+        account = default_account
     try:
         raw_positions = await account.get_open_positions()
     except Exception as e:
