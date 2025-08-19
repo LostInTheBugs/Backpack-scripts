@@ -10,7 +10,7 @@ config = get_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-log(f"Using public_key={public_key}, secret_key={'***' if secret_key else None}"n, level="DEBUG")
+log(f"Using public_key={public_key}, secret_key={'***' if secret_key else None}", level="DEBUG")
 
 # Création de l'objet Account central
 account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
