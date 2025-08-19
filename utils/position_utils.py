@@ -100,5 +100,5 @@ async def get_real_positions():
                 "trailing_stop": trailing_stop
             })
 
-    log(f"[INFO] Fetched {len(positions_list)} open positions from account")
+    log(f"Fetched {len(positions_list)} open positions from account", level="DEBUG")
     return positions_list
