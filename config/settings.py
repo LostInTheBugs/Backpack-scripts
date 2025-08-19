@@ -10,6 +10,7 @@ class PerformanceConfig(BaseSettings):
     api_call_interval: int = 5
     dashboard_refresh_interval: int = 2
     symbols_check_interval: int = 30
+    max_concurrent_symbols: int = 10
 
 class TradingConfig(BaseSettings):
     """Trading configuration settings"""
