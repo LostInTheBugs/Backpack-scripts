@@ -18,7 +18,7 @@ RETENTION_DAYS = 90
 def table_name_from_symbol(symbol: str) -> str:
     return "ohlcv_" + symbol.lower().replace("_", "__")
 
-async def fetch_ohlcv_1s(symbol: str, start_ts: datetime, end_ts: datetime) -> pd.DataFrame:
+async def fetch_ohlcv_1s(symbol: str, start_ts: datetime, end_ts: datetime, pool=None) -> pd.DataFrame:
     """
     Récupère les bougies 1s de la base PostgreSQL entre start_ts et end_ts pour symbol donné.
     """
@@ -33,13 +33,17 @@ async def fetch_ohlcv_1s(symbol: str, start_ts: datetime, end_ts: datetime) -> p
     ORDER BY timestamp ASC
     """
 
-    pool = await asyncpg.create_pool(dsn=PG_DSN)
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(query, start_ts, end_ts)
-    await pool.close()
+    if pool is None:
+        pool = await asyncpg.create_pool(dsn=PG_DSN)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, start_ts, end_ts)
+        await pool.close()
+    else:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, start_ts, end_ts)
 
     if not rows:
-        return pd.DataFrame()  # vide si rien trouvé
+        return pd.DataFrame()
 
     df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
     return df
