@@ -260,14 +260,16 @@ async def process_symbol_with_throttling(self, symbol):
                             p.get("symbol", "N/A"),
                             p.get("side", "N/A"),
                             f'{p.get("entry_price", 0.0):.6f}',
-                            f'{p.get("pnl", 0.2):.2f}%',
+                            f'{p.get("pnl", 0.0):.2f}%',                  # ✅ PnL% (marge)
+                            f'{p.get("pnl_usdc", 0.0):.2f}$',             # ✅ PnL$ en USDC
+                            f'({p.get("ret_pct", 0.0):.2f}%)',            # ✅ ret% (entre parenthèses comme Backpack)
                             p.get("amount", 0.0),
                             p.get("duration", "0s"),
                             f'{p.get("trailing_stop", 0.0):.2f}%'
                         ])
                     print(tabulate(
                         positions_data,
-                        headers=["Symbol", "Side", "Entry", "PnL%", "Amount", "Duration", "Trailing Stop"],
+                        headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
                         tablefmt="fancy_grid"
                     ))
                 else:
