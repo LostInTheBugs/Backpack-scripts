@@ -100,58 +100,57 @@ class OptimizedDashboard:
         log(f"Symbols status updated: {len(new_active)} active, {len(new_ignored)} ignored", level="DEBUG")
 
     # ---------------- SYMBOL PROCESSING ----------------
-    async def process_symbol_with_throttling(self, symbol):
-        current_time = time.time()
+async def process_symbol_with_throttling(self, symbol):
+    current_time = time.time()
 
-        if symbol in self.last_api_call:
-            time_since_last = current_time - self.last_api_call[symbol]
-            if time_since_last < API_CALL_INTERVAL:
-                return
-
-        if symbol in self.processing_symbols:
+    if symbol in self.last_api_call:
+        time_since_last = current_time - self.last_api_call[symbol]
+        if time_since_last < API_CALL_INTERVAL:
             return
 
-        async with self.symbol_semaphore:
-            self.processing_symbols.add(symbol)
-            try:
-                self.last_api_call[symbol] = current_time
-                result = await self.handle_live_symbol_with_pool(symbol)
-                log(f"handle_live_symbol({symbol}) returned: {result}", level="DEBUG")
-                if result:
-                    action = result.get("signal", "N/A")
-                    price = result.get("price", 0.0)
-                    pnl = result.get("pnl", 0.0)
-                    amount = result.get("amount", 0.0)
-                    duration = result.get("duration", "0s")
-                    trailing_stop = result.get("trailing_stop", 0.0)
+    if symbol in self.processing_symbols:
+        return
 
-                    if action in ["BUY", "SELL"]:
-                        self.trade_events.append({
-                            "time": datetime.now().strftime("%H:%M:%S"),
-                            "symbol": symbol,
-                            "action": action,
-                            "price": price
-                        })
-                        if len(self.trade_events) > 20:
-                            self.trade_events = self.trade_events[-20:]
+    async with self.symbol_semaphore:
+        self.processing_symbols.add(symbol)
+        try:
+            self.last_api_call[symbol] = current_time
+            result = await self.handle_live_symbol_with_pool(symbol)
+            log(f"handle_live_symbol({symbol}) returned: {result}", level="DEBUG")
 
-                    self.open_positions[symbol] = {
+            if result:
+                # Extraire toutes les infos utiles pour le dashboard
+                self.open_positions[symbol] = {
+                    "symbol": symbol,
+                    "side": result.get("side", "N/A"),
+                    "entry_price": result.get("entry_price", 0.0),
+                    "pnl": result.get("pnl", 0.0),
+                    "amount": result.get("amount", 0.0),
+                    "duration": result.get("duration", "0s"),
+                    "trailing_stop": result.get("trailing_stop", 0.0)
+                }
+
+                action = result.get("signal", None)
+                price = result.get("price", 0.0)
+                if action in ["BUY", "SELL"]:
+                    self.trade_events.append({
+                        "time": datetime.now().strftime("%H:%M:%S"),
                         "symbol": symbol,
-                        "pnl": pnl,
-                        "amount": amount,
-                        "duration": duration,
-                        "trailing_stop": trailing_stop
-                    }
-                else:
-                    if symbol in self.open_positions:
-                        del self.open_positions[symbol]
+                        "action": action,
+                        "price": price
+                    })
+                    if len(self.trade_events) > 20:
+                        self.trade_events = self.trade_events[-20:]
+            else:
+                if symbol in self.open_positions:
+                    del self.open_positions[symbol]
 
-            except Exception as e:
-                log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
-                if "too many clients" in str(e).lower():
-                    self.last_api_call[symbol] = current_time + API_CALL_INTERVAL * 2
-            finally:
-                self.processing_symbols.discard(symbol)
+        except Exception as e:
+            log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
+            if "too many clients" in str(e).lower():
+                self.last_api_call[symbol] = current_time + API_CALL_INTERVAL * 2
+        finally:
+            self.processing_symbols.discard(symbol)
 
     async def handle_live_symbol_with_pool(self, symbol):
         try:
@@ -253,15 +252,17 @@ class OptimizedDashboard:
                     positions_data = []
                     for p in self.open_positions.values():
                         positions_data.append([
-                            p["symbol"],
-                            f'{p["pnl"]:.2f}%',
-                            p["amount"],
-                            p["duration"],
-                            f'{p["trailing_stop"]}%'
+                            p.get("symbol", "N/A"),
+                            p.get("side", "N/A"),
+                            f'{p.get("entry_price", 0.0):.6f}',
+                            f'{p.get("pnl", 0.2):.2f}%',
+                            p.get("amount", 0.0),
+                            p.get("duration", "0s"),
+                            f'{p.get("trailing_stop", 0.0):.2f}%'
                         ])
                     print(tabulate(
                         positions_data,
-                        headers=["Symbol", "PnL", "Amount", "Duration", "Trailing Stop"],
+                        headers=["Symbol", "Side", "Entry", "PnL%", "Amount", "Duration", "Trailing Stop"],
                         tablefmt="fancy_grid"
                     ))
                 else:
