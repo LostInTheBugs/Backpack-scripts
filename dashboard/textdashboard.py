@@ -176,7 +176,7 @@ class OptimizedDashboard:
                     start_idx = current_batch * self.max_concurrent_symbols
                     end_idx = min(start_idx + self.max_concurrent_symbols, total_symbols)
                     active_symbols = active_symbols[start_idx:end_idx]
-                    log(f"Processing batch {current_batch + 1}: symbols {start_idx+1}-{end_idx} of {total_symbols} total", level="INFO")
+                    log(f"Processing batch {current_batch + 1}: symbols {start_idx+1}-{end_idx} of {total_symbols} total", level="DEBUG")
                 else:
                     log(f"Processing all {total_symbols} active symbols", level="DEBUG")
 
