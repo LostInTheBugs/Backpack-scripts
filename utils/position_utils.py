@@ -79,7 +79,7 @@ def safe_float(val, default=0.0):
     except (TypeError, ValueError):
         return default
 
-async def get_real_positions(account) -> List[Dict[str, Any]]:
+async def get_real_positions() -> List[Dict[str, Any]]:
 
     try:
         raw_positions = await account.get_open_positions()
