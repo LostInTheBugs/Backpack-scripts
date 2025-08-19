@@ -90,6 +90,7 @@ async def get_real_positions(account=None) -> List[Dict[str, Any]]:
         return []
 
     positions_list = []
+    leverage = getattr(config.trading, "leverage", 1)  # récupère le levier depuis settings.yaml
 
     for pos in raw_positions:
         net_qty = safe_float(pos.get("netQuantity", 0))
@@ -99,13 +100,14 @@ async def get_real_positions(account=None) -> List[Dict[str, Any]]:
         entry_price = safe_float(pos.get("entryPrice", 0))
         pnl_usdc = safe_float(pos.get("pnlUnrealized", 0))
         notional = abs(net_qty) * entry_price
-        pnl_percent = (pnl_usdc / notional * 100) if notional != 0 else 0.0
+        margin = notional / leverage if leverage > 0 else notional
+        pnl_percent = (pnl_usdc / margin * 100) if margin != 0 else 0.0
 
         side = "long" if net_qty > 0 else "short"
         trailing_stop = safe_float(pos.get("trailingStopPct", 0.0))
         duration_seconds = int(pos.get("durationSeconds", 0))
 
-        # Formatage durée en h m s
+        # Formatage durée
         h = duration_seconds // 3600
         m = (duration_seconds % 3600) // 60
         s = duration_seconds % 60
