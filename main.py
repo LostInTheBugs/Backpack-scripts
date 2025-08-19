@@ -12,7 +12,7 @@ import time
 from utils.logger import log
 from utils.public import check_table_and_fresh_data, get_last_timestamp, load_symbols_from_file
 from utils.fetch_top_n_volatility_volume import fetch_top_n_volatility_volume
-from live.live_engine import handle_live_symbol
+# REMOVED: from live.live_engine import handle_live_symbol  # This causes circular import
 from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
 from utils.update_symbols_periodically import update_symbols_periodically
@@ -72,6 +72,16 @@ symbols_container = {'list': final_symbols}
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 update_symbols_periodically(symbols_container)
 
+
+def get_handle_live_symbol():
+    """
+    SOLUTION: Lazy import to break circular dependency
+    Only import handle_live_symbol when actually needed
+    """
+    from live.live_engine import handle_live_symbol
+    return handle_live_symbol
+
+
 class OptimizedDashboard:
     def __init__(self, symbols_container, pool, real_run, dry_run, args):
         self.symbols_container = symbols_container
@@ -96,6 +106,15 @@ class OptimizedDashboard:
         # Limite de concurrence pour éviter trop de connexions
         self.max_concurrent_symbols = min(5, config.database.pool_max_size - 2)
         self.symbol_semaphore = asyncio.Semaphore(self.max_concurrent_symbols)
+        
+        # Lazy-loaded handle_live_symbol function
+        self._handle_live_symbol = None
+        
+    def _get_handle_live_symbol(self):
+        """Get handle_live_symbol function with lazy loading"""
+        if self._handle_live_symbol is None:
+            self._handle_live_symbol = get_handle_live_symbol()
+        return self._handle_live_symbol
         
     async def check_symbols_status(self):
         """Vérifie le statut des symboles (actifs/ignorés) - moins fréquent"""
@@ -194,8 +213,8 @@ class OptimizedDashboard:
     async def handle_live_symbol_with_pool(self, symbol):
         """Version modifiée de handle_live_symbol qui utilise le pool existant"""
         try:
-            # Au lieu d'appeler handle_live_symbol qui peut créer de nouvelles connexions,
-            # on utilise directement le pool existant
+            # Use lazy-loaded function to avoid circular import
+            handle_live_symbol = self._get_handle_live_symbol()
             result = await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
             return result
         except Exception as e:
@@ -330,7 +349,7 @@ class OptimizedDashboard:
                 await asyncio.sleep(5)
 
 
-async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None):
+async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None, args=None):
     """
     Boucle principale optimisée pour le dashboard texte en live.
     """
@@ -347,10 +366,13 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
     await asyncio.gather(processor_task, render_task)
 
 
-async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None):
+async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None, args=None):
     """Version optimisée de la boucle principale classique"""
     last_symbols_check = 0
     last_api_calls = {}  # timestamp du dernier appel par symbole
+    
+    # Lazy load handle_live_symbol to avoid circular import
+    handle_live_symbol = None
     
     while True:
         current_time = time.time()
@@ -390,6 +412,10 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                 
                 if ignored_details:
                     log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="INFO")
+        
+        # Lazy load handle_live_symbol function
+        if handle_live_symbol is None:
+            handle_live_symbol = get_handle_live_symbol()
         
         # Traiter les symboles actifs avec throttling
         for symbol in active_symbols:
@@ -484,14 +510,14 @@ async def async_main(args):
                 if args.auto_select:
                     task = asyncio.create_task(
                         main_loop_textdashboard(
-                            [], pool, real_run=args.real_run, dry_run=args.dry_run, symbols_container=symbols_container
+                            [], pool, real_run=args.real_run, dry_run=args.dry_run, symbols_container=symbols_container, args=args
                         )
                     )
                 elif args.symbols:
                     symbols = args.symbols.split(",")
                     task = asyncio.create_task(
                         main_loop_textdashboard(
-                            symbols, pool, real_run=args.real_run, dry_run=args.dry_run
+                            symbols, pool, real_run=args.real_run, dry_run=args.dry_run, args=args
                         )
                     )
                 else:
@@ -503,13 +529,13 @@ async def async_main(args):
                 if args.auto_select:
                     task = asyncio.create_task(
                         main_loop(
-                            [], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container
+                            [], pool, real_run=args.real_run, dry_run=args.dry_run, auto_select=True, symbols_container=symbols_container, args=args
                         )
                     )
                 elif args.symbols:
                     symbols = args.symbols.split(",")
                     task = asyncio.create_task(
-                        main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run)
+                        main_loop(symbols, pool, real_run=args.real_run, dry_run=args.dry_run, args=args)
                     )
                 else:
                     task = asyncio.create_task(
@@ -532,7 +558,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bot for Backpack Exchange")
     parser.add_argument("symbols", nargs="?", default="", help="Symbol list (ex: BTC_USDC_PERP,SOL_USDC_PERP)")
     parser.add_argument("--real-run", action="store_true", help="Enable real execution")
-    parser.add_argument("--dry-run", action="store_true", help="Simulation mode without executing trades")
+    parser.add_argument("--dry-run", action="store_true", help="Enable simulation mode without executing trades")
     parser.add_argument("--backtest", type=parse_backtest, help="Backtest duration (ex: 10m, 2h, 3d, 1w, or just a number = minutes)")
     parser.add_argument("--auto-select", action="store_true", help="Automatic selection of most volatile symbols")
     parser.add_argument('--strategie', type=str, default=None, help='Strategy name (Default, Trix, Combo, Auto, Range, RangeSoft, ThreeOutOfFour, TwoOutOfFourScalp and DynamicThreeTwo.)')
