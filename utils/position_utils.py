@@ -64,7 +64,7 @@ async def get_real_pnl(symbol: str):
 
 def get_open_positions():
     try:
-        positions = account.get_open_positions()
+        positions = asyncio.to_thread(account.get_open_positions)
         log(f"Retrieved {len(positions)} positions from API")
         return positions
     except Exception as e:
@@ -73,7 +73,7 @@ def get_open_positions():
     
 async def get_real_positions():
     try:
-        positions = await account.get_positions()  # <-- utilise l'objet existant
+        positions = await asyncio.to_thread(account.get_open_positions)  # <-- utilise l'objet existant
         positions_list = []
 
         for p in positions:
