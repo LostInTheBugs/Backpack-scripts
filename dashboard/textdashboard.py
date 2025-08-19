@@ -116,7 +116,7 @@ class OptimizedDashboard:
             try:
                 self.last_api_call[symbol] = current_time
                 result = await self.handle_live_symbol_with_pool(symbol)
-                log(f"[DEBUG] handle_live_symbol({symbol}) returned: {result}")
+                log(f"handle_live_symbol({symbol}) returned: {result}", level="DEBUG")
                 if result:
                     action = result.get("signal", "N/A")
                     price = result.get("price", 0.0)
@@ -305,7 +305,7 @@ async def refresh_dashboard():
         tablefmt="pretty"
     )
     log("\n" + table)
-    
+
 # ---------------- MAIN LOOP ----------------
 async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None, args=None):
     if symbols_container is None:
