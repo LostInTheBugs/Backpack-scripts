@@ -249,57 +249,49 @@ class OptimizedDashboard:
                 log(f"Erreur render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
 
-async def refresh_dashboard():
+async def refresh_dashboard(latest_positions: dict):
     """
-    Récupère et affiche toutes les positions ouvertes au format tableau avec PnL$ et ret%.
+    Affiche les positions ouvertes avec PnL mis à jour en temps réel.
+    latest_positions : dict[symbol -> dict] contenant entry_price, side, amount, trailing_stop, pnl, current_price
     """
-    positions = await get_real_positions(account)
-    if not positions:
-        log("[INFO] No open positions at this time")
+    from tabulate import tabulate
+    import os
+
+    # Efface l'écran pour un affichage "dashboard"
+    os.system("cls" if os.name == "nt" else "clear")
+    print("\n=== OPEN POSITIONS ===")
+
+    if not latest_positions:
+        print("No open positions yet.")
         return
 
-    table_data = []
-    for p in positions:
-        symbol = p["symbol"]
-        market_info = await get_market(symbol)
-        if market_info is None:
-            continue
+    positions_data = []
+    for p in latest_positions.values():
+        symbol = p.get("symbol", "N/A")
+        side = p.get("side", "N/A")
+        entry_price = p.get("entry_price", 0.0)
+        pnl_pct = p.get("pnl", 0.0)        # PnL %
+        pnl_usdc = p.get("pnl_usdc", 0.0)  # PnL en USDC
+        ret_pct = p.get("ret_pct", 0.0)    # Retour réel %
+        amount = p.get("amount", 0.0)
+        duration = p.get("duration", "0s")
+        trailing_stop = p.get("trailing_stop", 0.0)
 
-        current_price = market_info.get("current_price", p["entry_price"])
-        entry_price = market_info.get("entry_price", p["entry_price"])
-        side = market_info.get("side", p["side"])
-        amount = p["amount"]
-
-        # PnL en pourcentage déjà calculé
-        pnl_percent = market_info.get("pnl", 0.0)
-
-        # PnL$ selon la direction
-        if side == "long":
-            pnl_usd = (current_price - entry_price) * amount
-        else:  # short
-            pnl_usd = (entry_price - current_price) * amount
-
-        # ret% (retour en % sur l'investissement)
-        try:
-            ret_percent = pnl_usd / (entry_price * amount) * 100
-        except ZeroDivisionError:
-            ret_percent = 0.0
-
-        table_data.append([
+        positions_data.append([
             symbol,
             side,
             f"{entry_price:.6f}",
-            f"{pnl_percent:.2f}%",
-            f"{pnl_usd:.2f}$",
-            f"({ret_percent:.2f}%)",
+            f"{pnl_pct:.2f}%",
+            f"{pnl_usdc:.2f}$",
+            f"{ret_pct:.2f}%",
             amount,
-            p["duration"],
-            f"{p.get('trailing_stop', 0.0):.2f}%"
+            duration,
+            f"{trailing_stop:.2f}%"
         ])
 
     table = tabulate(
-        table_data,
+        positions_data,
         headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
-        tablefmt="pretty"
+        tablefmt="fancy_grid"
     )
-    log("\n" + table)
+    print(table)
