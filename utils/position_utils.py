@@ -79,15 +79,10 @@ def safe_float(val, default=0.0):
     except (TypeError, ValueError):
         return default
 
-async def get_real_positions(account_client) -> List[Dict[str, Any]]:
-    """
-    Récupère les positions ouvertes depuis l'API Backpack et renvoie une liste de dicts
-    avec symbol, side, entry_price, pnl%, amount, duration et trailing_stop.
-    
-    account_client : instance de Account() ou objet similaire ayant get_open_positions()
-    """
+async def get_real_positions(account) -> List[Dict[str, Any]]:
+
     try:
-        raw_positions = await account_client.get_open_positions()
+        raw_positions = await account.get_open_positions()
     except Exception as e:
         log(f"[ERROR] Impossible de récupérer les positions : {e}", level="ERROR")
         return []
