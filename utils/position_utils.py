@@ -84,7 +84,7 @@ async def get_real_positions(account=None) -> List[Dict[str, Any]]:
         from .position_utils import account as default_account
         account = default_account
     try:
-        raw_positions = await account.get_open_positions()
+        raw_positions = account.get_open_positions()
     except Exception as e:
         log(f"[ERROR] Impossible de récupérer les positions : {e}", level="ERROR")
         return []
