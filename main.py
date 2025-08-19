@@ -105,8 +105,20 @@ class OptimizedDashboard:
         self.processing_symbols = set()
         
         # Limite de concurrence pour éviter trop de connexions
-        self.max_concurrent_symbols = min(5, config.database.pool_max_size - 2)
+        # Calcul plus intelligent de la limite basé sur la config
+        pool_size = getattr(config.database, 'pool_max_size', 20)
+        reserve_connections = 3  # Réserver 3 connexions pour autres opérations
+        calculated_limit = max(5, min(15, pool_size - reserve_connections))  # Entre 5 et 15
+        
+        # Permettre override via config si disponible
+        if hasattr(config, 'performance') and hasattr(config.performance, 'max_concurrent_symbols'):
+            self.max_concurrent_symbols = config.performance.max_concurrent_symbols
+        else:
+            self.max_concurrent_symbols = calculated_limit
+            
         self.symbol_semaphore = asyncio.Semaphore(self.max_concurrent_symbols)
+        
+        log(f"Max concurrent symbols set to: {self.max_concurrent_symbols} (pool_max_size: {pool_size})", level="INFO")
         
         # Lazy-loaded handle_live_symbol function
         self._handle_live_symbol = None
@@ -232,11 +244,20 @@ class OptimizedDashboard:
                 # Vérifier le statut des symboles périodiquement
                 await self.check_symbols_status()
                 
-                # Limiter le nombre de symboles actifs si trop nombreux
+                # Gestion intelligente des symboles actifs
                 active_symbols = self.active_symbols
-                if len(active_symbols) > self.max_concurrent_symbols:
-                    log(f"Too many active symbols ({len(active_symbols)}), processing only first {self.max_concurrent_symbols}", level="WARNING")
-                    active_symbols = active_symbols[:self.max_concurrent_symbols]
+                total_symbols = len(active_symbols)
+                
+                if total_symbols > self.max_concurrent_symbols:
+                    # Option 1: Rotation des symboles pour traiter tous les symboles à tour de rôle
+                    current_batch = int(time.time() // (API_CALL_INTERVAL * 2)) % ((total_symbols // self.max_concurrent_symbols) + 1)
+                    start_idx = current_batch * self.max_concurrent_symbols
+                    end_idx = min(start_idx + self.max_concurrent_symbols, total_symbols)
+                    active_symbols = active_symbols[start_idx:end_idx]
+                    
+                    log(f"Processing batch {current_batch + 1}: symbols {start_idx+1}-{end_idx} of {total_symbols} total", level="INFO")
+                else:
+                    log(f"Processing all {total_symbols} active symbols", level="DEBUG")
                 
                 # Traiter les symboles actifs avec throttling et limitation de concurrence
                 tasks = []
@@ -339,11 +360,20 @@ class OptimizedDashboard:
                 
                 # Statistiques
                 print(f"\n=== STATS ===")
+                print(f"Total symbols: {len(self.active_symbols + self.ignored_symbols)}")
+                print(f"Active symbols: {len(self.active_symbols)}")
+                print(f"Ignored symbols: {len(self.ignored_symbols)}")
+                print(f"Max concurrent processing: {self.max_concurrent_symbols}")
                 print(f"Total API calls tracked: {len(self.last_api_call)}")
                 print(f"Symbols currently processing: {len(self.processing_symbols)}")
-                print(f"Max concurrent symbols: {self.max_concurrent_symbols}")
                 print(f"Pool size: {config.database.pool_min_size}-{config.database.pool_max_size}")
                 print(f"Last symbols check: {int(current_time - self.last_symbols_check)}s ago")
+                
+                # Afficher les symboles par batch si nécessaire
+                if len(self.active_symbols) > self.max_concurrent_symbols:
+                    total_batches = (len(self.active_symbols) // self.max_concurrent_symbols) + 1
+                    current_batch = int(current_time // (API_CALL_INTERVAL * 2)) % total_batches
+                    print(f"Batch rotation: {current_batch + 1}/{total_batches} (changes every {API_CALL_INTERVAL * 2}s)")
                 
             except Exception as e:
                 log(f"[ERROR] Erreur dans render_dashboard: {e}", level="ERROR")
