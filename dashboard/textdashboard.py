@@ -106,84 +106,117 @@ class OptimizedDashboard:
         log(f"Symbols status updated: {len(new_active)} active, {len(new_ignored)} ignored", level="DEBUG")
 
     # ---------------- SYMBOL PROCESSING ----------------
-async def process_symbol_with_throttling(self, symbol):
-    current_time = time.time()
+    async def process_symbol_with_throttling(self, symbol):
+        current_time = time.time()
 
-    if symbol in self.last_api_call:
-        time_since_last = current_time - self.last_api_call[symbol]
-        if time_since_last < API_CALL_INTERVAL:
+        if symbol in self.last_api_call:
+            time_since_last = current_time - self.last_api_call[symbol]
+            if time_since_last < API_CALL_INTERVAL:
+                return
+
+        if symbol in self.processing_symbols:
             return
 
-    if symbol in self.processing_symbols:
-        return
+        async with self.symbol_semaphore:
+            self.processing_symbols.add(symbol)
+            try:
+                self.last_api_call[symbol] = current_time
+                result = await self.handle_live_symbol_with_pool(symbol)
+                log(f"handle_live_symbol({symbol}) returned: {result}", level="DEBUG")
 
-    async with self.symbol_semaphore:
-        self.processing_symbols.add(symbol)
-        try:
-            self.last_api_call[symbol] = current_time
-            result = await self.handle_live_symbol_with_pool(symbol)
-            log(f"handle_live_symbol({symbol}) returned: {result}", level="DEBUG")
+                if result:
+                    # Récupération des valeurs
+                    side = result.get("side", "N/A")
+                    entry = result.get("entry_price", 0.0)
+                    amount = result.get("amount", 0.0)
+                    pnl_pct = result.get("pnl", 0.0)   # % sur marge
+                    duration = result.get("duration", "0s")
+                    trailing_stop = result.get("trailing_stop", 0.0)
+                    
+                    # CORRECTION: Récupérer le prix actuel depuis le market ou result
+                    current_price = result.get("current_price", result.get("price", 0.0))
+                    
+                    # Si on n'a toujours pas de prix, essayer de le récupérer depuis le market
+                    if current_price <= 0:
+                        try:
+                            market_info = await get_market(symbol)
+                            if market_info:
+                                current_price = market_info.get("current_price", 0.0)
+                        except Exception as e:
+                            log(f"Failed to get current price for {symbol}: {e}", level="WARNING")
+                            current_price = entry  # Fallback sur entry price
 
-            if result:
-                # Récupération des valeurs
-                side = result.get("side", "N/A")
-                entry = result.get("entry_price", 0.0)
-                amount = result.get("amount", 0.0)
-                pnl_pct = result.get("pnl", 0.0)   # % sur marge
-                duration = result.get("duration", "0s")
-                trailing_stop = result.get("trailing_stop", 0.0)
-                price = result.get("price", 0.0)
-
-                # Calcul PnL$ et retour %
-                if entry > 0 and amount > 0 and price > 0:
-                    if side.lower() == "long":
-                        pnl_usdc = (price - entry) * amount
-                        ret_pct = (price - entry) / entry * 100
-                    elif side.lower() == "short":
-                        pnl_usdc = (entry - price) * amount
-                        ret_pct = (entry - price) / entry * 100
+                    # Calcul PnL$ et retour %
+                    if entry > 0 and amount > 0 and current_price > 0:
+                        if side.lower() == "long":
+                            pnl_usdc = (current_price - entry) * amount
+                            ret_pct = (current_price - entry) / entry * 100
+                        elif side.lower() == "short":
+                            pnl_usdc = (entry - current_price) * amount
+                            ret_pct = (entry - current_price) / entry * 100
+                        else:
+                            pnl_usdc = 0.0
+                            ret_pct = 0.0
                     else:
                         pnl_usdc = 0.0
                         ret_pct = 0.0
-                else:
-                    pnl_usdc = 0.0
-                    ret_pct = 0.0
+                        # Log pour debug si les valeurs sont nulles
+                        log(f"Warning: Zero values for {symbol} - entry:{entry}, amount:{amount}, current_price:{current_price}", level="DEBUG")
 
-                # Stockage dans le dictionnaire
-                self.open_positions[symbol] = {
-                    "symbol": symbol,
-                    "side": side,
-                    "entry_price": entry,
-                    "pnl": pnl_pct,
-                    "amount": amount,
-                    "duration": duration,
-                    "trailing_stop": trailing_stop,
-                    "pnl_usdc": pnl_usdc,
-                    "ret_pct": ret_pct,
-                }
-
-
-                action = result.get("signal", None)
-                price = result.get("price", 0.0)
-                if action in ["BUY", "SELL"]:
-                    self.trade_events.append({
-                        "time": datetime.now().strftime("%H:%M:%S"),
+                    # Stockage dans le dictionnaire
+                    self.open_positions[symbol] = {
                         "symbol": symbol,
-                        "action": action,
-                        "price": price
-                    })
-                    if len(self.trade_events) > 20:
-                        self.trade_events = self.trade_events[-20:]
-            else:
-                if symbol in self.open_positions:
-                    del self.open_positions[symbol]
+                        "side": side,
+                        "entry_price": entry,
+                        "current_price": current_price,  # Ajout du prix actuel
+                        "pnl": pnl_pct,
+                        "amount": amount,
+                        "duration": duration,
+                        "trailing_stop": trailing_stop,
+                        "pnl_usdc": pnl_usdc,
+                        "ret_pct": ret_pct,
+                        "last_update": current_time,  # Timestamp de dernière mise à jour
+                    }
 
-        except Exception as e:
-            log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
-            if "too many clients" in str(e).lower():
-                self.last_api_call[symbol] = current_time + API_CALL_INTERVAL * 2
-        finally:
-            self.processing_symbols.discard(symbol)
+                    action = result.get("signal", None)
+                    if action in ["BUY", "SELL"]:
+                        self.trade_events.append({
+                            "time": datetime.now().strftime("%H:%M:%S"),
+                            "symbol": symbol,
+                            "action": action,
+                            "price": current_price
+                        })
+                        if len(self.trade_events) > 20:
+                            self.trade_events = self.trade_events[-20:]
+                else:
+                    # Position fermée ou pas de résultat
+                    if symbol in self.open_positions:
+                        log(f"Removing closed position for {symbol}", level="INFO")
+                        del self.open_positions[symbol]
+
+            except Exception as e:
+                log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
+                if "too many clients" in str(e).lower():
+                    self.last_api_call[symbol] = current_time + API_CALL_INTERVAL * 2
+            finally:
+                self.processing_symbols.discard(symbol)
+
+    async def cleanup_stale_positions(self):
+        """
+        Supprime les positions qui n'ont pas été mises à jour depuis trop longtemps
+        """
+        current_time = time.time()
+        stale_threshold = 300  # 5 minutes
+        
+        stale_symbols = []
+        for symbol, position in self.open_positions.items():
+            last_update = position.get("last_update", 0)
+            if current_time - last_update > stale_threshold:
+                stale_symbols.append(symbol)
+        
+        for symbol in stale_symbols:
+            log(f"Removing stale position for {symbol} (no update for {stale_threshold}s)", level="INFO")
+            del self.open_positions[symbol]
 
     async def handle_live_symbol_with_pool(self, symbol):
         try:
@@ -200,6 +233,11 @@ async def process_symbol_with_throttling(self, symbol):
         while True:
             try:
                 await self.check_symbols_status()
+                
+                # Nettoyage périodique des positions obsolètes
+                if int(time.time()) % 60 == 0:  # Toutes les minutes
+                    await self.cleanup_stale_positions()
+                
                 active_symbols = self.active_symbols
                 total_symbols = len(active_symbols)
 
@@ -284,20 +322,22 @@ async def process_symbol_with_throttling(self, symbol):
                 if self.open_positions:
                     positions_data = []
                     for p in self.open_positions.values():
+                        # Ajout de la colonne Current Price
                         positions_data.append([
                             p.get("symbol", "N/A"),
                             p.get("side", "N/A"),
-                            f'{p.get("entry_price", 0.0):.6f}',               # Entry
-                            f'{p.get("pnl", 0.0):.2f}%',                  # PnL% (marge)
-                            f'{p.get("pnl_usdc", 0.0):.2f}$',             # PnL$ en USDC
-                            f'({p.get("ret_pct", 0.0):.2f}%)',            # ret% (réel)
+                            f'{p.get("entry_price", 0.0):.6f}',
+                            f'{p.get("current_price", 0.0):.6f}',           # Prix actuel
+                            f'{p.get("pnl", 0.0):.2f}%',                    # PnL% (marge)
+                            f'{p.get("pnl_usdc", 0.0):.2f}$',               # PnL$ en USDC
+                            f'({p.get("ret_pct", 0.0):.2f}%)',              # ret% (réel)
                             p.get("amount", 0.0),
                             p.get("duration", "0s"),
                             f'{p.get("trailing_stop", 0.0):.2f}%'
                         ])
                     print(tabulate(
                         positions_data,
-                        headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
+                        headers=["Symbol", "Side", "Entry", "Current", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
                         tablefmt="fancy_grid"
                     ))
                 else:
