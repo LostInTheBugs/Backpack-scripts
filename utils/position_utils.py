@@ -100,7 +100,7 @@ def get_real_positions():
     Récupère les positions ouvertes réelles depuis Backpack Exchange
     et calcule le PnL réel.
     """
-    positions = account.get_positions()  # Hypothétique fonction de l'API
+    positions = account.get_open_positions()
     result = []
 
     for pos in positions:
