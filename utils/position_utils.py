@@ -10,6 +10,8 @@ config = get_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
+log(f"Using public_key={public_key}, secret_key={'***' if secret_key else None}", level="DEBUG")
+
 # Création de l'objet Account central
 account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
 
@@ -59,3 +61,12 @@ async def get_real_pnl(symbol: str):
     except Exception as e:
         log(f"⚠️ Erreur get_real_pnl({symbol}): {e}", level="error")
         return 0.0, 1.0
+
+def get_open_positions():
+    try:
+        positions = account.get_open_positions()
+        log(f"Retrieved {len(positions)} positions from API")
+        return positions
+    except Exception as e:
+        log(f"[ERROR] ❌ Failed to fetch open positions: {e}")
+        return []

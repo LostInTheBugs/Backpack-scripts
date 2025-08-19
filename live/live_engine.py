@@ -30,6 +30,13 @@ MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
+def get_handle_live_symbol():
+    """
+    SOLUTION: Lazy import to break circular dependency
+    Only import handle_live_symbol when actually needed
+    """
+    from live.live_engine import handle_live_symbol
+    return handle_live_symbol
 
 async def scan_all_symbols(pool, symbols):
     log("🔍 Lancement du scan indicateurs…", level="INFO")
