@@ -11,6 +11,7 @@ from utils.logger import log
 from config.settings import load_config
 from utils.position_utils import get_real_positions
 from bpx.account import Account
+from utils.get_market import get_market
 
 config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
@@ -321,44 +322,52 @@ async def process_symbol_with_throttling(self, symbol):
                 log(f"Erreur dans render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
 
-async def refresh_dashboard():
+async def refresh_dashboard(account):
     """
-    Récupère et affiche toutes les positions ouvertes au format tableau.
+    Récupère et affiche toutes les positions ouvertes au format tableau avec PnL$ et ret%.
     """
     positions = await get_real_positions(account)
     if not positions:
         log("[INFO] No open positions at this time")
         return
 
-    from tabulate import tabulate
     table_data = []
     for p in positions:
-        entry = p.get("entry_price", 0.0)
-        price = p.get("current_price", entry)  # ou récupère le dernier prix réel
-        side = p.get("side", "N/A")
-        amount = p.get("amount", 0.0)
+        symbol = p["symbol"]
+        market_info = await get_market(symbol)
+        if market_info is None:
+            continue
 
-        # Calcul PnL$ et ret%
-        if side.lower() == "long":
-            pnl_usdc = (price - entry) * amount
-            ret_pct = (price - entry) / entry * 100 if entry != 0 else 0
-        elif side.lower() == "short":
-            pnl_usdc = (entry - price) * amount
-            ret_pct = (entry - price) / entry * 100 if entry != 0 else 0
-        else:
-            pnl_usdc = 0
-            ret_pct = 0
+        current_price = market_info.get("current_price", p["entry_price"])
+        entry_price = market_info.get("entry_price", p["entry_price"])
+        side = market_info.get("side", p["side"])
+        amount = p["amount"]
+
+        # PnL en pourcentage déjà calculé
+        pnl_percent = market_info.get("pnl", 0.0)
+
+        # PnL$ selon la direction
+        if side == "long":
+            pnl_usd = (current_price - entry_price) * amount
+        else:  # short
+            pnl_usd = (entry_price - current_price) * amount
+
+        # ret% (retour en % sur l'investissement)
+        try:
+            ret_percent = pnl_usd / (entry_price * amount) * 100
+        except ZeroDivisionError:
+            ret_percent = 0.0
 
         table_data.append([
-            p.get("symbol", "N/A"),
+            symbol,
             side,
-            f'{entry:.6f}',
-            f'{p.get("pnl", 0.0):.2f}%',        # PnL% marge
-            f'{pnl_usdc:.2f}$',                  # PnL$ en USDC
-            f'({ret_pct:.2f}%)',                 # ret% réel
+            f"{entry_price:.6f}",
+            f"{pnl_percent:.2f}%",
+            f"{pnl_usd:.2f}$",
+            f"({ret_percent:.2f}%)",
             amount,
-            p.get("duration", "0s"),
-            f'{p.get("trailing_stop", 0.0):.2f}%'
+            p["duration"],
+            f"{p.get('trailing_stop', 0.0):.2f}%"
         ])
 
     table = tabulate(
@@ -367,19 +376,3 @@ async def refresh_dashboard():
         tablefmt="pretty"
     )
     log("\n" + table)
-
-# ---------------- MAIN LOOP ----------------
-async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None, args=None):
-    if symbols_container is None:
-        symbols_container = {"list": symbols}
-
-    dashboard = OptimizedDashboard(symbols_container, pool, real_run, dry_run, args)
-
-    # Charger les positions ouvertes existantes avant de lancer les tâches
-    await dashboard.load_initial_positions()
-
-    # Créer les tâches
-    processor_task = asyncio.create_task(dashboard.symbol_processor())
-    render_task = asyncio.create_task(dashboard.render_dashboard())
-
-    await asyncio.gather(processor_task, render_task)
