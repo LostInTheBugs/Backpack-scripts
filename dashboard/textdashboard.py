@@ -10,8 +10,13 @@ from live.live_engine import get_handle_live_symbol
 from utils.logger import log
 from config.settings import load_config
 from utils.position_utils import get_real_positions
+from bpx.account import Account
 
 config = load_config()
+public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
+secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
+
+account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
 
 # Configuration des intervalles (en secondes) - avec valeurs par défaut
 API_CALL_INTERVAL = 5
@@ -66,7 +71,7 @@ class OptimizedDashboard:
         au démarrage du dashboard.
         """
         try:
-            positions = await get_real_positions()
+            positions = await get_real_positions(account)
             for pos in positions:
                 self.open_positions[pos["symbol"]] = pos
             log(f"Loaded {len(self.open_positions)} open positions at startup", level="INFO")
@@ -291,7 +296,7 @@ async def refresh_dashboard():
     """
     Récupère et affiche toutes les positions ouvertes au format tableau.
     """
-    positions = await get_real_positions()
+    positions = await get_real_positions(account)
     if not positions:
         log("[INFO] No open positions at this time")
         return
