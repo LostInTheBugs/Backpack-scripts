@@ -5,6 +5,7 @@ from bpx.account import Account
 from utils.logger import log
 from config.settings import get_config
 from typing import List, Dict, Any
+from datetime import datetime
 
 # Charger la configuration
 config = get_config()
@@ -48,34 +49,34 @@ async def get_open_positions():
             }
     return result
 
+def position_already_open(symbol: str):
+    """
+    Vérifie si une position est déjà ouverte pour le symbole.
+    """
+    positions = get_real_positions()
+    for pos in positions:
+        if pos["symbol"] == symbol:
+            return True
+    return False
 
-async def position_already_open(symbol: str) -> bool:
-    """Retourne True si une position est ouverte pour ce symbole."""
-    positions = await get_open_positions()
-    return symbol in positions
+def get_real_pnl(symbol: str, side: str, entry_price: float, amount: float, leverage: float = 1.0) -> dict:
+    """
+    Calcule le PnL réel en USD et en %.
+    """
+    # Import local pour éviter circular import
+    from utils.get_market import get_market
 
+    mark_price = get_market(symbol)["price"]
+    if mark_price is None or mark_price == 0:
+        mark_price = entry_price
 
-async def get_real_pnl(symbol: str):
-    """Retourne (unrealized_pnl_usdc, notional, margin, leverage) pour une position."""
-    positions = await get_open_positions()
-    pos = positions.get(symbol)
-    if not pos:
-        return 0.0, 1.0, 1.0, 1
+    if side.lower() == "long":
+        pnl_usd = (mark_price - entry_price) * amount
+    else:
+        pnl_usd = (entry_price - mark_price) * amount
 
-    try:
-        net_qty = float(pos.get("net_qty", 0.0))
-        entry_price = float(pos.get("entry_price", 0.0))
-        notional = abs(net_qty) * entry_price
-        # levier: essaye par position sinon config
-        lev = getattr(config.trading, "leverage", 1)
-        margin = notional / lev if lev > 0 else notional
-
-        # ✅ bonne clé:
-        pnl_unrealized = float(pos.get("pnlUnrealized", None) or pos.get("unrealizedPnl", 0.0))
-        return pnl_unrealized, notional, margin, lev
-    except Exception as e:
-        log(f"[ERROR] get_real_pnl({symbol}): {e}", level="ERROR")
-        return 0.0, 1.0, 1.0, 1
+    pnl_percent = (pnl_usd / (entry_price * amount)) * leverage * 100
+    return {"pnl_usd": pnl_usd, "pnl_percent": pnl_percent}
 
 
 def safe_float(val, default=0.0):
@@ -94,73 +95,33 @@ def _get_first_float(d, keys, default=0.0):
                 pass
     return default
 
-async def get_real_positions(account=None) -> List[Dict[str, Any]]:
-    if account is None:
-        from .position_utils import account as default_account
-        account = default_account
-    try:
-        raw_positions = account.get_open_positions()
-    except Exception as e:
-        log(f"[ERROR] Impossible de récupérer les positions : {e}", level="ERROR")
-        return []
+def get_real_positions():
+    """
+    Récupère les positions ouvertes réelles depuis Backpack Exchange
+    et calcule le PnL réel.
+    """
+    positions = account.get_positions()  # Hypothétique fonction de l'API
+    result = []
 
-    positions_list = []
-    default_leverage = getattr(config.trading, "leverage", 1)
+    for pos in positions:
+        symbol = pos["symbol"]
+        side = pos["side"]
+        entry_price = pos["entry_price"]
+        amount = pos["amount"]
+        leverage = pos.get("leverage", 1)
+        timestamp = pos.get("timestamp", datetime.utcnow())
 
-    for pos in raw_positions:
-        net_qty = safe_float(pos.get("netQuantity", 0))
-        if net_qty == 0:
-            continue
+        pnl_data = get_real_pnl(symbol, side, entry_price, amount, leverage)
 
-        # Champs principaux
-        symbol = pos.get("symbol", "UNKNOWN")
-        entry_price = _get_first_float(pos, ["entryPrice", "avgEntryPrice"], 0.0)
-        # Backpack peut exposer mark/index/last selon endpoints
-        mark_price = _get_first_float(pos, ["markPrice", "indexPrice", "lastPrice"], entry_price)
-        leverage = int(_get_first_float(pos, ["leverage"], default_leverage)) or 1
-
-        # Notional / Marge
-        notional = abs(net_qty) * entry_price
-        margin = notional / leverage if leverage > 0 else notional
-
-        # ✅ Bonne clé pour PnL USDC, avec fallback si manquant
-        pnl_usdc = _get_first_float(pos, ["unrealizedPnl", "pnlUnrealized"], None)
-        if pnl_usdc is None:
-            # Fallback: calcule via prix si API ne donne pas PnL
-            if net_qty > 0:  # long
-                pnl_usdc = (mark_price - entry_price) * net_qty
-            else:            # short
-                pnl_usdc = (entry_price - mark_price) * abs(net_qty)
-
-        # PnL% sur marge (aligné Backpack)
-        pnl_percent = (pnl_usdc / margin * 100) if margin != 0 else 0.0
-
-        # Optionnel: % “côté-position” (ce qui apparaît entre parenthèses sur Backpack)
-        if net_qty > 0:  # long
-            ret_pct = ((mark_price - entry_price) / entry_price * 100) if entry_price else 0.0
-        else:            # short (inverse la variation)
-            ret_pct = ((entry_price - mark_price) / entry_price * 100) if entry_price else 0.0
-
-        side = "long" if net_qty > 0 else "short"
-        trailing_stop = safe_float(pos.get("trailingStopPct", 0.0))
-        duration_seconds = int(pos.get("durationSeconds", 0))
-        h = duration_seconds // 3600
-        m = (duration_seconds % 3600) // 60
-        s = duration_seconds % 60
-        duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
-
-        positions_list.append({
+        result.append({
             "symbol": symbol,
             "side": side,
             "entry_price": entry_price,
-            "pnl": pnl_percent,        # ← ta colonne PnL% (sur marge)
-            "pnl_usdc": pnl_usdc,      # ← utile pour un affichage PnL$
-            "ret_pct": ret_pct,        # ← optionnel: % “côté-position” (parenthèses Backpack)
-            "amount": abs(net_qty),
-            "duration": duration,
-            "trailing_stop": trailing_stop,
-            "leverage": leverage
+            "amount": amount,
+            "leverage": leverage,
+            "timestamp": timestamp,
+            "pnl_usd": pnl_data["pnl_usd"],
+            "pnl_percent": pnl_data["pnl_percent"],
         })
 
-    log(f"Fetched {len(positions_list)} open positions from account", level="DEBUG")
-    return positions_list
+    return result
