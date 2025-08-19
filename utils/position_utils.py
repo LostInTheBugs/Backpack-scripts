@@ -89,7 +89,7 @@ def _get_first_float(d, keys, default=0.0):
                 pass
     return default
 
-def get_real_positions():
+async def get_real_positions():
     """
     Récupère les positions ouvertes réelles depuis Backpack Exchange
     et calcule le PnL réel.
@@ -114,7 +114,7 @@ def get_real_positions():
         leverage = pos.get("leverage", 1)
         timestamp = pos.get("timestamp", datetime.utcnow())
 
-        pnl_data = get_real_pnl(symbol, side, entry_price, amount, leverage)
+        pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
 
         result.append({
             "symbol": symbol,
