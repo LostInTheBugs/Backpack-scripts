@@ -19,6 +19,7 @@ secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
 account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
 
+# Configuration des intervalles (en secondes) - avec valeurs par défaut
 API_CALL_INTERVAL = 5
 DASHBOARD_REFRESH_INTERVAL = 2
 SYMBOLS_CHECK_INTERVAL = 30
@@ -32,25 +33,32 @@ class OptimizedDashboard:
         self.dry_run = dry_run
         self.args = args
 
-        # Cache
+        # Cache des données
         self.trade_events = []
         self.open_positions = {}
         self.active_symbols = []
         self.ignored_symbols = []
 
-        # Timing
+        # Timestamps pour contrôler les intervalles
         self.last_api_call = {}
         self.last_symbols_check = 0
+
+        # Verrous pour éviter les appels concurrents
         self.processing_symbols = set()
 
-        # Concurrence
+        # Limite de concurrence
         pool_size = getattr(config.database, 'pool_max_size', 20)
         reserve_connections = 3
         calculated_limit = max(5, min(15, pool_size - reserve_connections))
-        self.max_concurrent_symbols = getattr(getattr(config, 'performance', {}), 'max_concurrent_symbols', calculated_limit)
+        if hasattr(config, 'performance') and hasattr(config.performance, 'max_concurrent_symbols'):
+            self.max_concurrent_symbols = config.performance.max_concurrent_symbols
+        else:
+            self.max_concurrent_symbols = calculated_limit
         self.symbol_semaphore = asyncio.Semaphore(self.max_concurrent_symbols)
 
-        log(f"Max concurrent symbols: {self.max_concurrent_symbols}", level="INFO")
+        log(f"Max concurrent symbols set to: {self.max_concurrent_symbols} (pool_max_size: {pool_size})", level="INFO")
+
+        # Lazy-loaded handle_live_symbol function
         self._handle_live_symbol = None
 
     def _get_handle_live_symbol(self):
@@ -59,13 +67,17 @@ class OptimizedDashboard:
         return self._handle_live_symbol
 
     async def load_initial_positions(self):
+        """
+        Charge toutes les positions ouvertes existantes depuis Backpack Exchange
+        au démarrage du dashboard.
+        """
         try:
             positions = await get_real_positions(account)
             for pos in positions:
                 self.open_positions[pos["symbol"]] = pos
             log(f"Loaded {len(self.open_positions)} open positions at startup", level="INFO")
         except Exception as e:
-            log(f"Failed to load initial positions: {e}", level="WARNING")
+            log(f"Failed to load initial open positions: {e}", level="WARNING")
 
     # ---------------- SYMBOLS STATUS ----------------
     async def check_symbols_status(self):
@@ -91,80 +103,96 @@ class OptimizedDashboard:
 
         self.active_symbols = new_active
         self.ignored_symbols = new_ignored
-        log(f"Symbols updated: {len(new_active)} active, {len(new_ignored)} ignored", level="DEBUG")
+        log(f"Symbols status updated: {len(new_active)} active, {len(new_ignored)} ignored", level="DEBUG")
 
     # ---------------- SYMBOL PROCESSING ----------------
-    async def process_symbol_with_throttling(self, symbol):
-        current_time = time.time()
-        if symbol in self.last_api_call and current_time - self.last_api_call[symbol] < API_CALL_INTERVAL:
-            return
-        if symbol in self.processing_symbols:
+async def process_symbol_with_throttling(self, symbol):
+    current_time = time.time()
+
+    if symbol in self.last_api_call:
+        time_since_last = current_time - self.last_api_call[symbol]
+        if time_since_last < API_CALL_INTERVAL:
             return
 
-        async with self.symbol_semaphore:
-            self.processing_symbols.add(symbol)
-            try:
-                self.last_api_call[symbol] = current_time
-                result = await self.handle_live_symbol_with_pool(symbol)
-                if result:
-                    side = result.get("side", "N/A")
-                    entry = result.get("entry_price", 0.0)
-                    amount = result.get("amount", 0.0)
-                    price = result.get("price", 0.0)
-                    duration = result.get("duration", "0s")
-                    trailing_stop = result.get("trailing_stop", 0.0)
+    if symbol in self.processing_symbols:
+        return
 
-                    # Calcul PnL% et PnL$
-                    if entry > 0 and amount > 0 and price > 0:
-                        if side.lower() == "long":
-                            pnl_usdc = (price - entry) * amount
-                            pnl_pct = (price - entry) / entry * 100
-                        elif side.lower() == "short":
-                            pnl_usdc = (entry - price) * amount
-                            pnl_pct = (entry - price) / entry * 100
-                        else:
-                            pnl_usdc = 0.0
-                            pnl_pct = 0.0
+    async with self.symbol_semaphore:
+        self.processing_symbols.add(symbol)
+        try:
+            self.last_api_call[symbol] = current_time
+            result = await self.handle_live_symbol_with_pool(symbol)
+            log(f"handle_live_symbol({symbol}) returned: {result}", level="DEBUG")
+
+            if result:
+                # Récupération des valeurs
+                side = result.get("side", "N/A")
+                entry = result.get("entry_price", 0.0)
+                amount = result.get("amount", 0.0)
+                pnl_pct = result.get("pnl", 0.0)   # % sur marge
+                duration = result.get("duration", "0s")
+                trailing_stop = result.get("trailing_stop", 0.0)
+                price = result.get("price", 0.0)
+
+                # Calcul PnL$ et retour %
+                if entry > 0 and amount > 0 and price > 0:
+                    if side.lower() == "long":
+                        pnl_usdc = (price - entry) * amount
+                        ret_pct = (price - entry) / entry * 100
+                    elif side.lower() == "short":
+                        pnl_usdc = (entry - price) * amount
+                        ret_pct = (entry - price) / entry * 100
                     else:
                         pnl_usdc = 0.0
-                        pnl_pct = 0.0
-
-                    self.open_positions[symbol] = {
-                        "symbol": symbol,
-                        "side": side,
-                        "entry_price": entry,
-                        "pnl": pnl_pct,
-                        "amount": amount,
-                        "duration": duration,
-                        "trailing_stop": trailing_stop,
-                        "pnl_usdc": pnl_usdc,
-                        "ret_pct": pnl_pct
-                    }
-
-                    action = result.get("signal", None)
-                    if action in ["BUY", "SELL"]:
-                        self.trade_events.append({
-                            "time": datetime.now().strftime("%H:%M:%S"),
-                            "symbol": symbol,
-                            "action": action,
-                            "price": price
-                        })
-                        if len(self.trade_events) > 20:
-                            self.trade_events = self.trade_events[-20:]
+                        ret_pct = 0.0
                 else:
-                    self.open_positions.pop(symbol, None)
-            except Exception as e:
-                log(f"[ERROR] Cannot process {symbol}: {e}", level="ERROR")
-            finally:
-                self.processing_symbols.discard(symbol)
+                    pnl_usdc = 0.0
+                    ret_pct = 0.0
+
+                # Stockage dans le dictionnaire
+                self.open_positions[symbol] = {
+                    "symbol": symbol,
+                    "side": side,
+                    "entry_price": entry,
+                    "pnl": pnl_pct,
+                    "amount": amount,
+                    "duration": duration,
+                    "trailing_stop": trailing_stop,
+                    "pnl_usdc": pnl_usdc,
+                    "ret_pct": ret_pct,
+                }
+
+
+                action = result.get("signal", None)
+                price = result.get("price", 0.0)
+                if action in ["BUY", "SELL"]:
+                    self.trade_events.append({
+                        "time": datetime.now().strftime("%H:%M:%S"),
+                        "symbol": symbol,
+                        "action": action,
+                        "price": price
+                    })
+                    if len(self.trade_events) > 20:
+                        self.trade_events = self.trade_events[-20:]
+            else:
+                if symbol in self.open_positions:
+                    del self.open_positions[symbol]
+
+        except Exception as e:
+            log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
+            if "too many clients" in str(e).lower():
+                self.last_api_call[symbol] = current_time + API_CALL_INTERVAL * 2
+        finally:
+            self.processing_symbols.discard(symbol)
 
     async def handle_live_symbol_with_pool(self, symbol):
         try:
             handle_live_symbol = self._get_handle_live_symbol()
-            return await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
+            result = await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
+            return result
         except Exception as e:
             if "too many clients" in str(e).lower():
-                log(f"[ERROR] Connection pool exhausted for {symbol}, retry later", level="ERROR")
+                log(f"[ERROR] Connection pool exhausted for {symbol}, will retry later", level="ERROR")
                 await asyncio.sleep(API_CALL_INTERVAL)
             raise
 
@@ -180,21 +208,28 @@ class OptimizedDashboard:
                     start_idx = current_batch * self.max_concurrent_symbols
                     end_idx = min(start_idx + self.max_concurrent_symbols, total_symbols)
                     active_symbols = active_symbols[start_idx:end_idx]
+                    log(f"Processing batch {current_batch + 1}: symbols {start_idx+1}-{end_idx} of {total_symbols} total", level="DEBUG")
+                else:
+                    log(f"Processing all {total_symbols} active symbols", level="DEBUG")
 
                 tasks = []
                 for i, symbol in enumerate(active_symbols):
                     delay = (i * API_CALL_INTERVAL) / len(active_symbols) if active_symbols else 0
-                    tasks.append(asyncio.create_task(self._process_symbol_delayed(symbol, delay)))
+                    task = asyncio.create_task(self._process_symbol_delayed(symbol, delay))
+                    tasks.append(task)
 
                 if tasks:
                     try:
-                        await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=API_CALL_INTERVAL * 2)
+                        await asyncio.wait_for(
+                            asyncio.gather(*tasks, return_exceptions=True),
+                            timeout=API_CALL_INTERVAL * 2
+                        )
                     except asyncio.TimeoutError:
-                        log("Some API calls timed out", level="WARNING")
+                        log("Some API calls timed out, continuing...", level="WARNING")
 
                 await asyncio.sleep(max(1, API_CALL_INTERVAL // 2))
             except Exception as e:
-                log(f"[ERROR] symbol_processor: {e}", level="ERROR")
+                log(f"[ERROR] Erreur dans symbol_processor: {e}", level="ERROR")
                 await asyncio.sleep(5)
 
     async def _process_symbol_delayed(self, symbol, delay):
@@ -220,24 +255,24 @@ class OptimizedDashboard:
                     ["Ignored", f"{len(self.ignored_symbols)} symbols: {', '.join(self.ignored_symbols[:10])}{' ...' if len(self.ignored_symbols) > 10 else ''}"]
                 ], headers=["Status", "Symbols"], tablefmt="fancy_grid"))
 
-                print("\n=== OPEN POSITIONS ===")
-                if self.open_positions:
-                    positions_data = []
-                    for p in self.open_positions.values():
-                        positions_data.append([
-                            p.get("symbol", "N/A"),
-                            p.get("side", "N/A"),
-                            f'{p.get("entry_price", 0.0):.6f}',
-                            f'{p.get("pnl", 0.0):.2f}%',
-                            f'{p.get("pnl_usdc", 0.0):.2f}$',
-                            f'({p.get("ret_pct", 0.0):.2f}%)',
-                            p.get("amount", 0.0),
-                            p.get("duration", "0s"),
-                            f'{p.get("trailing_stop", 0.0):.2f}%'
-                        ])
-                    print(tabulate(positions_data, headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"], tablefmt="fancy_grid"))
+                print("\n=== API CALL STATUS ===")
+                current_time = time.time()
+                api_status = []
+                max_symbols = config.performance.max_concurrent_symbols
+
+                for symbol in self.active_symbols[:max_symbols]:
+                    last_call = self.last_api_call.get(symbol, 0)
+                    if last_call > 0:
+                        seconds_ago = int(current_time - last_call)
+                        status = "Processing" if symbol in self.processing_symbols else f"Last call: {seconds_ago}s ago"
+                        api_status.append([symbol, status])
+                    else:
+                        api_status.append([symbol, "No calls yet"])
+
+                if api_status:
+                    print(tabulate(api_status, headers=["Symbol", "API Status"], tablefmt="fancy_grid"))
                 else:
-                    print("No open positions yet.")
+                    print("No API calls tracked yet.")
 
                 print("\n=== TRADE EVENTS ===")
                 if self.trade_events:
@@ -245,53 +280,99 @@ class OptimizedDashboard:
                 else:
                     print("No trades yet.")
 
+                print("\n=== OPEN POSITIONS ===")
+                if self.open_positions:
+                    positions_data = []
+                    for p in self.open_positions.values():
+                        positions_data.append([
+                            p.get("symbol", "N/A"),
+                            p.get("side", "N/A"),
+                            f'{p.get("entry_price", 0.0):.6f}',               # Entry
+                            f'{p.get("pnl", 0.0):.2f}%',                  # PnL% (marge)
+                            f'{p.get("pnl_usdc", 0.0):.2f}$',             # PnL$ en USDC
+                            f'({p.get("ret_pct", 0.0):.2f}%)',            # ret% (réel)
+                            p.get("amount", 0.0),
+                            p.get("duration", "0s"),
+                            f'{p.get("trailing_stop", 0.0):.2f}%'
+                        ])
+                    print(tabulate(
+                        positions_data,
+                        headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
+                        tablefmt="fancy_grid"
+                    ))
+                else:
+                    print("No open positions yet.")
+
+                print(f"\n=== STATS ===")
+                print(f"Total symbols: {len(self.active_symbols + self.ignored_symbols)}")
+                print(f"Active symbols: {len(self.active_symbols)}")
+                print(f"Ignored symbols: {len(self.ignored_symbols)}")
+                print(f"Max concurrent processing: {self.max_concurrent_symbols}")
+                print(f"Total API calls tracked: {len(self.last_api_call)}")
+                print(f"Symbols currently processing: {len(self.processing_symbols)}")
+                print(f"Pool size: {config.database.pool_min_size}-{config.database.pool_max_size}")
+                print(f"Last symbols check: {int(current_time - self.last_symbols_check)}s ago")
+
+                if len(self.active_symbols) > self.max_concurrent_symbols:
+                    total_batches = (len(self.active_symbols) // self.max_concurrent_symbols) + 1
+                    current_batch = int(current_time // (API_CALL_INTERVAL * 2)) % total_batches
+                    print(f"Batch rotation: {current_batch + 1}/{total_batches} (changes every {API_CALL_INTERVAL * 2}s)")
+
             except Exception as e:
-                log(f"Erreur render_dashboard: {e}", level="ERROR")
+                log(f"Erreur dans render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
 
-async def refresh_dashboard(latest_positions: dict):
+async def refresh_dashboard():
     """
-    Affiche les positions ouvertes avec PnL mis à jour en temps réel.
-    latest_positions : dict[symbol -> dict] contenant entry_price, side, amount, trailing_stop, pnl, current_price
+    Récupère et affiche toutes les positions ouvertes au format tableau avec PnL$ et ret%.
     """
-    from tabulate import tabulate
-    import os
-
-    # Efface l'écran pour un affichage "dashboard"
-    os.system("cls" if os.name == "nt" else "clear")
-    print("\n=== OPEN POSITIONS ===")
-
-    if not latest_positions:
-        print("No open positions yet.")
+    positions = await get_real_positions(account)
+    if not positions:
+        log("[INFO] No open positions at this time")
         return
 
-    positions_data = []
-    for p in latest_positions.values():
-        symbol = p.get("symbol", "N/A")
-        side = p.get("side", "N/A")
-        entry_price = p.get("entry_price", 0.0)
-        pnl_pct = p.get("pnl", 0.0)        # PnL %
-        pnl_usdc = p.get("pnl_usdc", 0.0)  # PnL en USDC
-        ret_pct = p.get("ret_pct", 0.0)    # Retour réel %
-        amount = p.get("amount", 0.0)
-        duration = p.get("duration", "0s")
-        trailing_stop = p.get("trailing_stop", 0.0)
+    table_data = []
+    for p in positions:
+        symbol = p["symbol"]
+        market_info = await get_market(symbol)
+        if market_info is None:
+            continue
 
-        positions_data.append([
+        current_price = market_info.get("current_price", p["entry_price"])
+        entry_price = market_info.get("entry_price", p["entry_price"])
+        side = market_info.get("side", p["side"])
+        amount = p["amount"]
+
+        # PnL en pourcentage déjà calculé
+        pnl_percent = market_info.get("pnl", 0.0)
+
+        # PnL$ selon la direction
+        if side == "long":
+            pnl_usd = (current_price - entry_price) * amount
+        else:  # short
+            pnl_usd = (entry_price - current_price) * amount
+
+        # ret% (retour en % sur l'investissement)
+        try:
+            ret_percent = pnl_usd / (entry_price * amount) * 100
+        except ZeroDivisionError:
+            ret_percent = 0.0
+
+        table_data.append([
             symbol,
             side,
             f"{entry_price:.6f}",
-            f"{pnl_pct:.2f}%",
-            f"{pnl_usdc:.2f}$",
-            f"{ret_pct:.2f}%",
+            f"{pnl_percent:.2f}%",
+            f"{pnl_usd:.2f}$",
+            f"({ret_percent:.2f}%)",
             amount,
-            duration,
-            f"{trailing_stop:.2f}%"
+            p["duration"],
+            f"{p.get('trailing_stop', 0.0):.2f}%"
         ])
 
     table = tabulate(
-        positions_data,
+        table_data,
         headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
-        tablefmt="fancy_grid"
+        tablefmt="pretty"
     )
-    print(table)
+    log("\n" + table)
