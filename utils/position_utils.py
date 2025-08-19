@@ -1,4 +1,4 @@
-# utils/position_utils.py - Version corrigée
+# utils/position_utils.py
 import os
 import asyncio
 from datetime import datetime
@@ -173,10 +173,15 @@ def _get_first_float(d, keys, default=0.0):
     return default
 
 async def get_real_positions(account=None) -> List[Dict[str, Any]]:
+    """
+    Retourne la liste des positions ouvertes avec PnL calculé à partir du prix réel du marché.
+    """
+    from .get_market import get_market  # Import local pour récupérer le prix actuel
+
     if account is None:
         from .position_utils import account as default_account
         account = default_account
-        
+
     try:
         raw_positions = await get_raw_positions()
     except Exception as e:
@@ -185,7 +190,6 @@ async def get_real_positions(account=None) -> List[Dict[str, Any]]:
 
     positions_list = []
     default_leverage = getattr(config.trading, "leverage", 1)
-    failed_updates = 0
 
     for pos in raw_positions:
         try:
@@ -195,50 +199,39 @@ async def get_real_positions(account=None) -> List[Dict[str, Any]]:
 
             symbol = pos.get("symbol", "UNKNOWN")
             entry_price = _get_first_float(pos, ["entryPrice", "avgEntryPrice"], 0.0)
-            mark_price = _get_first_float(pos, ["markPrice", "indexPrice", "lastPrice"], entry_price)
             leverage = int(_get_first_float(pos, ["leverage"], default_leverage)) or 1
+            side = "long" if net_qty > 0 else "short"
+
+            # Récupération du prix réel du marché
+            try:
+                mark_price = _get_first_float(get_market(symbol), ["price"], entry_price)
+            except Exception:
+                mark_price = entry_price
+                log(f"[WARNING] Could not fetch market price for {symbol}, using entry price", level="WARNING")
+
+            # Calcul du PnL réel
+            if side == "long":
+                pnl_usdc = (mark_price - entry_price) * net_qty
+                ret_pct = ((mark_price - entry_price) / entry_price * 100) if entry_price else 0.0
+            else:
+                pnl_usdc = (entry_price - mark_price) * abs(net_qty)
+                ret_pct = ((entry_price - mark_price) / entry_price * 100) if entry_price else 0.0
 
             notional = abs(net_qty) * entry_price
             margin = notional / leverage if leverage > 0 else notional
-
-            # Récupération PnL avec gestion d'erreur améliorée
-            pnl_usdc = _get_first_float(pos, ["unrealizedPnl", "pnlUnrealized"], None)
-            
-            if pnl_usdc is None:
-                # Vérifier le cache
-                cached = get_cached_pnl(symbol)
-                if cached and (datetime.now() - cached['timestamp']).seconds < 60:
-                    pnl_usdc = cached['pnl_usdc']
-                    log(f"[DEBUG] Using cached PnL for {symbol}: {pnl_usdc}", level="DEBUG")
-                else:
-                    # Calcul fallback avec warning
-                    if net_qty > 0:  # long
-                        pnl_usdc = (mark_price - entry_price) * net_qty
-                    else:            # short
-                        pnl_usdc = (entry_price - mark_price) * abs(net_qty)
-                    log(f"[WARNING] Calculated fallback PnL for {symbol}: {pnl_usdc}", level="WARNING")
-                    failed_updates += 1
-
-            # PnL% sur marge
             pnl_percent = (pnl_usdc / margin * 100) if margin != 0 else 0.0
 
-            # % "côté-position"
-            if net_qty > 0:  # long
-                ret_pct = ((mark_price - entry_price) / entry_price * 100) if entry_price else 0.0
-            else:            # short
-                ret_pct = ((entry_price - mark_price) / entry_price * 100) if entry_price else 0.0
-
-            side = "long" if net_qty > 0 else "short"
-            trailing_stop = safe_float(pos.get("trailingStopPct", 0.0))
+            # Durée et trailing stop
             duration_seconds = int(pos.get("durationSeconds", 0))
             h = duration_seconds // 3600
             m = (duration_seconds % 3600) // 60
             s = duration_seconds % 60
             duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
 
-            # Mettre à jour le cache si on a de vraies valeurs
-            if pnl_usdc is not None and failed_updates == 0:
-                update_pnl_cache(symbol, pnl_usdc, pnl_percent)
+            trailing_stop = safe_float(pos.get("trailingStopPct", 0.0))
+
+            # Mise à jour du cache
+            update_pnl_cache(symbol, pnl_usdc, pnl_percent)
 
             positions_list.append({
                 "symbol": symbol,
@@ -257,8 +250,5 @@ async def get_real_positions(account=None) -> List[Dict[str, Any]]:
             log(f"[ERROR] Error processing position {pos.get('symbol', 'UNKNOWN')}: {e}", level="ERROR")
             continue
 
-    if failed_updates > 0:
-        log(f"[WARNING] {failed_updates} positions had PnL update issues", level="WARNING")
-    
-    log(f"Successfully processed {len(positions_list)} open positions", level="DEBUG")
+    log(f"[DEBUG] Successfully processed {len(positions_list)} open positions", level="DEBUG")
     return positions_list
