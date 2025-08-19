@@ -70,3 +70,54 @@ def get_open_positions():
     except Exception as e:
         log(f"[ERROR] ❌ Failed to fetch open positions: {e}")
         return []
+    
+async def get_real_positions():
+    """
+    Récupère toutes les positions ouvertes pour le compte.
+    Retourne une liste de dicts :
+    [
+        {
+            "symbol": "BTCUSDC",
+            "pnl": 0.5,            # % PnL
+            "amount": 0.01,        # taille de la position
+            "duration": "5m30s",   # durée depuis ouverture
+            "trailing_stop": 0.3   # % trailing stop si actif
+        },
+        ...
+    ]
+    """
+    positions_list = []
+
+    try:
+        account = Account()  # Initialisation avec clés depuis variables d'environnement
+        positions = await account.get_positions()  # Liste brute des positions
+        
+        for p in positions:
+            if p.get("open", False):
+                symbol = p.get("symbol")
+                pnl = float(p.get("unrealized_pnl_pct", 0.0))
+                amount = float(p.get("size", 0.0))
+                duration_seconds = int(p.get("duration_seconds", 0))
+                
+                # Formater duration en H:M:S
+                h = duration_seconds // 3600
+                m = (duration_seconds % 3600) // 60
+                s = duration_seconds % 60
+                duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
+
+                trailing_stop = float(p.get("trailing_stop_pct", 0.0))
+
+                positions_list.append({
+                    "symbol": symbol,
+                    "pnl": pnl,
+                    "amount": amount,
+                    "duration": duration,
+                    "trailing_stop": trailing_stop
+                })
+
+        log(f"[INFO] Fetched {len(positions_list)} open positions from account")
+        return positions_list
+
+    except Exception as e:
+        log(f"[ERROR] Failed to fetch open positions: {e}", level="ERROR")
+        return []    

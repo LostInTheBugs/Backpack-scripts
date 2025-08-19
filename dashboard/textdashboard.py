@@ -9,6 +9,7 @@ from utils.public import check_table_and_fresh_data
 from live.live_engine import get_handle_live_symbol
 from utils.logger import log
 from config.settings import load_config
+from utils.position_utils import get_real_positions
 
 config = load_config()
 # Configuration des intervalles (en secondes) - avec valeurs par défaut
@@ -312,8 +313,21 @@ class OptimizedDashboard:
                     print(f"Batch rotation: {current_batch + 1}/{total_batches} (changes every {API_CALL_INTERVAL * 2}s)")
                 
             except Exception as e:
-                log(f"[ERROR] Erreur dans render_dashboard: {e}", level="ERROR")
+                log(f"Erreur dans render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
+
+async def load_initial_positions(self):
+    """
+    Charge toutes les positions ouvertes existantes depuis Backpack Exchange
+    au démarrage du dashboard.
+    """
+    try:
+        positions = await get_real_positions()
+        for pos in positions:
+            self.open_positions[pos["symbol"]] = pos
+        log(f"Loaded {len(self.open_positions)} open positions at startup", level="INFO")
+    except Exception as e:
+        log(f"Failed to load initial open positions: {e}", level="WARNING")
 
 
 async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: bool, symbols_container=None, args=None):
@@ -325,6 +339,9 @@ async def main_loop_textdashboard(symbols: list, pool, real_run: bool, dry_run: 
     
     dashboard = OptimizedDashboard(symbols_container, pool, real_run, dry_run, args)
     
+    # Charger les positions ouvertes existantes avant de lancer les tâches
+    await dashboard.load_initial_positions()
+
     # Créer les tâches
     processor_task = asyncio.create_task(dashboard.symbol_processor())
     render_task = asyncio.create_task(dashboard.render_dashboard())
