@@ -16,6 +16,7 @@ from utils.get_market import get_market
 config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
+dashboard_refresh_interval = config.performance.get("dashboard_refresh_interval", 2)
 
 account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
 
@@ -324,55 +325,51 @@ async def process_symbol_with_throttling(self, symbol):
 
 async def refresh_dashboard():
     """
-    Récupère et affiche toutes les positions ouvertes au format tableau avec PnL$ et ret%.
+    Rafraîchit le dashboard en console toutes les X secondes.
+    Affiche les positions ouvertes avec PnL et durée.
     """
-    positions = await get_real_positions(account)
-    if not positions:
-        log("[INFO] No open positions at this time")
-        return
-
-    table_data = []
-    for p in positions:
-        symbol = p["symbol"]
-        market_info = await get_market(symbol)
-        if market_info is None:
-            continue
-
-        current_price = market_info.get("current_price", p["entry_price"])
-        entry_price = market_info.get("entry_price", p["entry_price"])
-        side = market_info.get("side", p["side"])
-        amount = p["amount"]
-
-        # PnL en pourcentage déjà calculé
-        pnl_percent = market_info.get("pnl", 0.0)
-
-        # PnL$ selon la direction
-        if side == "long":
-            pnl_usd = (current_price - entry_price) * amount
-        else:  # short
-            pnl_usd = (entry_price - current_price) * amount
-
-        # ret% (retour en % sur l'investissement)
+    while True:
         try:
-            ret_percent = pnl_usd / (entry_price * amount) * 100
-        except ZeroDivisionError:
-            ret_percent = 0.0
+            positions = get_real_positions()
 
-        table_data.append([
-            symbol,
-            side,
-            f"{entry_price:.6f}",
-            f"{pnl_percent:.2f}%",
-            f"{pnl_usd:.2f}$",
-            f"({ret_percent:.2f}%)",
-            amount,
-            p["duration"],
-            f"{p.get('trailing_stop', 0.0):.2f}%"
-        ])
+            table_data = []
+            for pos in positions:
+                duration = datetime.utcnow() - pos["timestamp"]
+                duration_str = str(duration).split(".")[0]  # hh:mm:ss
 
-    table = tabulate(
-        table_data,
-        headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "ret%", "Amount", "Duration", "Trailing Stop"],
-        tablefmt="pretty"
-    )
-    log("\n" + table)
+                table_data.append([
+                    pos["symbol"],
+                    pos["side"],
+                    round(pos["entry_price"], 6),
+                    f"{pos['pnl_percent']:.2f}%",
+                    f"{pos['pnl_usd']:.2f}",
+                    pos.get("leverage", 1),
+                    round(pos["amount"], 4),
+                    duration_str,
+                    "-"  # Placeholder Trailing Stop si besoin
+                ])
+
+            headers = ["Symbol", "Side", "Entry", "PnL%", "PnL$", "Leverage", "Amount", "Duration", "Trailing Stop"]
+            os.system("clear")
+            print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC] Positions ouvertes:")
+            if table_data:
+                print(tabulate(table_data, headers=headers, tablefmt="grid"))
+            else:
+                print("Aucune position ouverte pour le moment.")
+
+        except Exception as e:
+            log(f"[ERROR] refresh_dashboard: {e}")
+
+        await asyncio.sleep(dashboard_refresh_interval)
+
+def main():
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(refresh_dashboard())
+    except KeyboardInterrupt:
+        print("Dashboard arrêté par l'utilisateur.")
+    finally:
+        loop.close()
+
+if __name__ == "__main__":
+    main()
