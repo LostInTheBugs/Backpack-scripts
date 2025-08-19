@@ -251,7 +251,9 @@ class OptimizedDashboard:
                 print("\n=== API CALL STATUS ===")
                 current_time = time.time()
                 api_status = []
-                for symbol in self.active_symbols[:5]:  # Montrer seulement les 5 premiers
+                max_symbols = config.performance.max_concurrent_symbols
+
+                for symbol in self.active_symbols[:max_symbols]:
                     last_call = self.last_api_call.get(symbol, 0)
                     if last_call > 0:
                         seconds_ago = int(current_time - last_call)
