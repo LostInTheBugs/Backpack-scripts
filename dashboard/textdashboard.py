@@ -322,7 +322,7 @@ async def process_symbol_with_throttling(self, symbol):
                 log(f"Erreur dans render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
 
-async def refresh_dashboard(account):
+async def refresh_dashboard():
     """
     Récupère et affiche toutes les positions ouvertes au format tableau avec PnL$ et ret%.
     """
