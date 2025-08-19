@@ -17,16 +17,17 @@ account = Account(public_key=public_key, secret_key=secret_key, window=5000, deb
 
 
 async def get_raw_positions():
-    """Récupère toutes les positions depuis l'API (thread-safe)."""
+    """Récupère toutes les positions depuis l'API Backpack (asynchrone)."""
     try:
-        return await asyncio.to_thread(account.positions)  # <-- méthode officielle
+        positions = await account.fetch_positions()  # ✅ méthode correcte
+        return positions or []
     except Exception as e:
         log(f"[ERROR] Failed to fetch positions: {e}", level="ERROR")
         return []
 
 
 async def get_open_positions():
-    """Retourne un dictionnaire {symbol: {entry_price, side, net_qty}} pour les positions ouvertes."""
+    """Retourne un dict {symbol: {entry_price, side, net_qty}} pour les positions ouvertes."""
     positions = await get_raw_positions()
     result = {}
     for p in positions:
@@ -38,7 +39,11 @@ async def get_open_positions():
             result[symbol] = {
                 "entry_price": entry_price,
                 "side": side,
-                "net_qty": net_qty
+                "net_qty": net_qty,
+                "pnlUnrealized": float(p.get("unrealizedPnl", 0.0)),
+                "unrealizedPnlPct": float(p.get("unrealizedPnlPct", 0.0)),
+                "trailingStopPct": float(p.get("trailingStopPct", 0.0)),
+                "durationSeconds": int(p.get("durationSeconds", 0))
             }
     return result
 
@@ -57,7 +62,6 @@ async def get_real_pnl(symbol: str):
         return 0.0, 1.0
 
     try:
-        # Calcul du PnL réel selon Backpack API
         pnl_unrealized = float(pos.get("pnlUnrealized", 0.0))
         net_qty = float(pos.get("net_qty", 1.0))
         notional = abs(net_qty) * float(pos.get("entry_price", 1.0))
@@ -69,23 +73,22 @@ async def get_real_pnl(symbol: str):
 
 async def get_real_positions():
     """Retourne une liste de positions ouvertes avec détails pour dashboard."""
-    positions = await get_raw_positions()
+    positions = await get_open_positions()
     positions_list = []
 
-    for p in positions:
-        net_qty = float(p.get("netQuantity", 0))
+    for symbol, p in positions.items():
+        net_qty = p["net_qty"]
         if net_qty != 0:
-            symbol = p.get("symbol")
-            entry_price = float(p.get("entryPrice", 0))
-            side = "long" if net_qty > 0 else "short"
-            pnl_pct = float(p.get("unrealizedPnlPct", 0.0))
+            entry_price = p["entry_price"]
+            side = p["side"]
+            pnl_pct = p["unrealizedPnlPct"]
             amount = abs(net_qty)
-            duration_seconds = int(p.get("durationSeconds", 0))
+            duration_seconds = p.get("durationSeconds", 0)
             h = duration_seconds // 3600
             m = (duration_seconds % 3600) // 60
             s = duration_seconds % 60
             duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
-            trailing_stop = float(p.get("trailingStopPct", 0.0))
+            trailing_stop = p.get("trailingStopPct", 0.0)
 
             positions_list.append({
                 "symbol": symbol,
