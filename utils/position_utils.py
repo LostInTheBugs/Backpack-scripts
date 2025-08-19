@@ -81,21 +81,30 @@ async def get_real_positions():
         if net_qty != 0:
             entry_price = p["entry_price"]
             side = p["side"]
-            pnl_pct = p["unrealizedPnlPct"]
-            amount = abs(net_qty)
+            trailing_stop = p.get("trailingStopPct", 0.0)
             duration_seconds = p.get("durationSeconds", 0)
+
+            # Calcul du PnL réel en pourcentage
+            try:
+                pnl_usdc = float(p.get("pnlUnrealized", 0.0))
+                notional = abs(net_qty) * entry_price
+                pnl_percent = (pnl_usdc / notional) * 100 if notional != 0 else 0.0
+            except Exception as e:
+                log(f"[ERROR] Calcul PnL réel {symbol}: {e}", level="ERROR")
+                pnl_percent = 0.0
+
+            # Formatage durée
             h = duration_seconds // 3600
             m = (duration_seconds % 3600) // 60
             s = duration_seconds % 60
             duration = f"{h}h{m}m{s}s" if h > 0 else f"{m}m{s}s"
-            trailing_stop = p.get("trailingStopPct", 0.0)
 
             positions_list.append({
                 "symbol": symbol,
                 "side": side,
                 "entry_price": entry_price,
-                "pnl": pnl_pct,
-                "amount": amount,
+                "pnl": pnl_percent,
+                "amount": abs(net_qty),
                 "duration": duration,
                 "trailing_stop": trailing_stop
             })
