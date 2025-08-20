@@ -34,11 +34,18 @@ async def get_market(symbol: str):
                 WHERE symbol = $1
             """, symbol)
 
-        if not row:
-            log(f"⚠️ Marché {symbol} non trouvé en base locale", level="error")
-            return None
-
-        result = dict(row)
+        result = {}
+        if row:
+            result = dict(row)
+        else:
+            log(f"[WARN] Marché {symbol} non trouvé en backpack_markets, utilisation du prix OHLCV", level="info")
+            # Remplir les champs pour compatibilité
+            result["symbol"] = symbol
+            result["baseSymbol"] = symbol.split("_")[0]
+            result["quoteSymbol"] = symbol.split("_")[1]
+            result["marketType"] = "PERP"
+            result["orderBookState"] = None
+            result["createdAt"] = None
 
         # Valeurs par défaut
         result["pnl"] = 0.0
@@ -62,7 +69,7 @@ async def get_market(symbol: str):
             df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
 
             current_price = float(df.iloc[-1]["close"])
-            result["price"] = current_price  # 👈 ajouté pour compatibilité
+            result["price"] = current_price
 
             if position:
                 entry_price = position["entry_price"]
