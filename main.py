@@ -82,7 +82,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         
         if auto_select and symbols_container:
             symbols = symbols_container.get('list', [])
-            log(f" Symbols list updated in main_loop: {symbols}")
+            log(f" Symbols list updated in main_loop: {symbols}", level="DEBUG")
 
         # Vérifier les symboles actifs moins fréquemment
         if current_time - last_symbols_check >= SYMBOLS_CHECK_INTERVAL:
@@ -98,7 +98,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             last_symbols_check = current_time
             
             if active_symbols:
-                log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="INFO")
+                log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="DEBUG")
             
             if ignored_symbols:
                 ignored_details = []
@@ -114,7 +114,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                         ignored_details.append(f"{sym} (inactive for {human_delay})")
                 
                 if ignored_details:
-                    log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="INFO")
+                    log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="DEBUG")
         
         # Lazy load handle_live_symbol function
         if handle_live_symbol is None:
@@ -135,7 +135,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                 log(f"[ERROR] Erreur lors du traitement de {symbol}: {e}", level="ERROR")
         
         if not active_symbols:
-            log(f" No active symbols for this iteration", level="INFO")
+            log(f" No active symbols for this iteration", level="DEBUG")
 
         # Attendre avant la prochaine itération
         await asyncio.sleep(max(1, API_CALL_INTERVAL // len(symbols) if symbols else 1))
