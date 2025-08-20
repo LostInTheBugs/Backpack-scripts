@@ -171,9 +171,9 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                     pnl_icon = "📉"
                 else:
                     pnl_icon = "➡️"
-                
+                simple_symbol = pos['symbol'].split('_')[0]
                 positions_data.append([
-                    f"{side_icon} {pos['symbol']}",
+                    f"{side_icon} {simple_symbol}",
                     pos["side"].upper(),
                     f"{pos['entry_price']:.6f}",
                     f"{pos['mark_price']:.6f}",
