@@ -159,42 +159,76 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
         positions = await get_real_positions()
         
         if positions:
-            positions_data = []
-            total_pnl = 0.0
-            
-            for pos in positions:
-                side_icon = "🟢" if pos["side"] == "long" else "🔴"
-                
-                if pos["pnl_pct"] > 0:
-                    pnl_icon = "📈"
-                elif pos["pnl_pct"] < 0:
-                    pnl_icon = "📉"
-                else:
-                    pnl_icon = "➡️"
-                
-                positions_data.append([
-                    f"{side_icon} {pos['symbol']}",
-                    pos["side"].upper(),
-                    f"{pos['entry_price']:.6f}",
-                    f"{pos['mark_price']:.6f}",
-                    f"{pnl_icon} {pos['pnl_pct']:+.2f}%",
-                    f"${pos['pnl_usd']:+.2f}",
-                    f"{pos['amount']:.6f}",
-                    "0h0m",  # Duration à calculer si nécessaire
-                    f"{pos['mark_price'] * 0.99:.6f}" if pos["side"] == "long" else f"{pos['mark_price'] * 1.01:.6f}"  # Trailing stop basé sur prix actuel
-                ])
-                
-                total_pnl += pos["pnl_usd"]
-            
-            print(f"💰 PnL Total: ${total_pnl:+.2f}")
-            print("=" * 100)
-            
-            print(tabulate(
-                positions_data,
-                headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amt", "TPrice", "TPnL%", "TPnL$"],
-                tablefmt="grid"  # Format plus compact
-            ))
-            print("=" * 100)
+                    # ✅ AFFICHAGE EN DEUX TABLEAUX pour éviter la coupure
+                    
+                    # Tableau 1 - Positions principales
+                    main_data = []
+                    trailing_data = []
+                    total_pnl = 0.0
+                    
+                    for pos in positions:
+                        side_icon = "🟢" if pos["side"] == "long" else "🔴"
+                        
+                        if pos["pnl_pct"] > 0:
+                            pnl_icon = "📈"
+                        elif pos["pnl_pct"] < 0:
+                            pnl_icon = "📉"
+                        else:
+                            pnl_icon = "➡️"
+                        
+                        # Calcul du trailing stop
+                        trailing_stop_trigger = getattr(config.trading, 'trailing_stop_trigger', 1.0)
+                        
+                        if pos["side"] == "long":
+                            trailing_stop_price = pos['mark_price'] * (1 - trailing_stop_trigger / 100)
+                            trailing_pnl_pct = (trailing_stop_price - pos['entry_price']) / pos['entry_price'] * 100
+                            trailing_pnl_usd = (trailing_stop_price - pos['entry_price']) * pos['amount']
+                        else:
+                            trailing_stop_price = pos['mark_price'] * (1 + trailing_stop_trigger / 100)
+                            trailing_pnl_pct = (pos['entry_price'] - trailing_stop_price) / pos['entry_price'] * 100
+                            trailing_pnl_usd = (pos['entry_price'] - trailing_stop_price) * pos['amount']
+                        
+                        trailing_icon = "📈" if trailing_pnl_pct > 0 else "📉" if trailing_pnl_pct < 0 else "➡️"
+                        
+                        # Tableau principal
+                        main_data.append([
+                            f"{side_icon}{pos['symbol'][:10]}",
+                            pos["side"][:1],
+                            f"{pos['entry_price']:.0f}",
+                            f"{pos['mark_price']:.0f}",
+                            f"{pnl_icon}{pos['pnl_pct']:+.1f}%",
+                            f"${pos['pnl_usd']:+.0f}",
+                            f"{pos['amount']:.2f}"
+                        ])
+                        
+                        # Tableau trailing
+                        trailing_data.append([
+                            f"{side_icon}{pos['symbol'][:10]}",
+                            f"{trailing_stop_price:.0f}",
+                            f"{trailing_icon}{trailing_pnl_pct:+.1f}%",
+                            f"${trailing_pnl_usd:+.0f}"
+                        ])
+                        
+                        total_pnl += pos["pnl_usd"]
+                    
+                    print(f"💰 PnL Total: ${total_pnl:+.2f}")
+                    print("=" * 100)
+                    
+                    # Affichage tableau principal
+                    print("📊 POSITIONS ACTUELLES:")
+                    print(tabulate(
+                        main_data,
+                        headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amount"],
+                        tablefmt="grid"
+                    ))
+                    
+                    print("\n🎯 TRAILING STOPS:")
+                    print(tabulate(
+                        trailing_data,
+                        headers=["Symbol", "TPrice", "TPnL%", "TPnL$"],
+                        tablefmt="grid"
+                    ))
+                    print("=" * 100)
         else:
             print("💰 PnL Total: $+0.00")
             print("=" * 100)
