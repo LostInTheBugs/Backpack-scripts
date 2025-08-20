@@ -53,11 +53,6 @@ class OptimizedDashboard:
         log(f"Max concurrent symbols set to: {self.max_concurrent_symbols} (pool_max_size: {pool_size})", level="INFO")
         self._handle_live_symbol = None
 
-    def _get_handle_live_symbol(self):
-        if self._handle_live_symbol is None:
-            self._handle_live_symbol = get_handle_live_symbol()
-        return self._handle_live_symbol
-
     async def load_initial_positions(self):
         try:
             positions = await get_real_positions(account)
@@ -169,14 +164,7 @@ class OptimizedDashboard:
             finally:
                 self.processing_symbols.discard(symbol)
 
-    async def handle_live_symbol_with_pool(self, symbol):
-        try:
-            handle_live_symbol = self._get_handle_live_symbol()
-            return await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
-        except Exception as e:
-            log(f"[ERROR] handle_live_symbol_with_pool: {e}", level="ERROR")
-            await asyncio.sleep(API_CALL_INTERVAL)
-            return None
+
 
     async def render_dashboard(self):
         while True:

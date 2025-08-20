@@ -35,6 +35,7 @@ MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
+
 def handle_live_symbol(symbol, current_price, side, entry_price, amount):
     if symbol not in trackers:
         trackers[symbol] = PositionTracker(symbol, side, entry_price, amount, trailing_percent=1.0)
@@ -51,6 +52,14 @@ def handle_live_symbol(symbol, current_price, side, entry_price, amount):
         "pnl_percent": pnl_percent,
         "trailing_stop": trailing
     }
+
+def get_handle_live_symbol():
+    """
+    SOLUTION: Lazy import to break circular dependency
+    Only import handle_live_symbol when actually needed
+    """
+    from live.live_engine import handle_live_symbol
+    return handle_live_symbol
 
 async def scan_all_symbols(pool, symbols):
     log("🔍 Lancement du scan indicateurs…", level="INFO")
