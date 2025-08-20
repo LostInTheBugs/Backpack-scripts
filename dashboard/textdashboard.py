@@ -264,6 +264,6 @@ async def refresh_positions():
 #        asyncio.run(display_dashboard_loop())
 #     except KeyboardInterrupt:
 #         log("Dashboard stopped by user.")
-
-if __name__ == "__main__":
-    main()
+#
+#if __name__ == "__main__":
+#   main()
