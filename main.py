@@ -198,7 +198,7 @@ async def async_main(args):
             # -------------------------
             # Mode live
             # -------------------------
-            from live.live_engine import get_handle_live_symbol
+            from live.live_engine import handle_live_symbol
 
             async def dashboard_loop():
                 """Boucle pour le mode textdashboard avec positions ouvertes"""
