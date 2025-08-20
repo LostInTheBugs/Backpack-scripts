@@ -60,6 +60,14 @@ async def position_already_open(symbol: str):
     return False
 
 async def get_real_pnl(symbol, side, entry_price, amount, leverage):
+    """
+    Calcule le PnL réel d'une position.
+    Retourne toujours un dict homogène avec :
+    - pnl (USD brut)
+    - pnl_usd (alias de pnl, pour compatibilité)
+    - pnl_percent (% du PnL)
+    - mark_price (dernier prix connu)
+    """
     from utils.get_market import get_market
 
     market = await get_market(symbol)
@@ -69,13 +77,13 @@ async def get_real_pnl(symbol, side, entry_price, amount, leverage):
     else:
         mark_price = market.get("price") or entry_price
 
-    # Calcul du PnL en $ (brut)
+    # ✅ PnL en USD (brut)
     if side.lower() == "long":
-        pnl = (mark_price - entry_price) * amount
+        pnl_usd = (mark_price - entry_price) * amount
     else:  # short
-        pnl = (entry_price - mark_price) * amount
+        pnl_usd = (entry_price - mark_price) * amount
 
-    # Calcul du PnL en %
+    # ✅ PnL en %
     if entry_price > 0:
         if side.lower() == "long":
             pnl_percent = (mark_price - entry_price) / entry_price * 100 * leverage
@@ -85,9 +93,10 @@ async def get_real_pnl(symbol, side, entry_price, amount, leverage):
         pnl_percent = 0.0
 
     return {
-        "pnl": pnl,
-        "pnl_percent": pnl_percent,
-        "mark_price": mark_price
+        "pnl": pnl_usd,             # alias pour compatibilité avec ancien code
+        "pnl_usd": pnl_usd,         # valeur principale en USD
+        "pnl_percent": pnl_percent, # en pourcentage
+        "mark_price": mark_price    # dernier prix connu
     }
 
 def safe_float(val, default=0.0):
@@ -108,41 +117,34 @@ def _get_first_float(d, keys, default=0.0):
 
 async def get_real_positions():
     """
-    Récupère les positions ouvertes réelles depuis Backpack Exchange
-    et calcule le PnL réel.
+    Récupère les positions réelles et calcule le PnL en USD et en %.
+    Retourne un dict {symbol: {infos position + PnL}}.
     """
-    try:
-        positions = account.get_open_positions()  # méthode correcte
-    except Exception as e:
-        log(f"[ERROR] Failed to get real positions: {e}", level="ERROR")
-        positions = []
+    from bpx.account import Account
 
-    result = []
+    account = Account(public_key, secret_key)
+    raw_positions = await account.get_positions()
 
-    for pos in positions:
-        symbol = pos.get("symbol")
-        net_qty = float(pos.get("netQuantity", 0))
-        if net_qty == 0:
-            continue  # ignorer les positions nulles
+    positions = {}
+    for pos in raw_positions:
+        symbol = pos["symbol"]
+        side = pos["side"].lower()
+        entry_price = float(pos["entryPrice"])
+        amount = float(pos["contracts"])
+        leverage = float(pos.get("leverage", 1))
 
-        side = "long" if net_qty > 0 else "short"
-        entry_price = float(pos.get("entryPrice", 0))
-        amount = abs(net_qty)
-        leverage = pos.get("leverage", 1)
-        timestamp = pos.get("timestamp", datetime.utcnow())
-
+        # 🔧 PnL avec la fonction unifiée
         pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
 
-        result.append({
+        positions[symbol] = {
             "symbol": symbol,
             "side": side,
             "entry_price": entry_price,
             "amount": amount,
             "leverage": leverage,
-            "timestamp": timestamp,
             "pnl_usd": pnl_data["pnl_usd"],
             "pnl_percent": pnl_data["pnl_percent"],
-        })
+            "mark_price": pnl_data["mark_price"],
+        }
 
-    return result
-
+    return positions
