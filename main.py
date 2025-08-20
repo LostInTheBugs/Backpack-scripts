@@ -208,7 +208,8 @@ async def async_main(args):
 
             async def dashboard_loop():
                 """Boucle pour le mode textdashboard avec positions ouvertes"""
-                pool = await asyncpg.create_pool(dsn=config.db_dsn)
+                PG_DSN = os.environ.get("PG_DSN") or config.pg_dsn
+                pool = await asyncpg.create_pool(dsn=PG_DSN)
                 dashboard = OptimizedDashboard(symbols_container, pool)
                 while not stop_event.is_set():
                     await refresh_dashboard(dashboard)
