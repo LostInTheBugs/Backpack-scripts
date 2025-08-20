@@ -16,6 +16,8 @@ class PositionTracker:
         self.direction = None  # 'BUY' or 'SELL'
         self.trailing_stop = None
         self.open_time = None
+        self.max_price = None  # For LONG positions
+        self.min_price = None  # For SHORT positions
 
     def is_open(self):
         """Check if position is currently open"""
@@ -30,10 +32,12 @@ class PositionTracker:
         # Set initial trailing stop
         if direction == "BUY":
             self.trailing_stop = price * (1 - self.trailing_stop_pct)
+            self.max_price = price
         else:  # SELL
             self.trailing_stop = price * (1 + self.trailing_stop_pct)
+            self.min_price = price
         
-        log(f" [{self.symbol}] 🟢 Position opened {direction} at {price:.4f} ({timestamp})", level="DEBUG")
+        log(f"[{self.symbol}] 🟢 Position opened {direction} at {price:.4f} ({timestamp})", level="DEBUG")
 
     def update_trailing_stop(self, price, timestamp):
         """Update trailing stop based on current price and best price reached"""
@@ -41,23 +45,15 @@ class PositionTracker:
             return
 
         if self.direction == "BUY":
-            # Store the highest price reached
-            if not hasattr(self, 'max_price'):
-                self.max_price = self.entry_price
+            # Update max price reached
             self.max_price = max(self.max_price, price)
-
-            # Trailing stop = max_price * (1 - trailing_stop_pct)
             new_stop = self.max_price * (1 - self.trailing_stop_pct)
             if new_stop > self.trailing_stop:
                 self.trailing_stop = new_stop
 
         elif self.direction == "SELL":
-            # Store the lowest price reached
-            if not hasattr(self, 'min_price'):
-                self.min_price = self.entry_price
+            # Update min price reached
             self.min_price = min(self.min_price, price)
-
-            # Trailing stop = min_price * (1 + trailing_stop_pct)
             new_stop = self.min_price * (1 + self.trailing_stop_pct)
             if new_stop < self.trailing_stop:
                 self.trailing_stop = new_stop
@@ -92,6 +88,8 @@ class PositionTracker:
         self.direction = None
         self.trailing_stop = None
         self.open_time = None
+        self.max_price = None
+        self.min_price = None
 
         return pnl_pct
 
