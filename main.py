@@ -147,7 +147,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     try:
         os.system("clear")
         print("=" * 100)
-        print(f"🚀 NOUVEAU DASHBOARD CORRIGÉ - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print(f"🚀 VERSION 24 FINALE - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"Active symbols: {len(active_symbols)}, Ignored symbols: {len(ignored_symbols)}")
         
         # Afficher quelques symboles actifs
