@@ -136,9 +136,56 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         await asyncio.sleep(max(1, API_CALL_INTERVAL // len(symbols) if symbols else 1))
 
 
+async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
+    """
+    Récupère les informations du stop suiveur pour une position donnée
+    Retourne le niveau du stop suiveur et l'indicateur d'activation
+    """
+    try:
+        # Ici vous devriez intégrer votre logique de récupération du stop suiveur
+        # Ceci est un exemple basique - adaptez selon votre implémentation
+        
+        # Exemple de calcul d'un stop suiveur basique (à adapter selon votre logique)
+        if side == "long":
+            # Pour une position long, le stop suiveur est en dessous du prix d'entrée
+            stop_percentage = 0.02  # 2% par exemple, à récupérer de votre config
+            trailing_stop_price = entry_price * (1 - stop_percentage)
+            
+            # Vérifier si le stop suiveur est activé (prix actuel > prix d'entrée + seuil)
+            activation_threshold = entry_price * 1.01  # 1% de profit pour activation
+            is_activated = mark_price > activation_threshold
+            
+            if is_activated:
+                # Stop suiveur activé, on l'ajuste selon le prix le plus haut atteint
+                trailing_stop_price = mark_price * (1 - stop_percentage)
+            
+        else:  # side == "short"
+            # Pour une position short, le stop suiveur est au-dessus du prix d'entrée
+            stop_percentage = 0.02  # 2% par exemple
+            trailing_stop_price = entry_price * (1 + stop_percentage)
+            
+            # Vérifier si le stop suiveur est activé
+            activation_threshold = entry_price * 0.99  # 1% de profit pour activation
+            is_activated = mark_price < activation_threshold
+            
+            if is_activated:
+                # Stop suiveur activé
+                trailing_stop_price = mark_price * (1 + stop_percentage)
+        
+        # Formatage de la valeur de retour
+        if is_activated:
+            return f"{trailing_stop_price:.6f} ✅"
+        else:
+            return f"{trailing_stop_price:.6f} ⏸️"
+            
+    except Exception as e:
+        log(f"Erreur lors du calcul du stop suiveur pour {symbol}: {e}", level="ERROR")
+        return "N/A"
+
+
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     """
-    Rafraîchit le dashboard avec les compteurs corrects - VERSION FINALE
+    Rafraîchit le dashboard avec les compteurs corrects - VERSION avec stop suiveur
     """
     import os
     from datetime import datetime
@@ -146,7 +193,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     
     try:
         os.system("clear")
-        print("=" * 100)
+        print("=" * 120)  # Élargi pour accommoder la nouvelle colonne
         print(f"🚀 VERSION 24 FINALE - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"Active symbols: {len(active_symbols)}, Ignored symbols: {len(ignored_symbols)}")
         
@@ -171,7 +218,17 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                     pnl_icon = "📉"
                 else:
                     pnl_icon = "➡️"
+                    
                 simple_symbol = pos['symbol'].split('_')[0]
+                
+                # ✅ NOUVEAU: Récupération des informations du stop suiveur
+                trailing_stop_info = await get_trailing_stop_info(
+                    pos['symbol'], 
+                    pos['side'], 
+                    pos['entry_price'], 
+                    pos['mark_price']
+                )
+                
                 positions_data.append([
                     f"{side_icon} {simple_symbol}",
                     pos["side"].upper(),
@@ -180,24 +237,27 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                     f"{pnl_icon} {pos['pnl_pct']:+.2f}%",
                     f"${pos['pnl_usd']:+.2f}",
                     f"{pos['amount']:.6f}",
+                    trailing_stop_info  # ✅ NOUVELLE COLONNE
                 ])
                 
                 total_pnl += pos["pnl_usd"]
             
             print(f"💰 PnL Total: ${total_pnl:+.2f}")
-            print("=" * 100)
+            print("=" * 120)
             
             print(tabulate(
                 positions_data,
-                headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amount"],
-                tablefmt="grid"  # Format plus compact
+                headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amount", "Trailing Stop"],  # ✅ NOUVEAU HEADER
+                tablefmt="grid"
             ))
-            print("=" * 100)
+            print("=" * 120)
+            print("Legend: ✅ = Trailing stop activated | ⏸️ = Trailing stop waiting")  # ✅ LÉGENDE
+            print("=" * 120)
         else:
             print("💰 PnL Total: $+0.00")
-            print("=" * 100)
+            print("=" * 120)
             print("No open positions yet.")
-            print("=" * 100)
+            print("=" * 120)
             
     except Exception as e:
         log(f"Erreur dans refresh_dashboard_with_counts: {e}", level="ERROR")
