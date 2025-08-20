@@ -65,30 +65,30 @@ class PositionTableDisplay:
         table_data.sort(key=lambda x: float(x[5].replace('$', '').replace('+', '')), reverse=True)
         
         # Effacer l'écran et afficher le tableau
-        os.system('clear' if os.name == 'posix' else 'cls')
-        
-        print("=" * 120)
-        print(f"🚀 POSITIONS OUVERTES - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        print(f"💰 PnL Total: ${total_pnl_usd:+.2f}")
-        print("=" * 120)
-        
-        if table_data:
-            headers = [
-                "Symbol", "Side", "Entry", "Mark", "PnL %", "PnL $", 
-                "Amount", "Duration", "Trailing"
-            ]
-            
-            print(tabulate(
-                table_data,
-                headers=headers,
-                tablefmt="fancy_grid",
-                floatfmt=".6f"
-            ))
-        else:
-            print("📭 Aucune position ouverte")
-            
-        print("=" * 120)
-        print()
+        #os.system('clear' if os.name == 'posix' else 'cls')
+        #
+        #print("=" * 120)
+        #print(f"🚀 POSITIONS OUVERTES - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        #print(f"💰 PnL Total: ${total_pnl_usd:+.2f}")
+        #print("=" * 120)
+        #
+        #if table_data:
+        #    headers = [
+        #        "Symbol", "Side", "Entry", "Mark", "PnL %", "PnL $", 
+        #        "Amount", "Duration", "Trailing"
+        #    ]
+        #    
+        #    print(tabulate(
+        #        table_data,
+        #        headers=headers,
+        #        tablefmt="fancy_grid",
+        #        floatfmt=".6f"
+        #    ))
+        #else:
+        #    print("📭 Aucune position ouverte")
+        #    
+        #print("=" * 120)
+        #print()
 
 # Instance globale
 position_table = PositionTableDisplay()
