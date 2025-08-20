@@ -18,7 +18,8 @@ from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
 from utils.i18n import t, set_locale, get_available_locales
 from live.live_engine import handle_live_symbol
-from dashboard.textdashboard import refresh_dashboard, OptimizedDashboard
+# ✅ SUPPRESSION de l'import de dashboard qui cause le conflit
+# from dashboard.textdashboard import refresh_dashboard, OptimizedDashboard
 
 # Charge la config au démarrage
 config = load_config()
