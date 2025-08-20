@@ -53,13 +53,31 @@ def handle_live_symbol(symbol, current_price, side, entry_price, amount):
         "trailing_stop": trailing
     }
 
-def get_handle_live_symbol():
+async def get_handle_live_symbol(symbol: str, pool, dashboard, *args, **kwargs):
     """
-    SOLUTION: Lazy import to break circular dependency
-    Only import handle_live_symbol when actually needed
+    Récupère les données et positions en live pour un symbole donné.
+    
+    Args:
+        symbol (str): symbole à traiter
+        pool: connection pool asyncpg ou équivalent
+        dashboard: instance d'OptimizedDashboard
+        *args, **kwargs: arguments supplémentaires ignorés
+    Returns:
+        dict: info du symbole ou None si erreur
     """
-    from live.live_engine import handle_live_symbol
-    return handle_live_symbol
+    try:
+        # Exemple : récupération des positions réelles pour ce symbole
+        positions = await get_real_positions(symbol, pool)
+
+        # Mets à jour le dashboard avec les positions
+        dashboard.update_symbol(symbol, positions)
+
+        return positions
+
+    except Exception as e:
+        log(f"[ERROR] Impossible de traiter {symbol}: {e}")
+        return None
+    
 
 async def scan_all_symbols(pool, symbols):
     log("🔍 Lancement du scan indicateurs…", level="INFO")
