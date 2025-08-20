@@ -264,55 +264,57 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
 import json
 
-async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
+def parse_position(pos):
+    """Convertit la position en dict si JSON valide, sinon None."""
+    if isinstance(pos, dict):
+        return pos
+    elif isinstance(pos, str):
+        pos = pos.strip()
+        if not pos:
+            return None
+        try:
+            return json.loads(pos)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+async def handle_existing_position(symbol, real_run=True, dry_run=False):
     try:
-        positions = await get_open_positions()  # retourne peut-être des strings
+        # Récupération des positions réelles
+        raw_positions = await get_real_positions()
+        parsed_positions = [parse_position(p) for p in raw_positions]
+        parsed_positions = [p for p in parsed_positions if p is not None]
 
-        # Parser les positions en dict si besoin
-        parsed_positions = []
-        for p in positions:
-            if isinstance(p, str):
-                parsed_positions.append(json.loads(p))
-            else:
-                parsed_positions.append(p)
-
-        # Trouver la position correspondante
         pos = next((p for p in parsed_positions if p["symbol"] == symbol), None)
         if not pos:
-            log(f"[{symbol}] ⚠️ No open position found", level="WARNING")
+            log(f"[{symbol}] ⚠️ No valid open position found", level="WARNING")
             return
 
-        # Récupération des infos essentielles
-        side = pos.get("side", "long")
-        entry_price = float(pos.get("entryPrice", 0))
-        amount = float(pos.get("netQuantity", 0))
-        leverage = float(pos.get("leverage", LEVERAGE))
+        side = pos.get("side")
+        entry_price = float(pos.get("entry_price"))
+        amount = float(pos.get("amount"))
+        leverage = float(pos.get("leverage", 1))  # défaut 1 si non renseigné
+        ts = pos.get("timestamp", datetime.utcnow().timestamp())
+        trailing_stop = float(pos.get("trailing_stop", 0))
 
-        # Calcul PnL réel
+        # Calcul du PnL réel
         pnl_usdc, notional, margin, lev = await get_real_pnl(symbol, side, entry_price, amount, leverage)
-        pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100
+        pnl_pct = (pnl_usdc / margin * 100) if margin else 0
 
-        # Suivi trailing stop
-        max_pnl = MAX_PNL_TRACKER.get(symbol, pnl_percent)
-        if pnl_percent > max_pnl:
-            MAX_PNL_TRACKER[symbol] = pnl_percent
-            max_pnl = pnl_percent
+        # Mise à jour du trailing stop
+        new_trailing_stop = max(trailing_stop, pnl_pct - 1) if side == "long" else min(trailing_stop, pnl_pct + 1)
 
-        if max_pnl >= MIN_PNL_FOR_TRAILING and (max_pnl - pnl_percent) >= TRAILING_STOP_TRIGGER:
-            log(f"[{symbol}] ⛔ Trailing stop triggered: PnL {pnl_percent:.2f}% < Max {max_pnl:.2f}% - {TRAILING_STOP_TRIGGER}%", level="DEBUG")
-            if real_run:
-                await close_position_percent_async(symbol, percent=100)
-                log(f"[{symbol}] ✅ Position closed successfully via trailing stop", level="DEBUG")
-            else:
-                log(f"[{symbol}] 🧪 DRY-RUN: Simulated close via trailing stop", level="DEBUG")
-            MAX_PNL_TRACKER.pop(symbol, None)
-        else:
-            log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}%", level="DEBUG")
-            MAX_PNL_TRACKER[symbol] = max_pnl
+        duration_sec = datetime.utcnow().timestamp() - ts
+        duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
+
+        log(
+            f"[{symbol}] Open {side} | Entry {entry_price} | PnL: {pnl_pct:.2f}% / ${pnl_usdc:.2f} "
+            f"| Amount: {amount} | Duration: {duration_str} | Trailing Stop: {new_trailing_stop:.2f}%",
+            level="INFO"
+        )
 
     except Exception as e:
         log(f"[{symbol}] ❌ Error in handle_existing_position: {e}", level="ERROR")
-
 
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
