@@ -5,8 +5,9 @@ from datetime import datetime, timedelta, timezone
 import os
 import inspect
 import asyncio
+import json
 
-from utils.position_utils import position_already_open, get_real_pnl, get_open_positions
+from utils.position_utils import position_already_open, get_real_pnl, get_open_positions, safe_float
 from utils.logger import log
 from utils.public import check_table_and_fresh_data
 from execute.async_wrappers import open_position_async, close_position_percent_async
@@ -59,7 +60,6 @@ async def scan_all_symbols(pool, symbols):
     log(f"❌ KO: {ko_symbols}", level="DEBUG")
     log(f"📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.", level="DEBUG")
 
-
 async def scan_symbol(pool, symbol):
     try:
         end_ts = datetime.now(timezone.utc)
@@ -81,7 +81,6 @@ async def scan_symbol(pool, symbol):
     except Exception as e:
         return symbol, f"Error: {e}"
 
-
 def import_strategy_signal(strategy):
     if strategy == "Trix":
         from signals.trix_only_signal import get_combined_signal
@@ -102,7 +101,6 @@ def import_strategy_signal(strategy):
     else:
         from signals.macd_rsi_breakout import get_combined_signal
     return get_combined_signal
-
 
 async def ensure_indicators(df, symbol):
     """
@@ -148,7 +146,6 @@ async def ensure_indicators(df, symbol):
             return None
 
     return df
-
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args=None):
     try:
@@ -262,9 +259,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         log(f"[{symbol}] 💥 Error: {e}", level="ERROR")
         traceback.print_exc()
 
-
-import json
-
 def parse_position(pos):
     """Convertit la position en dict si JSON valide, sinon None."""
     if isinstance(pos, dict):
@@ -279,6 +273,31 @@ def parse_position(pos):
             return None
     return None
 
+def should_close_position(pnl_pct, trailing_stop, side, duration_sec):
+    """
+    Détermine si une position doit être fermée basée sur les conditions de trailing stop
+    """
+    # Conditions de fermeture basées sur la configuration
+    min_duration = 60  # Minimum 1 minute avant de pouvoir fermer
+    
+    if duration_sec < min_duration:
+        return False
+    
+    # Trailing stop logic
+    if side == "long":
+        # Pour une position long, fermer si le PnL descend en dessous du trailing stop
+        if pnl_pct > MIN_PNL_FOR_TRAILING and pnl_pct <= (trailing_stop - TRAILING_STOP_TRIGGER):
+            return True
+    else:  # short
+        # Pour une position short, fermer si le PnL descend en dessous du trailing stop
+        if pnl_pct > MIN_PNL_FOR_TRAILING and pnl_pct <= (trailing_stop - TRAILING_STOP_TRIGGER):
+            return True
+    
+    # Autres conditions de fermeture (stop loss, take profit, etc.)
+    # Ajouter ici d'autres logiques si nécessaire
+    
+    return False
+
 async def handle_existing_position(symbol, real_run=True, dry_run=False):
     try:
         # Récupération des positions réelles
@@ -291,32 +310,71 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
             log(f"[{symbol}] ⚠️ No valid open position found", level="WARNING")
             return
 
+        # ✅ CORRECTION: Conversion sécurisée en float avec safe_float
         side = pos.get("side")
-        entry_price = float(pos.get("entry_price"))
-        amount = float(pos.get("amount"))
-        leverage = float(pos.get("leverage", 1))  # défaut 1 si non renseigné
-        ts = pos.get("timestamp", datetime.utcnow().timestamp())
-        trailing_stop = float(pos.get("trailing_stop", 0))
+        entry_price = safe_float(pos.get("entry_price"), 0.0)
+        amount = safe_float(pos.get("amount"), 0.0)
+        leverage = safe_float(pos.get("leverage", 1), 1.0)  # défaut 1 si non renseigné
+        ts = safe_float(pos.get("timestamp", datetime.utcnow().timestamp()), datetime.utcnow().timestamp())
+        trailing_stop = safe_float(pos.get("trailing_stop", 0), 0.0)
 
-        # Calcul du PnL réel
-        pnl_usdc, notional, margin, lev = await get_real_pnl(symbol, side, entry_price, amount, leverage)
-        pnl_pct = (pnl_usdc / margin * 100) if margin else 0
+        # ✅ CORRECTION: Calcul du PnL réel avec gestion des types
+        pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
+        
+        # Vérifier le type de retour et extraire les valeurs correctement
+        if isinstance(pnl_data, dict):
+            pnl_usdc = safe_float(pnl_data.get("pnl_usd", 0), 0.0)
+            pnl_percent = safe_float(pnl_data.get("pnl_percent", 0), 0.0)
+            mark_price = safe_float(pnl_data.get("mark_price", entry_price), entry_price)
+        else:
+            # Fallback si le format de retour est différent
+            log(f"[{symbol}] ⚠️ Unexpected return type from get_real_pnl: {type(pnl_data)}", level="WARNING")
+            pnl_usdc = 0.0
+            pnl_percent = 0.0
+            mark_price = entry_price
+
+        # Calcul du margin utilisé pour le pourcentage
+        margin = safe_float(amount * entry_price / leverage, 1.0) if leverage > 0 else 1.0
+        
+        # ✅ CORRECTION: Calcul sécurisé du pnl_pct
+        pnl_pct = safe_float(pnl_percent, 0.0)  # Utiliser directement pnl_percent du get_real_pnl
+        
+        # Alternative de calcul si pnl_percent n'est pas fiable
+        if pnl_pct == 0.0 and margin > 0:
+            pnl_pct = (pnl_usdc / margin * 100)
 
         # Mise à jour du trailing stop
-        new_trailing_stop = max(trailing_stop, pnl_pct - 1) if side == "long" else min(trailing_stop, pnl_pct + 1)
+        if side == "long":
+            new_trailing_stop = max(trailing_stop, pnl_pct - 1.0)
+        else:  # short
+            new_trailing_stop = min(trailing_stop, pnl_pct + 1.0)
 
         duration_sec = datetime.utcnow().timestamp() - ts
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
 
         log(
-            f"[{symbol}] Open {side} | Entry {entry_price} | PnL: {pnl_pct:.2f}% / ${pnl_usdc:.2f} "
-            f"| Amount: {amount} | Duration: {duration_str} | Trailing Stop: {new_trailing_stop:.2f}%",
+            f"[{symbol}] Open {side} | Entry {entry_price:.6f} | Mark {mark_price:.6f} | "
+            f"PnL: {pnl_pct:.2f}% / ${pnl_usdc:.2f} | Amount: {amount:.4f} | "
+            f"Duration: {duration_str} | Trailing Stop: {new_trailing_stop:.2f}%",
             level="INFO"
         )
 
+        # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position
+        if should_close_position(pnl_pct, new_trailing_stop, side, duration_sec):
+            if real_run:
+                try:
+                    log(f"[{symbol}] 🎯 Closing position due to trailing stop trigger", level="INFO")
+                    await close_position_percent_async(symbol, 100)  # Fermer 100% de la position
+                    log(f"[{symbol}] ✅ Position closed successfully", level="INFO")
+                except Exception as e:
+                    log(f"[{symbol}] ❌ Error closing position: {e}", level="ERROR")
+            elif dry_run:
+                log(f"[{symbol}] 🧪 DRY-RUN: Would close position due to trailing stop", level="DEBUG")
+
     except Exception as e:
         log(f"[{symbol}] ❌ Error in handle_existing_position: {e}", level="ERROR")
-
+        import traceback
+        traceback.print_exc()
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
     direction = "long" if signal=="BUY" else "short"
@@ -338,7 +396,6 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
     else:
         log(f"[{symbol}] ❌ Neither --real-run nor --dry-run specified: no action", level="ERROR")
 
-
 async def check_position_limit() -> bool:
     try:
         positions = await get_open_positions()
@@ -347,7 +404,6 @@ async def check_position_limit() -> bool:
     except Exception as e:
         log(f"⚠️ Error checking position limit: {e}", level="WARNING")
         return True
-
 
 async def get_position_stats() -> dict:
     try:
@@ -363,7 +419,6 @@ async def get_position_stats() -> dict:
     except Exception as e:
         log(f"⚠️ Error getting position stats: {e}", level="ERROR")
         return {}
-
 
 async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: bool, args=None):
     """
