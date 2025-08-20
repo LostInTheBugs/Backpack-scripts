@@ -139,44 +139,46 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
     """
     Récupère les informations du stop suiveur pour une position donnée
-    Retourne le niveau du stop suiveur et l'indicateur d'activation
+    Retourne le pourcentage du stop suiveur et l'indicateur d'activation
     """
     try:
         # Ici vous devriez intégrer votre logique de récupération du stop suiveur
         # Ceci est un exemple basique - adaptez selon votre implémentation
         
         # Exemple de calcul d'un stop suiveur basique (à adapter selon votre logique)
+        stop_percentage = 2.0  # 2% par exemple, à récupérer de votre config
+        
         if side == "long":
-            # Pour une position long, le stop suiveur est en dessous du prix d'entrée
-            stop_percentage = 0.02  # 2% par exemple, à récupérer de votre config
-            trailing_stop_price = entry_price * (1 - stop_percentage)
-            
-            # Vérifier si le stop suiveur est activé (prix actuel > prix d'entrée + seuil)
+            # Pour une position long, vérifier si le stop suiveur est activé
             activation_threshold = entry_price * 1.01  # 1% de profit pour activation
             is_activated = mark_price > activation_threshold
             
+            # Calculer la distance actuelle du stop en %
             if is_activated:
-                # Stop suiveur activé, on l'ajuste selon le prix le plus haut atteint
-                trailing_stop_price = mark_price * (1 - stop_percentage)
+                # Stop suiveur activé, calculé depuis le prix actuel
+                current_stop_distance = ((mark_price - (mark_price * (1 - stop_percentage/100))) / mark_price) * 100
+            else:
+                # Stop fixe depuis le prix d'entrée
+                current_stop_distance = ((entry_price - (entry_price * (1 - stop_percentage/100))) / entry_price) * 100
             
         else:  # side == "short"
-            # Pour une position short, le stop suiveur est au-dessus du prix d'entrée
-            stop_percentage = 0.02  # 2% par exemple
-            trailing_stop_price = entry_price * (1 + stop_percentage)
-            
-            # Vérifier si le stop suiveur est activé
+            # Pour une position short, vérifier si le stop suiveur est activé
             activation_threshold = entry_price * 0.99  # 1% de profit pour activation
             is_activated = mark_price < activation_threshold
             
+            # Calculer la distance actuelle du stop en %
             if is_activated:
-                # Stop suiveur activé
-                trailing_stop_price = mark_price * (1 + stop_percentage)
+                # Stop suiveur activé, calculé depuis le prix actuel
+                current_stop_distance = (((mark_price * (1 + stop_percentage/100)) - mark_price) / mark_price) * 100
+            else:
+                # Stop fixe depuis le prix d'entrée
+                current_stop_distance = (((entry_price * (1 + stop_percentage/100)) - entry_price) / entry_price) * 100
         
-        # Formatage de la valeur de retour
+        # Formatage de la valeur de retour en pourcentage
         if is_activated:
-            return f"{trailing_stop_price:.6f} ✅"
+            return f"-{current_stop_distance:.1f}% ✅"
         else:
-            return f"{trailing_stop_price:.6f} ⏸️"
+            return f"-{current_stop_distance:.1f}% ⏸️"
             
     except Exception as e:
         log(f"Erreur lors du calcul du stop suiveur pour {symbol}: {e}", level="ERROR")
@@ -251,7 +253,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                 tablefmt="grid"
             ))
             print("=" * 120)
-            print("Legend: ✅ = Trailing stop activated | ⏸️ = Trailing stop waiting")  # ✅ LÉGENDE
+            print("Legend: ✅ = Trailing stop activated | ⏸️ = Trailing stop waiting | % = Distance from current price")  # ✅ LÉGENDE
             print("=" * 120)
         else:
             print("💰 PnL Total: $+0.00")
