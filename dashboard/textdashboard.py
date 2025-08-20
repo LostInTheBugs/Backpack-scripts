@@ -55,7 +55,7 @@ class OptimizedDashboard:
 
     def _get_handle_live_symbol(self):
         if self._handle_live_symbol is None:
-            self._handle_live_symbol = get_handle_live_symbol()
+            self._handle_live_symbol = handle_live_symbol
         return self._handle_live_symbol
 
     async def load_initial_positions(self):
@@ -171,7 +171,6 @@ class OptimizedDashboard:
 
     async def handle_live_symbol_with_pool(self, symbol):
         try:
-            handle_live_symbol = self._get_handle_live_symbol()
             return await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
         except Exception as e:
             log(f"[ERROR] handle_live_symbol_with_pool: {e}", level="ERROR")
