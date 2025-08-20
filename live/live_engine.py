@@ -262,53 +262,53 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         traceback.print_exc()
 
 
+import json
+
 async def handle_existing_position(symbol: str, real_run: bool, dry_run: bool):
-    """
-    Vérifie et gère une position déjà ouverte pour un symbole donné,
-    avec suivi du PnL et déclenchement du trailing stop.
-    """
     try:
-        positions = await get_open_positions()  # récupère toutes les positions ouvertes
-        
+        positions = await get_open_positions()  # retourne peut-être des strings
+
+        # Parser les positions en dict si besoin
+        parsed_positions = []
+        for p in positions:
+            if isinstance(p, str):
+                parsed_positions.append(json.loads(p))
+            else:
+                parsed_positions.append(p)
+
         # Trouver la position correspondante
-        pos = next((p for p in positions if p["symbol"] == symbol), None)
+        pos = next((p for p in parsed_positions if p["symbol"] == symbol), None)
         if not pos:
             log(f"[{symbol}] ⚠️ No open position found", level="WARNING")
             return
 
-        # Récupération des informations essentielles
-        side = pos.get("side", "long")  # par défaut si non présent
+        # Récupération des infos essentielles
+        side = pos.get("side", "long")
         entry_price = float(pos.get("entryPrice", 0))
         amount = float(pos.get("netQuantity", 0))
-        leverage = float(pos.get("leverage", LEVERAGE))  # LEVERAGE à définir ou récupérer depuis config
+        leverage = float(pos.get("leverage", LEVERAGE))
 
-        # Calcul du PnL réel
+        # Calcul PnL réel
         pnl_usdc, notional, margin, lev = await get_real_pnl(symbol, side, entry_price, amount, leverage)
-        pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100  # POSITION_AMOUNT_USDC à définir
+        pnl_percent = (pnl_usdc / (POSITION_AMOUNT_USDC / LEVERAGE)) * 100
 
-        # Suivi du PnL maximal pour trailing stop
+        # Suivi trailing stop
         max_pnl = MAX_PNL_TRACKER.get(symbol, pnl_percent)
         if pnl_percent > max_pnl:
             MAX_PNL_TRACKER[symbol] = pnl_percent
             max_pnl = pnl_percent
 
-        # Vérification du trailing stop
         if max_pnl >= MIN_PNL_FOR_TRAILING and (max_pnl - pnl_percent) >= TRAILING_STOP_TRIGGER:
             log(f"[{symbol}] ⛔ Trailing stop triggered: PnL {pnl_percent:.2f}% < Max {max_pnl:.2f}% - {TRAILING_STOP_TRIGGER}%", level="DEBUG")
             if real_run:
-                try:
-                    await close_position_percent_async(symbol, percent=100)
-                    log(f"[{symbol}] ✅ Position closed successfully via trailing stop", level="DEBUG")
-                except Exception as e:
-                    log(f"[{symbol}] ❌ Error closing position: {e}", level="ERROR")
+                await close_position_percent_async(symbol, percent=100)
+                log(f"[{symbol}] ✅ Position closed successfully via trailing stop", level="DEBUG")
             else:
                 log(f"[{symbol}] 🧪 DRY-RUN: Simulated close via trailing stop", level="DEBUG")
             MAX_PNL_TRACKER.pop(symbol, None)
         else:
-            log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}% | Min for trailing: {MIN_PNL_FOR_TRAILING:.1f}%", level="DEBUG")
+            log(f"[{symbol}] 🔄 Current PnL: {pnl_percent:.2f}% | Max: {max_pnl:.2f}%", level="DEBUG")
             MAX_PNL_TRACKER[symbol] = max_pnl
-
-        log(f"[{symbol}] ⚠️ Position already open — Monitoring (trailing stop active)", level="DEBUG")
 
     except Exception as e:
         log(f"[{symbol}] ❌ Error in handle_existing_position: {e}", level="ERROR")
