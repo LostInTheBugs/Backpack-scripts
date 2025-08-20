@@ -135,6 +135,69 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         await asyncio.sleep(max(1, API_CALL_INTERVAL // len(symbols) if symbols else 1))
 
 
+async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
+    """
+    Rafraîchit le dashboard avec les compteurs corrects
+    """
+    import os
+    from datetime import datetime
+    from tabulate import tabulate
+    from utils.position_utils import get_real_positions
+    
+    try:
+        os.system("clear")
+        print(f"=== DASHBOARD ({datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC) ===")
+        print(f"Active symbols: {len(active_symbols)}, Ignored symbols: {len(ignored_symbols)}")
+        
+        # Afficher quelques symboles actifs
+        if active_symbols:
+            print(f"📈 Active: {', '.join(active_symbols[:5])}" + ("..." if len(active_symbols) > 5 else ""))
+        
+        if ignored_symbols:
+            print(f"⏸️  Ignored: {', '.join(ignored_symbols[:3])}" + ("..." if len(ignored_symbols) > 3 else ""))
+        
+        print()
+        
+        # Afficher les positions comme avant
+        positions = await get_real_positions()
+        
+        if positions:
+            positions_data = []
+            total_pnl = 0.0
+            
+            for pos in positions:
+                side_icon = "🟢" if pos["side"] == "long" else "🔴"
+                pnl_icon = "📈" if pos["pnl_pct"] > 0 else "📉"
+                
+                positions_data.append([
+                    f"{side_icon} {pos['symbol']}",
+                    pos["side"].upper(),
+                    f"{pos['entry_price']:.6f}",
+                    f"{pos['mark_price']:.6f}",
+                    f"{pnl_icon} {pos['pnl_pct']:+.2f}%",
+                    f"${pos['pnl_usd']:+.2f}",
+                    f"{pos['amount']:.6f}",
+                    "0h0m",  # Duration à calculer si nécessaire
+                    f"{pos['pnl_pct']:+.2f}%"  # Trailing stop simplifié
+                ])
+                
+                total_pnl += pos["pnl_usd"]
+            
+            print(f"💰 PnL Total: ${total_pnl:+.2f}")
+            print("=" * 100)
+            print(tabulate(
+                positions_data,
+                headers=["Symbol", "Side", "Entry", "Mark", "PnL%", "PnL$", "Amount", "Duration", "Trailing"],
+                tablefmt="fancy_grid"
+            ))
+            print("=" * 100)
+        else:
+            print("No open positions yet.")
+            
+    except Exception as e:
+        log(f"Erreur dans refresh_dashboard_with_counts: {e}", level="ERROR")
+
+
 async def async_main(args):
     db_config = config.database
     pg_dsn = config.pg_dsn or os.environ.get("PG_DSN")
@@ -201,10 +264,14 @@ async def async_main(args):
             from live.live_engine import handle_live_symbol
 
             async def dashboard_loop():
-                """Boucle pour le mode textdashboard avec positions ouvertes"""
+                """Boucle pour le mode textdashboard avec positions ouvertes - VERSION CORRIGÉE"""
+                last_symbols_check = 0
+                active_symbols = []
+                ignored_symbols = []
+                
                 while not stop_event.is_set():
-                    await refresh_dashboard()
-
+                    current_time = time.time()
+                    
                     # Détermination des symboles à traiter
                     if args.auto_select:
                         current_symbols = symbols_container.get('list', [])
@@ -212,10 +279,46 @@ async def async_main(args):
                         current_symbols = args.symbols.split(",")
                     else:
                         current_symbols = []
- # retourne la fonction handle_live_symbol
-                    for symbol in current_symbols:
+                    
+                    # ✅ CORRECTION : Vérifier les symboles actifs comme dans main_loop
+                    if current_time - last_symbols_check >= SYMBOLS_CHECK_INTERVAL:
+                        active_symbols = []
+                        ignored_symbols = []
+                        
+                        for symbol in current_symbols:
+                            if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
+                                active_symbols.append(symbol)
+                            else:
+                                ignored_symbols.append(symbol)
+                        
+                        last_symbols_check = current_time
+                        
+                        if active_symbols:
+                            log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="DEBUG")
+                        
+                        if ignored_symbols:
+                            ignored_details = []
+                            for sym in ignored_symbols:
+                                last_ts = await get_last_timestamp(pool, sym)
+                                if last_ts is None:
+                                    ignored_details.append(f"{sym} (table missing)")
+                                else:
+                                    now = datetime.now(timezone.utc)
+                                    delay = now - last_ts
+                                    seconds = int(delay.total_seconds())
+                                    human_delay = f"{seconds}s" if seconds < 120 else f"{seconds // 60}min"
+                                    ignored_details.append(f"{sym} (inactive for {human_delay})")
+                            
+                            if ignored_details:
+                                log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="DEBUG")
+                    
+                    # ✅ AMÉLIORATION : Affichage du dashboard avec les bons compteurs
+                    await refresh_dashboard_with_counts(active_symbols, ignored_symbols)
+                    
+                    # Traitement des symboles actifs seulement
+                    for symbol in active_symbols:
                         await handle_live_symbol(symbol, pool, real_run, dry_run, args)
-
+                    
                     await asyncio.sleep(config.performance.dashboard_refresh_interval)
 
             # Choix du mode textdashboard ou mode classique
