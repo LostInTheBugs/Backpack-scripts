@@ -113,7 +113,7 @@ async def get_real_pnl(symbol, side, entry_price, amount, leverage):
 
     market = await get_market(symbol)
     if not market:
-        log(f"[WARN] Market data not found for {symbol}, using entry_price as mark_price")
+        log(f"Market data not found for {symbol}, using entry_price as mark_price", level="WARNING")
         mark_price = entry_price
     else:
         mark_price = safe_float(market.get("price"), entry_price)

@@ -38,7 +38,7 @@ async def get_market(symbol: str):
         if row:
             result = dict(row)
         else:
-            log(f"[WARN] Marché {symbol} non trouvé en backpack_markets, utilisation du prix OHLCV", level="info")
+            log(f"Marché {symbol} non trouvé en backpack_markets, utilisation du prix OHLCV", level="WARNING")
             # Remplir les champs pour compatibilité
             result["symbol"] = symbol
             result["baseSymbol"] = symbol.split("_")[0]
