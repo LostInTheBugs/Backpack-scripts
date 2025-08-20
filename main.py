@@ -291,6 +291,7 @@ async def async_main(args):
             async def dashboard_loop():
                 """Boucle pour le mode textdashboard avec positions ouvertes - VERSION CORRIGÉE"""
                 last_symbols_check = 0
+                last_api_calls = {}
                 active_symbols = []
                 ignored_symbols = []
                 
@@ -340,9 +341,19 @@ async def async_main(args):
                     # ✅ AMÉLIORATION : Affichage du dashboard avec les bons compteurs
                     await refresh_dashboard_with_counts(active_symbols, ignored_symbols)
                     
-                    # Traitement des symboles actifs seulement
+                    # ✅ CORRECTION : Traitement des symboles actifs avec throttling comme main_loop
                     for symbol in active_symbols:
-                        await handle_live_symbol(symbol, pool, real_run, dry_run, args)
+                        # Vérifier si assez de temps s'est écoulé depuis le dernier appel
+                        if symbol in last_api_calls:
+                            time_since_last = current_time - last_api_calls[symbol]
+                            if time_since_last < API_CALL_INTERVAL:
+                                continue  # Skip ce symbole pour cette itération
+                        
+                        try:
+                            await handle_live_symbol(symbol, pool, real_run, dry_run, args)
+                            last_api_calls[symbol] = current_time
+                        except Exception as e:
+                            log(f"[ERROR] Erreur lors du traitement de {symbol}: {e}", level="ERROR")
                     
                     await asyncio.sleep(config.performance.dashboard_refresh_interval)
 
