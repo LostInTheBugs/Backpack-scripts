@@ -180,7 +180,6 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                     f"{pnl_icon} {pos['pnl_pct']:+.2f}%",
                     f"${pos['pnl_usd']:+.2f}",
                     f"{pos['amount']:.6f}",
-                    "0h0m",  # Duration à calculer si nécessaire
                     f"{pos['mark_price'] * 0.99:.6f}" if pos["side"] == "long" else f"{pos['mark_price'] * 1.01:.6f}"  # Trailing stop basé sur prix actuel
                 ])
                 
