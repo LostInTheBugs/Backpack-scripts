@@ -17,7 +17,7 @@ from config.settings import load_config
 from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
 from utils.i18n import t, set_locale, get_available_locales
-from live.live_engine import get_handle_live_symbol
+from live.live_engine import handle_live_symbol
 from dashboard.textdashboard import refresh_dashboard, OptimizedDashboard
 
 # Charge la config au démarrage
@@ -74,9 +74,6 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
     last_symbols_check = 0
     last_api_calls = {}  # timestamp du dernier appel par symbole
     
-    # Lazy load handle_live_symbol to avoid circular import
-    handle_live_symbol = None
-    
     while True:
         current_time = time.time()
         
@@ -115,10 +112,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                 
                 if ignored_details:
                     log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="DEBUG")
-        
-        # Lazy load handle_live_symbol function
-        if handle_live_symbol is None:
-            handle_live_symbol = get_handle_live_symbol()
+    
         
         # Traiter les symboles actifs avec throttling
         for symbol in active_symbols:
@@ -218,10 +212,9 @@ async def async_main(args):
                         current_symbols = args.symbols.split(",")
                     else:
                         current_symbols = []
-
-                    handle_fn = get_handle_live_symbol()  # retourne la fonction handle_live_symbol
+ # retourne la fonction handle_live_symbol
                     for symbol in current_symbols:
-                        await handle_fn(symbol, pool, real_run, dry_run, args)
+                        await handle_live_symbol(symbol, pool, real_run, dry_run, args)
 
                     await asyncio.sleep(config.performance.dashboard_refresh_interval)
 
