@@ -34,6 +34,33 @@ MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
+def update_trailing_stop(position: dict, current_price: float, trailing_pct: float = 1.0):
+    """
+    Met à jour le trailing stop d'une position.
+    - position: dict contenant 'side' et éventuellement 'trailing_stop'
+    - current_price: dernier prix du marché
+    - trailing_pct: pourcentage du trailing stop (ex: 1.0 pour 1%)
+    """
+
+    side = position.get("side")
+    if side not in ["long", "short"]:
+        return
+
+    # Calcul du nouveau stop selon la direction
+    if side == "long":
+        # Stop = prix actuel * (1 - trailing%)
+        new_stop = current_price * (1 - trailing_pct / 100)
+        # On ne remonte le stop que si c'est plus haut que l'ancien
+        if "trailing_stop" not in position or new_stop > position["trailing_stop"]:
+            position["trailing_stop"] = new_stop
+
+    elif side == "short":
+        # Stop = prix actuel * (1 + trailing%)
+        new_stop = current_price * (1 + trailing_pct / 100)
+        # On ne descend le stop que si c'est plus bas que l'ancien
+        if "trailing_stop" not in position or new_stop < position["trailing_stop"]:
+            position["trailing_stop"] = new_stop
+
 def get_handle_live_symbol():
     """
     SOLUTION: Lazy import to break circular dependency
