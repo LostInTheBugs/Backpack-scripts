@@ -22,7 +22,7 @@ async def get_pool():
 
 
 async def get_market(symbol: str):
-    """Récupère les infos marché et le PnL actuel pour un symbole"""
+    """Récupère les infos marché et le prix actuel pour un symbole"""
     try:
         pool = await get_pool()
 
@@ -40,20 +40,20 @@ async def get_market(symbol: str):
 
         result = dict(row)
 
+        # Valeurs par défaut
+        result["pnl"] = 0.0
+        result["price"] = None
+
         # Vérifier positions ouvertes
         open_positions = await get_open_positions()
         position = open_positions.get(symbol)
 
-        if position:
-            # Récupérer le prix actuel depuis la BDD OHLCV (bougie 1s)
-            end_ts = datetime.now(timezone.utc)
-            start_ts = end_ts - timedelta(seconds=10)
-            df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
+        # Récupérer le prix actuel depuis la BDD OHLCV (bougie 1s)
+        end_ts = datetime.now(timezone.utc)
+        start_ts = end_ts - timedelta(seconds=10)
+        df = await fetch_ohlcv_1s(symbol, start_ts, end_ts)
 
-            if df is None or df.empty:
-                result["pnl"] = 0.0
-                return result
-
+        if df is not None and not df.empty:
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             if df['timestamp'].dt.tz is None:
                 df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
@@ -62,20 +62,20 @@ async def get_market(symbol: str):
             df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
 
             current_price = float(df.iloc[-1]["close"])
-            entry_price = position["entry_price"]
-            side = position["side"]
+            result["price"] = current_price  # 👈 ajouté pour compatibilité
 
-            if side == "long":
-                pnl = (current_price - entry_price) / entry_price * 100
-            else:  # short
-                pnl = (entry_price - current_price) / entry_price * 100
+            if position:
+                entry_price = position["entry_price"]
+                side = position["side"]
 
-            result["pnl"] = pnl
-            result["current_price"] = current_price
-            result["side"] = side
-            result["entry_price"] = entry_price
-        else:
-            result["pnl"] = 0.0
+                if side == "long":
+                    pnl = (current_price - entry_price) / entry_price * 100
+                else:  # short
+                    pnl = (entry_price - current_price) / entry_price * 100
+
+                result["pnl"] = pnl
+                result["side"] = side
+                result["entry_price"] = entry_price
 
         return result
 
