@@ -117,44 +117,48 @@ def _get_first_float(d, keys, default=0.0):
 
 async def get_real_positions():
     """
-    Retourne un dictionnaire des positions ouvertes par symbole, avec :
-    - side: 'long' ou 'short'
-    - entry_price
-    - current_price
-    - pnl (en %)
-    - amount (quantité nette)
+    Récupère les positions ouvertes réelles depuis Backpack Exchange
+    et les retourne sous forme de liste de dictionnaires.
     """
-    positions_dict = {}
     try:
-        raw_positions = account.get_open_positions()  # récupère la liste depuis Backpack
+        raw_positions = account.get_open_positions()
+    except Exception as e:
+        log(f"[ERROR] Cannot fetch positions: {e}")
+        return []
 
-        for pos in raw_positions:
+    positions_list = []
+
+    for pos in raw_positions:
+        try:
             net_qty = float(pos.get("netQuantity", 0))
             if net_qty == 0:
                 continue  # ignorer les positions nulles
 
             side = "long" if net_qty > 0 else "short"
             entry_price = float(pos.get("entryPrice", 0))
-            current_price = float(pos.get("markPrice", 0))
-            amount = abs(net_qty)
+            current_price = float(pos.get("markPrice", 0))  # prix actuel du marché
 
-            if entry_price > 0 and current_price > 0:
-                if side == "long":
-                    pnl = (current_price - entry_price) / entry_price * 100
-                else:
-                    pnl = (entry_price - current_price) / entry_price * 100
+            # Calcul PnL %
+            if entry_price > 0:
+                pnl = (current_price - entry_price) / entry_price * 100
+                if side == "short":
+                    pnl = -pnl
             else:
                 pnl = 0.0
 
-            positions_dict[pos["symbol"]] = {
+            amount = abs(net_qty)
+
+            positions_list.append({
+                "symbol": pos.get("symbol"),
                 "side": side,
                 "entry_price": entry_price,
                 "current_price": current_price,
                 "pnl": pnl,
-                "amount": amount,
-            }
+                "amount": amount
+            })
 
-    except Exception as e:
-        log(f"⚠️ Erreur get_real_positions(): {e}", level="error")
+        except Exception as e:
+            log(f"[WARNING] Failed to parse position {pos}: {e}")
+            continue
 
-    return positions_dict
+    return positions_list
