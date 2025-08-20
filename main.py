@@ -138,44 +138,21 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
     """
-    Récupère les informations du stop suiveur pour une position donnée
-    Retourne le pourcentage du stop suiveur et l'indicateur d'activation
+    Trailing stop = PnL% - 1%
     """
     try:
-        # Configuration du stop suiveur (à adapter selon votre config)
-        stop_percentage = 2.0  # 2% par exemple, à récupérer de votre config
-        activation_threshold_pct = 1.0  # 1% de profit pour activation
-        
+        # Calcul du PnL actuel
         if side == "long":
-            # Pour une position LONG :
-            # - Stop loss en dessous du prix
-            # - Activation quand on a du profit (mark_price > entry_price + seuil)
-            
             pnl_pct = ((mark_price - entry_price) / entry_price) * 100
-            is_activated = pnl_pct >= activation_threshold_pct
-            
-            # Format d'affichage pour LONG : -X% (en dessous)
-            if is_activated:
-                return f"-{stop_percentage:.1f}% ✅"
-            else:
-                return f"-{stop_percentage:.1f}% ⏸️"
-            
-        else:  # side == "short"
-            # Pour une position SHORT :
-            # - Stop loss au-dessus du prix
-            # - Activation quand on a du profit (mark_price < entry_price - seuil)
-            
+        else:  # short
             pnl_pct = ((entry_price - mark_price) / entry_price) * 100
-            is_activated = pnl_pct >= activation_threshold_pct
-            
-            # Format d'affichage pour SHORT : +X% (au-dessus)
-            if is_activated:
-                return f"+{stop_percentage:.1f}% ✅"
-            else:
-                return f"+{stop_percentage:.1f}% ⏸️"
-            
-    except Exception as e:
-        log(f"Erreur lors du calcul du stop suiveur pour {symbol}: {e}", level="ERROR")
+        
+        # Trailing stop = PnL - 1%
+        trailing_stop_pct = pnl_pct - 1.0
+        
+        return f"{trailing_stop_pct:+.1f}%"
+        
+    except:
         return "N/A"
 
 
@@ -247,7 +224,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                 tablefmt="grid"
             ))
             print("=" * 120)
-            print("Legend: ✅ = Trailing stop activated | ⏸️ = Trailing stop waiting | -% = Below price (LONG) | +% = Above price (SHORT)")  # ✅ LÉGENDE
+            print("Legend: Trailing Stop = PnL% - 1%")  # ✅ LÉGENDE
             print("=" * 120)
         else:
             print("💰 PnL Total: $+0.00")
