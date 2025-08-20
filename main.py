@@ -137,21 +137,13 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     """
-    Rafraîchit le dashboard avec les compteurs corrects - VERSION CORRIGÉE
+    Rafraîchit le dashboard avec les compteurs corrects - VERSION FINALE
     """
     import os
     from datetime import datetime
     from tabulate import tabulate
-    from bpx.account import Account
-    from config.settings import get_config
     
     try:
-        # ✅ CORRECTION : Utiliser la même méthode que l'ancien dashboard
-        config = get_config()
-        public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
-        secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
-        account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
-        
         os.system("clear")
         print("=" * 100)
         print(f"🚀 POSITIONS OUVERTES - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -161,20 +153,15 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
         if active_symbols:
             print(f"📈 Active: {', '.join(active_symbols[:5])}" + ("..." if len(active_symbols) > 5 else ""))
         
-        # ✅ CORRECTION : Récupérer les positions comme dans l'ancien système
-        raw_positions = account.get_open_positions()
+        # ✅ UTILISATION DIRECTE de get_real_positions (on sait que ça marche)
+        from utils.position_utils import get_real_positions
+        positions = await get_real_positions()
         
-        if raw_positions:
-            from utils.position_utils import parse_position
-            
+        if positions:
             positions_data = []
             total_pnl = 0.0
             
-            for raw_pos in raw_positions:
-                pos = parse_position(raw_pos)
-                if not pos:  # Skip si parsing échoue
-                    continue
-                    
+            for pos in positions:
                 side_icon = "🟢" if pos["side"] == "long" else "🔴"
                 
                 if pos["pnl_pct"] > 0:
@@ -201,15 +188,11 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
             print(f"💰 PnL Total: ${total_pnl:+.2f}")
             print("=" * 100)
             
-            if positions_data:
-                print(tabulate(
-                    positions_data,
-                    headers=["Symbol", "Side", "Entry", "Mark", "PnL%", "PnL$", "Amount", "Duration", "Trailing"],
-                    tablefmt="fancy_grid"
-                ))
-            else:
-                print("No valid positions to display.")
-                
+            print(tabulate(
+                positions_data,
+                headers=["Symbol", "Side", "Entry", "Mark", "PnL%", "PnL$", "Amount", "Duration", "Trailing"],
+                tablefmt="fancy_grid"
+            ))
             print("=" * 100)
         else:
             print("💰 PnL Total: $+0.00")
