@@ -17,7 +17,9 @@ from config.settings import get_config
 from indicators.rsi_calculator import get_cached_rsi
 from utils.position_utils import get_real_positions
 from utils.table_display import position_table, handle_existing_position_with_table
+from utils.position_tracker import PositionTracker
 
+trackers = {}  # symbol -> PositionTracker
 
 # Load configuration
 config = get_config()
@@ -34,40 +36,22 @@ MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
-def update_trailing_stop(position: dict, current_price: float, trailing_pct: float = 1.0):
-    """
-    Met à jour le trailing stop d'une position.
-    - position: dict contenant 'side' et éventuellement 'trailing_stop'
-    - current_price: dernier prix du marché
-    - trailing_pct: pourcentage du trailing stop (ex: 1.0 pour 1%)
-    """
+def handle_live_symbol(symbol, current_price, side, entry_price, amount):
+    if symbol not in trackers:
+        trackers[symbol] = PositionTracker(symbol, side, entry_price, amount, trailing_percent=1.0)
 
-    side = position.get("side")
-    if side not in ["long", "short"]:
-        return
+    tracker = trackers[symbol]
+    tracker.update_price(current_price)
+    pnl_usd, pnl_percent = tracker.get_unrealized_pnl(current_price)
+    trailing = tracker.get_trailing_stop()
 
-    # Calcul du nouveau stop selon la direction
-    if side == "long":
-        # Stop = prix actuel * (1 - trailing%)
-        new_stop = current_price * (1 - trailing_pct / 100)
-        # On ne remonte le stop que si c'est plus haut que l'ancien
-        if "trailing_stop" not in position or new_stop > position["trailing_stop"]:
-            position["trailing_stop"] = new_stop
-
-    elif side == "short":
-        # Stop = prix actuel * (1 + trailing%)
-        new_stop = current_price * (1 + trailing_pct / 100)
-        # On ne descend le stop que si c'est plus bas que l'ancien
-        if "trailing_stop" not in position or new_stop < position["trailing_stop"]:
-            position["trailing_stop"] = new_stop
-
-def get_handle_live_symbol():
-    """
-    SOLUTION: Lazy import to break circular dependency
-    Only import handle_live_symbol when actually needed
-    """
-    from live.live_engine import handle_live_symbol
-    return handle_live_symbol
+    return {
+        "symbol": symbol,
+        "side": side,
+        "pnl_usd": pnl_usd,
+        "pnl_percent": pnl_percent,
+        "trailing_stop": trailing
+    }
 
 async def scan_all_symbols(pool, symbols):
     log("🔍 Lancement du scan indicateurs…", level="INFO")
