@@ -33,19 +33,19 @@ async def get_open_positions():
     positions = await get_raw_positions()
     result = {}
     for p in positions:
-        net_qty = float(p.get("netQuantity", 0))
+        net_qty = safe_float(p.get("netQuantity"), 0.0)
         if net_qty != 0:
             symbol = p.get("symbol")
-            entry_price = float(p.get("entryPrice", 0))
+            entry_price = safe_float(p.get("entryPrice"), 0.0)
             side = "long" if net_qty > 0 else "short"
             result[symbol] = {
                 "entry_price": entry_price,
                 "side": side,
                 "net_qty": net_qty,
-                "pnlUnrealized": float(p.get("unrealizedPnl", 0.0)),
-                "unrealizedPnlPct": float(p.get("unrealizedPnlPct", 0.0)),
-                "trailingStopPct": float(p.get("trailingStopPct", 0.0)),
-                "durationSeconds": int(p.get("durationSeconds", 0))
+                "pnlUnrealized": safe_float(p.get("pnlUnrealized"), 0.0),
+                "unrealizedPnlPct": safe_float(p.get("unrealizedPnlPct"), 0.0),
+                "trailingStopPct": safe_float(p.get("trailingStopPct"), 0.0),
+                "durationSeconds": int(safe_float(p.get("durationSeconds"), 0.0))
             }
     return result
 
@@ -130,13 +130,13 @@ async def get_real_positions():
 
     for pos in raw_positions:
         try:
-            net_qty = float(pos.get("netQuantity", 0))
+            net_qty = safe_float(pos.get("netQuantity"), 0.0)
             if net_qty == 0:
                 continue  # ignorer les positions nulles
 
             side = "long" if net_qty > 0 else "short"
-            entry_price = float(pos.get("entryPrice", 0))
-            current_price = float(pos.get("markPrice", 0))  # prix actuel du marché
+            entry_price = safe_float(pos.get("entryPrice"), 0.0)
+            current_price = safe_float(pos.get("markPrice"), entry_price)  # fallback sur entry_price
 
             # Calcul PnL %
             if entry_price > 0:
