@@ -1,3 +1,4 @@
+# utils/position_tracker.py
 from config.settings import get_config
 from utils.logger import log
 
@@ -35,18 +36,29 @@ class PositionTracker:
         log(f" [{self.symbol}] 🟢 Position opened {direction} at {price:.4f} ({timestamp})", level="DEBUG")
 
     def update_trailing_stop(self, price, timestamp):
-        """Update trailing stop based on current price"""
+        """Update trailing stop based on current price and best price reached"""
         if not self.is_open():
             return
 
         if self.direction == "BUY":
-            # For long positions, trailing stop moves up with price
-            new_stop = price * (1 - self.trailing_stop_pct)
+            # Store the highest price reached
+            if not hasattr(self, 'max_price'):
+                self.max_price = self.entry_price
+            self.max_price = max(self.max_price, price)
+
+            # Trailing stop = max_price * (1 - trailing_stop_pct)
+            new_stop = self.max_price * (1 - self.trailing_stop_pct)
             if new_stop > self.trailing_stop:
                 self.trailing_stop = new_stop
+
         elif self.direction == "SELL":
-            # For short positions, trailing stop moves down with price
-            new_stop = price * (1 + self.trailing_stop_pct)
+            # Store the lowest price reached
+            if not hasattr(self, 'min_price'):
+                self.min_price = self.entry_price
+            self.min_price = min(self.min_price, price)
+
+            # Trailing stop = min_price * (1 + trailing_stop_pct)
+            new_stop = self.min_price * (1 + self.trailing_stop_pct)
             if new_stop < self.trailing_stop:
                 self.trailing_stop = new_stop
 
