@@ -123,7 +123,7 @@ async def get_real_positions():
     from bpx.account import Account
 
     account = Account(public_key, secret_key)
-    raw_positions = await account.get_open_positions()
+    raw_positions = account.get_open_positions()
 
     positions = {}
     for pos in raw_positions:
