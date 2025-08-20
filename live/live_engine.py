@@ -14,6 +14,7 @@ from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from signals.strategy_selector import get_strategy_for_market
 from config.settings import get_config
 from indicators.rsi_calculator import get_cached_rsi
+from utils.position_utils import get_real_positions
 
 # Load configuration
 config = get_config()
