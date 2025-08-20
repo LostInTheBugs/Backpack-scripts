@@ -7,7 +7,8 @@ from tabulate import tabulate
 
 from utils.public import check_table_and_fresh_data
 from utils.logger import log
-from utils.position_utils import get_real_positions, PositionTracker
+from utils.position_utils import get_real_positions
+from utils.position_tracker import PositionTracker
 from config.settings import load_config
 from bpx.account import Account
 
