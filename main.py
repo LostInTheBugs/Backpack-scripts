@@ -190,7 +190,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
             
             print(tabulate(
                 positions_data,
-                headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amt", "TPrice", "TPnL%", "TPnL$"],
+                headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amount", "TPnL%", "TPnL$"],
                 tablefmt="grid"  # Format plus compact
             ))
             print("=" * 100)
