@@ -6,7 +6,7 @@ from datetime import datetime
 from tabulate import tabulate
 
 from utils.public import check_table_and_fresh_data
-from live.live_engine import get_handle_live_symbol, handle_live_symbol, trackers
+from live.live_engine import handle_live_symbol, trackers
 from utils.logger import log
 from config.settings import load_config
 from utils.position_utils import get_real_positions
