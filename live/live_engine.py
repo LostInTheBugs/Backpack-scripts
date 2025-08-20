@@ -17,8 +17,9 @@ from config.settings import get_config
 from indicators.rsi_calculator import get_cached_rsi
 from utils.position_utils import get_real_positions
 from utils.table_display import position_table, handle_existing_position_with_table
+from utils.position_tracker import PositionTracker
 
-
+trackers = {}  # symbol -> PositionTracker
 # Load configuration
 config = get_config()
 trading_config = config.trading
@@ -34,13 +35,22 @@ MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
-def get_handle_live_symbol():
-    """
-    SOLUTION: Lazy import to break circular dependency
-    Only import handle_live_symbol when actually needed
-    """
-    from live.live_engine import handle_live_symbol
-    return handle_live_symbol
+def handle_live_symbol(symbol, current_price, side, entry_price, amount):
+    if symbol not in trackers:
+        trackers[symbol] = PositionTracker(symbol, side, entry_price, amount, trailing_percent=1.0)
+
+    tracker = trackers[symbol]
+    tracker.update_price(current_price)
+    pnl_usd, pnl_percent = tracker.get_unrealized_pnl(current_price)
+    trailing = tracker.get_trailing_stop()
+
+    return {
+        "symbol": symbol,
+        "side": side,
+        "pnl_usd": pnl_usd,
+        "pnl_percent": pnl_percent,
+        "trailing_stop": trailing
+    }
 
 async def scan_all_symbols(pool, symbols):
     log("🔍 Lancement du scan indicateurs…", level="INFO")
