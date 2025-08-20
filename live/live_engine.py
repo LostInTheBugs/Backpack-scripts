@@ -16,6 +16,8 @@ from signals.strategy_selector import get_strategy_for_market
 from config.settings import get_config
 from indicators.rsi_calculator import get_cached_rsi
 from utils.position_utils import get_real_positions
+from utils.table_display import position_table, handle_existing_position_with_table
+
 
 # Load configuration
 config = get_config()
@@ -246,7 +248,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         log(f"[{symbol}] 🎯 Signal detected: {signal} | Details: {details}", level="DEBUG")
 
         if await position_already_open(symbol):
-            await handle_existing_position(symbol, real_run, dry_run)
+            await handle_existing_position_with_table(symbol, real_run, dry_run)
             return
 
         if signal in ["BUY","SELL"]:
