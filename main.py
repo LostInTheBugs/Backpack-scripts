@@ -142,43 +142,37 @@ async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
     Retourne le pourcentage du stop suiveur et l'indicateur d'activation
     """
     try:
-        # Ici vous devriez intégrer votre logique de récupération du stop suiveur
-        # Ceci est un exemple basique - adaptez selon votre implémentation
-        
-        # Exemple de calcul d'un stop suiveur basique (à adapter selon votre logique)
+        # Configuration du stop suiveur (à adapter selon votre config)
         stop_percentage = 2.0  # 2% par exemple, à récupérer de votre config
+        activation_threshold_pct = 1.0  # 1% de profit pour activation
         
         if side == "long":
-            # Pour une position long, vérifier si le stop suiveur est activé
-            activation_threshold = entry_price * 1.01  # 1% de profit pour activation
-            is_activated = mark_price > activation_threshold
+            # Pour une position LONG :
+            # - Stop loss en dessous du prix
+            # - Activation quand on a du profit (mark_price > entry_price + seuil)
             
-            # Calculer la distance actuelle du stop en %
+            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
+            is_activated = pnl_pct >= activation_threshold_pct
+            
+            # Format d'affichage pour LONG : -X% (en dessous)
             if is_activated:
-                # Stop suiveur activé, calculé depuis le prix actuel
-                current_stop_distance = ((mark_price - (mark_price * (1 - stop_percentage/100))) / mark_price) * 100
+                return f"-{stop_percentage:.1f}% ✅"
             else:
-                # Stop fixe depuis le prix d'entrée
-                current_stop_distance = ((entry_price - (entry_price * (1 - stop_percentage/100))) / entry_price) * 100
+                return f"-{stop_percentage:.1f}% ⏸️"
             
         else:  # side == "short"
-            # Pour une position short, vérifier si le stop suiveur est activé
-            activation_threshold = entry_price * 0.99  # 1% de profit pour activation
-            is_activated = mark_price < activation_threshold
+            # Pour une position SHORT :
+            # - Stop loss au-dessus du prix
+            # - Activation quand on a du profit (mark_price < entry_price - seuil)
             
-            # Calculer la distance actuelle du stop en %
+            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
+            is_activated = pnl_pct >= activation_threshold_pct
+            
+            # Format d'affichage pour SHORT : +X% (au-dessus)
             if is_activated:
-                # Stop suiveur activé, calculé depuis le prix actuel
-                current_stop_distance = (((mark_price * (1 + stop_percentage/100)) - mark_price) / mark_price) * 100
+                return f"+{stop_percentage:.1f}% ✅"
             else:
-                # Stop fixe depuis le prix d'entrée
-                current_stop_distance = (((entry_price * (1 + stop_percentage/100)) - entry_price) / entry_price) * 100
-        
-        # Formatage de la valeur de retour en pourcentage
-        if is_activated:
-            return f"-{current_stop_distance:.1f}% ✅"
-        else:
-            return f"-{current_stop_distance:.1f}% ⏸️"
+                return f"+{stop_percentage:.1f}% ⏸️"
             
     except Exception as e:
         log(f"Erreur lors du calcul du stop suiveur pour {symbol}: {e}", level="ERROR")
@@ -253,7 +247,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                 tablefmt="grid"
             ))
             print("=" * 120)
-            print("Legend: ✅ = Trailing stop activated | ⏸️ = Trailing stop waiting | % = Distance from current price")  # ✅ LÉGENDE
+            print("Legend: ✅ = Trailing stop activated | ⏸️ = Trailing stop waiting | -% = Below price (LONG) | +% = Above price (SHORT)")  # ✅ LÉGENDE
             print("=" * 120)
         else:
             print("💰 PnL Total: $+0.00")
