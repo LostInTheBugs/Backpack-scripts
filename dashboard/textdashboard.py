@@ -10,6 +10,7 @@ from live.live_engine import get_handle_live_symbol
 from utils.logger import log
 from config.settings import load_config
 from utils.position_utils import get_real_positions
+from utils.position_tracker import PositionTracker
 from bpx.account import Account
 from utils.get_market import get_market
 
@@ -18,14 +19,11 @@ config = load_config()
 public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
 
-# Valeur par défaut si performance.dashboard_refresh_interval n'existe pas
 dashboard_refresh_interval = getattr(config.performance, "dashboard_refresh_interval", 2)
+API_CALL_INTERVAL = getattr(config.performance, "api_call_interval", 5)
+SYMBOLS_CHECK_INTERVAL = getattr(config.performance, "symbols_check_interval", 30)
 
 account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
-
-API_CALL_INTERVAL = getattr(config.performance, "api_call_interval", 5)
-DASHBOARD_REFRESH_INTERVAL = dashboard_refresh_interval
-SYMBOLS_CHECK_INTERVAL = getattr(config.performance, "symbols_check_interval", 30)
 
 
 class OptimizedDashboard:
@@ -38,6 +36,7 @@ class OptimizedDashboard:
 
         self.trade_events = []
         self.open_positions = {}
+        self.position_trackers = {}  # <-- trackers par symbole
         self.active_symbols = []
         self.ignored_symbols = []
 
@@ -113,6 +112,21 @@ class OptimizedDashboard:
                     price = result.get("price", 0.0)
                     pnl_pct = result.get("pnl", 0.0)
 
+                    # Création ou récupération du tracker
+                    if symbol not in self.position_trackers:
+                        self.position_trackers[symbol] = PositionTracker(symbol)
+                    tracker = self.position_trackers[symbol]
+
+                    # Ouvrir le tracker si position pas déjà ouverte
+                    if side.lower() == "long" and not tracker.is_open():
+                        tracker.open("BUY", entry, datetime.utcnow())
+                    elif side.lower() == "short" and not tracker.is_open():
+                        tracker.open("SELL", entry, datetime.utcnow())
+
+                    # Mettre à jour le trailing stop
+                    tracker.update_trailing_stop(price, datetime.utcnow())
+
+                    # Calcul PnL USD
                     if entry > 0 and amount > 0 and price > 0:
                         if side.lower() == "long":
                             pnl_usdc = (price - entry) * amount
@@ -125,6 +139,7 @@ class OptimizedDashboard:
                     else:
                         pnl_usdc = ret_pct = 0.0
 
+                    # Stocker dans open_positions pour affichage
                     self.open_positions[symbol] = {
                         "symbol": symbol,
                         "side": side,
@@ -132,11 +147,12 @@ class OptimizedDashboard:
                         "pnl": pnl_pct,
                         "amount": amount,
                         "duration": result.get("duration", "0s"),
-                        "trailing_stop": result.get("trailing_stop", 0.0),
+                        "trailing_stop": tracker.trailing_stop,  # <-- prend la valeur du tracker
                         "pnl_usdc": pnl_usdc,
                         "ret_pct": ret_pct,
                     }
 
+                    # Ajouter à trade events
                     action = result.get("signal", None)
                     if action in ["BUY", "SELL"]:
                         self.trade_events.append({
@@ -165,7 +181,7 @@ class OptimizedDashboard:
     async def render_dashboard(self):
         while True:
             try:
-                await asyncio.sleep(DASHBOARD_REFRESH_INTERVAL)
+                await asyncio.sleep(dashboard_refresh_interval)
                 os.system("clear")
                 print(f"=== DASHBOARD ({datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC) ===")
                 print(f"Active symbols: {len(self.active_symbols)}, Ignored symbols: {len(self.ignored_symbols)}\n")
@@ -182,7 +198,7 @@ class OptimizedDashboard:
                             f'{p.get("ret_pct", 0.0):.2f}%',
                             p.get("amount", 0.0),
                             p.get("duration", "0s"),
-                            f'{p.get("trailing_stop", 0.0):.2f}%'
+                            f'{p.get("trailing_stop", 0.0):.6f}'
                         ])
                     print(tabulate(
                         positions_data,
