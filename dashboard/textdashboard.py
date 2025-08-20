@@ -53,11 +53,6 @@ class OptimizedDashboard:
         log(f"Max concurrent symbols set to: {self.max_concurrent_symbols} (pool_max_size: {pool_size})", level="INFO")
         self._handle_live_symbol = None
 
-    def _get_handle_live_symbol(self):
-        if self._handle_live_symbol is None:
-            self._handle_live_symbol = handle_live_symbol
-        return self._handle_live_symbol
-
     async def load_initial_positions(self):
         try:
             positions = await get_real_positions(account)
