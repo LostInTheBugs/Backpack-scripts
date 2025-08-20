@@ -13,7 +13,9 @@ from config.settings import load_config
 from bpx.account import Account
 
 config = load_config()
-account = Account(api_key=config.bpx_bot_public_key, api_secret=config.bpx_bot_secret_key)
+public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
+secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
+account = Account(api_key=public_key, api_secret=secret_key)
 
 API_CALL_INTERVAL = 1  # secondes entre appels API pour chaque symbole
 SYMBOLS_CHECK_INTERVAL = 10  # secondes entre vérifications des symboles
