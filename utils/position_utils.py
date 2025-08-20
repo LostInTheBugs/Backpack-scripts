@@ -117,34 +117,44 @@ def _get_first_float(d, keys, default=0.0):
 
 async def get_real_positions():
     """
-    Récupère les positions réelles et calcule le PnL en USD et en %.
-    Retourne un dict {symbol: {infos position + PnL}}.
+    Retourne un dictionnaire des positions ouvertes par symbole, avec :
+    - side: 'long' ou 'short'
+    - entry_price
+    - current_price
+    - pnl (en %)
+    - amount (quantité nette)
     """
-    from bpx.account import Account
+    positions_dict = {}
+    try:
+        raw_positions = account.get_open_positions()  # récupère la liste depuis Backpack
 
-    account = Account(public_key, secret_key)
-    raw_positions = account.get_open_positions()
+        for pos in raw_positions:
+            net_qty = float(pos.get("netQuantity", 0))
+            if net_qty == 0:
+                continue  # ignorer les positions nulles
 
-    positions = {}
-    for pos in raw_positions:
-        symbol = pos["symbol"]
-        side = pos["side"].lower()
-        entry_price = float(pos["entryPrice"])
-        amount = float(pos["contracts"])
-        leverage = float(pos.get("leverage", 1))
+            side = "long" if net_qty > 0 else "short"
+            entry_price = float(pos.get("entryPrice", 0))
+            current_price = float(pos.get("markPrice", 0))
+            amount = abs(net_qty)
 
-        # 🔧 PnL avec la fonction unifiée
-        pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
+            if entry_price > 0 and current_price > 0:
+                if side == "long":
+                    pnl = (current_price - entry_price) / entry_price * 100
+                else:
+                    pnl = (entry_price - current_price) / entry_price * 100
+            else:
+                pnl = 0.0
 
-        positions[symbol] = {
-            "symbol": symbol,
-            "side": side,
-            "entry_price": entry_price,
-            "amount": amount,
-            "leverage": leverage,
-            "pnl_usd": pnl_data["pnl_usd"],
-            "pnl_percent": pnl_data["pnl_percent"],
-            "mark_price": pnl_data["mark_price"],
-        }
+            positions_dict[pos["symbol"]] = {
+                "side": side,
+                "entry_price": entry_price,
+                "current_price": current_price,
+                "pnl": pnl,
+                "amount": amount,
+            }
 
-    return positions
+    except Exception as e:
+        log(f"⚠️ Erreur get_real_positions(): {e}", level="error")
+
+    return positions_dict
