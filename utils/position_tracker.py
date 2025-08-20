@@ -1,73 +1,120 @@
 # utils/position_tracker.py
 from config.settings import get_config
 from utils.logger import log
-from datetime import datetime
 
 # Load configuration
 config = get_config()
 
 class PositionTracker:
-    def __init__(self, symbol, direction, entry_price, quantity, open_time=None):
+    def __init__(self, symbol, trailing_stop_pct=None):
         self.symbol = symbol
-        self.direction = direction  # "long" ou "short"
-        self.entry_price = entry_price
-        self.quantity = quantity
-        self.open_time = open_time or datetime.utcnow()
+        # Use config value if not specified
+        if trailing_stop_pct is None:
+            trailing_stop_pct = config.trading.trailing_stop_trigger
+        self.trailing_stop_pct = trailing_stop_pct / 100  # Convert % to decimal (1% => 0.01)
+        self.entry_price = None
+        self.direction = None  # 'BUY' or 'SELL'
         self.trailing_stop = None
-        self.highest_price = entry_price if direction == "long" else None
-        self.lowest_price = entry_price if direction == "short" else None
-        self.closed = False
+        self.open_time = None
+        self.max_price = None  # For LONG positions
+        self.min_price = None  # For SHORT positions
 
     def is_open(self):
-        return not self.closed
+        """Check if position is currently open"""
+        return self.entry_price is not None
 
-    def get_unrealized_pnl(self, current_price):
-        if self.direction == "long":
-            return (current_price - self.entry_price) / self.entry_price * 100
-        else:
-            return (self.entry_price - current_price) / self.entry_price * 100
+    def open(self, direction, price, timestamp):
+        """Open a new position"""
+        self.entry_price = price
+        self.direction = direction
+        self.open_time = timestamp
+        
+        # Set initial trailing stop
+        if direction == "BUY":
+            self.trailing_stop = price * (1 - self.trailing_stop_pct)
+            self.max_price = price
+        else:  # SELL
+            self.trailing_stop = price * (1 + self.trailing_stop_pct)
+            self.min_price = price
+        
+        log(f"[{self.symbol}] 🟢 Position opened {direction} at {price:.4f} ({timestamp})", level="DEBUG")
 
-    def update_trailing_stop(self, current_price, timestamp=None):
-        """Met à jour le trailing stop dynamiquement"""
-        if self.direction == "long":
-            if self.highest_price is None or current_price > self.highest_price:
-                self.highest_price = current_price
-                self.trailing_stop = self.highest_price * 0.99
-        else:  # short
-            if self.lowest_price is None or current_price < self.lowest_price:
-                self.lowest_price = current_price
-                self.trailing_stop = self.lowest_price * 1.01
+    def update_trailing_stop(self, price, timestamp):
+        """Update trailing stop based on current price and best price reached"""
+        if not self.is_open():
+            return
 
-    def should_close(self, current_price):
-        """Vérifie si la position doit être fermée selon le trailing stop"""
-        if self.trailing_stop is None:
+        if self.direction == "BUY":
+            # Update max price reached
+            self.max_price = max(self.max_price, price)
+            new_stop = self.max_price * (1 - self.trailing_stop_pct)
+            if new_stop > self.trailing_stop:
+                self.trailing_stop = new_stop
+
+        elif self.direction == "SELL":
+            # Update min price reached
+            self.min_price = min(self.min_price, price)
+            new_stop = self.min_price * (1 + self.trailing_stop_pct)
+            if new_stop < self.trailing_stop:
+                self.trailing_stop = new_stop
+
+    def should_close(self, price):
+        """Check if position should be closed based on trailing stop"""
+        if not self.is_open():
             return False
-        if self.direction == "long":
-            return current_price <= self.trailing_stop
-        else:
-            return current_price >= self.trailing_stop
 
-    def close(self, current_price, timestamp=None):
-        """Ferme la position et retourne le PnL final"""
-        pnl = self.get_unrealized_pnl(current_price)
-        self.closed = True
-        return pnl
+        if self.direction == "BUY" and price <= self.trailing_stop:
+            return True
+        if self.direction == "SELL" and price >= self.trailing_stop:
+            return True
+        return False
 
-    def get_status(self, current_price, timestamp=None):
-        """Retourne un snapshot complet de l'état de la position"""
+    def close(self, price, timestamp):
+        """Close the position and calculate PnL"""
+        if not self.is_open():
+            return 0
+
+        # Calculate PnL percentage
+        pnl_pct = 0
+        if self.direction == "BUY":
+            pnl_pct = ((price - self.entry_price) / self.entry_price) * 100
+        elif self.direction == "SELL":
+            pnl_pct = ((self.entry_price - price) / self.entry_price) * 100
+
+        log(f"[{self.symbol}] 🔴 Position closed {self.direction} at {price:.4f} ({timestamp}) | PnL: {pnl_pct:.2f}%", level="DEBUG")
+
+        # Reset position state
+        self.entry_price = None
+        self.direction = None
+        self.trailing_stop = None
+        self.open_time = None
+        self.max_price = None
+        self.min_price = None
+
+        return pnl_pct
+
+    def get_position_info(self):
+        """Get current position information"""
         if not self.is_open():
             return None
-
-        # Met à jour trailing stop
-        self.update_trailing_stop(current_price, timestamp)
-
+        
         return {
-            "symbol": self.symbol,
-            "direction": self.direction,
-            "entry_price": self.entry_price,
-            "current_price": current_price,
-            "pnl_pct": self.get_unrealized_pnl(current_price),
-            "trailing_stop": self.trailing_stop,
-            "should_close": self.should_close(current_price),
-            "open_time": self.open_time,
+            'symbol': self.symbol,
+            'direction': self.direction,
+            'entry_price': self.entry_price,
+            'trailing_stop': self.trailing_stop,
+            'trailing_stop_pct': self.trailing_stop_pct * 100,
+            'open_time': self.open_time
         }
+
+    def get_unrealized_pnl(self, current_price):
+        """Calculate unrealized PnL based on current price"""
+        if not self.is_open():
+            return 0
+        
+        if self.direction == "BUY":
+            return ((current_price - self.entry_price) / self.entry_price) * 100
+        elif self.direction == "SELL":
+            return ((self.entry_price - current_price) / self.entry_price) * 100
+        
+        return 0

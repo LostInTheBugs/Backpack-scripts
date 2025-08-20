@@ -139,11 +139,10 @@ async def get_real_pnl(symbol, side, entry_price, amount, leverage):
     }
 
 
-async def get_real_positions(symbol: str = None, pool=None) -> list:
+async def get_real_positions() -> List[dict]:
     """
-    Récupère les positions ouvertes réelles depuis Backpack Exchange.
-    symbol: optionnel, filtre par symbole
-    pool: non utilisé actuellement
+    Récupère les positions ouvertes réelles depuis Backpack Exchange
+    et les retourne sous forme de liste de dictionnaires.
     """
     try:
         raw_positions = account.get_open_positions()
@@ -152,10 +151,10 @@ async def get_real_positions(symbol: str = None, pool=None) -> list:
         return []
 
     positions_list = []
+
     for pos in raw_positions:
         parsed = parse_position(pos)
         if parsed:
-            if symbol is None or parsed['symbol'] == symbol:
-                positions_list.append(parsed)
+            positions_list.append(parsed)
 
     return positions_list

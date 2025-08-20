@@ -6,33 +6,28 @@ from datetime import datetime
 from tabulate import tabulate
 
 from utils.public import check_table_and_fresh_data
+from live.live_engine import get_handle_live_symbol
 from utils.logger import log
+from config.settings import load_config
 from utils.position_utils import get_real_positions
 from utils.position_tracker import PositionTracker
-from config.settings import load_config
 from bpx.account import Account
+from utils.get_market import get_market
 
+# --- CONFIGURATION ---
 config = load_config()
-public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
-secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
+public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
+secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
+
+dashboard_refresh_interval = getattr(config.performance, "dashboard_refresh_interval", 2)
+API_CALL_INTERVAL = getattr(config.performance, "api_call_interval", 5)
+SYMBOLS_CHECK_INTERVAL = getattr(config.performance, "symbols_check_interval", 30)
+
 account = Account(public_key=public_key, secret_key=secret_key, window=5000, debug=False)
 
-API_CALL_INTERVAL = 1  # secondes entre appels API pour chaque symbole
-SYMBOLS_CHECK_INTERVAL = 10  # secondes entre vérifications des symboles
-dashboard_refresh_interval = 2  # secondes entre rafraîchissements du dashboard
-
-async def refresh_dashboard(dashboard: "OptimizedDashboard"):
-    while True:
-        try:
-            await dashboard.check_symbols_status()
-            tasks = [dashboard.process_symbol_with_throttling(sym) for sym in dashboard.active_symbols]
-            await asyncio.gather(*tasks)
-        except Exception as e:
-            log(f"Erreur dans refresh_dashboard: {e}", level="ERROR")
-        await asyncio.sleep(dashboard_refresh_interval)
 
 class OptimizedDashboard:
-    def __init__(self, symbols_container, pool, real_run=False, dry_run=False, args=None):
+    def __init__(self, symbols_container, pool, real_run, dry_run, args):
         self.symbols_container = symbols_container
         self.pool = pool
         self.real_run = real_run
@@ -57,6 +52,11 @@ class OptimizedDashboard:
 
         log(f"Max concurrent symbols set to: {self.max_concurrent_symbols} (pool_max_size: {pool_size})", level="INFO")
         self._handle_live_symbol = None
+
+    def _get_handle_live_symbol(self):
+        if self._handle_live_symbol is None:
+            self._handle_live_symbol = get_handle_live_symbol()
+        return self._handle_live_symbol
 
     async def load_initial_positions(self):
         try:
@@ -94,8 +94,9 @@ class OptimizedDashboard:
 
     async def process_symbol_with_throttling(self, symbol):
         current_time = time.time()
-        if symbol in self.last_api_call and current_time - self.last_api_call[symbol] < API_CALL_INTERVAL:
-            return
+        if symbol in self.last_api_call:
+            if current_time - self.last_api_call[symbol] < API_CALL_INTERVAL:
+                return
         if symbol in self.processing_symbols:
             return
 
@@ -103,11 +104,7 @@ class OptimizedDashboard:
             self.processing_symbols.add(symbol)
             try:
                 self.last_api_call[symbol] = current_time
-                if self._handle_live_symbol is None:
-                    from live.live_engine import get_handle_live_symbol
-                    self._handle_live_symbol = get_handle_live_symbol
-
-                result = await self._handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, self.args)
+                result = await self.handle_live_symbol_with_pool(symbol)
                 if result:
                     side = result.get("side", "N/A")
                     entry = result.get("entry_price", 0.0)
@@ -115,17 +112,21 @@ class OptimizedDashboard:
                     price = result.get("price", 0.0)
                     pnl_pct = result.get("pnl", 0.0)
 
+                    # Création ou récupération du tracker
                     if symbol not in self.position_trackers:
                         self.position_trackers[symbol] = PositionTracker(symbol)
                     tracker = self.position_trackers[symbol]
 
+                    # Ouvrir le tracker si position pas déjà ouverte
                     if side.lower() == "long" and not tracker.is_open():
                         tracker.open("BUY", entry, datetime.utcnow())
                     elif side.lower() == "short" and not tracker.is_open():
                         tracker.open("SELL", entry, datetime.utcnow())
 
+                    # Mettre à jour le trailing stop
                     tracker.update_trailing_stop(price, datetime.utcnow())
 
+                    # Calcul PnL USD
                     if entry > 0 and amount > 0 and price > 0:
                         if side.lower() == "long":
                             pnl_usdc = (price - entry) * amount
@@ -138,6 +139,7 @@ class OptimizedDashboard:
                     else:
                         pnl_usdc = ret_pct = 0.0
 
+                    # Stocker dans open_positions pour affichage
                     self.open_positions[symbol] = {
                         "symbol": symbol,
                         "side": side,
@@ -145,11 +147,12 @@ class OptimizedDashboard:
                         "pnl": pnl_pct,
                         "amount": amount,
                         "duration": result.get("duration", "0s"),
-                        "trailing_stop": tracker.trailing_stop,
+                        "trailing_stop": tracker.trailing_stop,  # <-- prend la valeur du tracker
                         "pnl_usdc": pnl_usdc,
                         "ret_pct": ret_pct,
                     }
 
+                    # Ajouter à trade events
                     action = result.get("signal", None)
                     if action in ["BUY", "SELL"]:
                         self.trade_events.append({
@@ -165,6 +168,15 @@ class OptimizedDashboard:
                 log(f"[ERROR] Impossible de traiter {symbol}: {e}", level="ERROR")
             finally:
                 self.processing_symbols.discard(symbol)
+
+    async def handle_live_symbol_with_pool(self, symbol):
+        try:
+            handle_live_symbol = self._get_handle_live_symbol()
+            return await handle_live_symbol(symbol, self.pool, self.real_run, self.dry_run, args=self.args)
+        except Exception as e:
+            log(f"[ERROR] handle_live_symbol_with_pool: {e}", level="ERROR")
+            await asyncio.sleep(API_CALL_INTERVAL)
+            return None
 
     async def render_dashboard(self):
         while True:
@@ -198,3 +210,25 @@ class OptimizedDashboard:
             except Exception as e:
                 log(f"Erreur dans render_dashboard: {e}", level="ERROR")
                 await asyncio.sleep(5)
+
+
+async def refresh_dashboard():
+    """
+    Rafraîchit le dashboard toutes les X secondes.
+    """
+    dashboard = OptimizedDashboard({}, None, True, False, {})
+    await dashboard.render_dashboard()
+
+
+def main():
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(refresh_dashboard())
+    except KeyboardInterrupt:
+        print("Dashboard arrêté par l'utilisateur.")
+    finally:
+        loop.close()
+
+
+if __name__ == "__main__":
+    main()
