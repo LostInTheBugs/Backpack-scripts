@@ -139,10 +139,11 @@ async def get_real_pnl(symbol, side, entry_price, amount, leverage):
     }
 
 
-async def get_real_positions(symbol: str = None) -> list:
+async def get_real_positions(symbol: str = None, pool=None) -> list:
     """
     Récupère les positions ouvertes réelles depuis Backpack Exchange.
-    Si symbol est fourni, retourne uniquement les positions pour ce symbole.
+    symbol: optionnel, filtre par symbole
+    pool: non utilisé actuellement
     """
     try:
         raw_positions = account.get_open_positions()
