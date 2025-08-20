@@ -228,42 +228,42 @@ async def refresh_positions():
 
         handle_live_symbol(symbol, current_price, side, entry_price, amount)
 
-async def display_dashboard_loop():
-    while True:
-        await refresh_positions()
-        table_data = []
-        total_pnl = 0.0
+#async def display_dashboard_loop():
+#    while True:
+#        await refresh_positions()
+#        table_data = []
+#        total_pnl = 0.0
+#
+#        for symbol, tracker in trackers.items():
+#            # Utiliser le prix actuel pour PnL
+#            current_price = tracker.max_price if tracker.side == "long" else tracker.min_price
+#            pnl_usd, pnl_percent = tracker.get_unrealized_pnl(current_price)
+#            total_pnl += pnl_usd
+#
+#            table_data.append([
+#                symbol,
+#                tracker.side,
+#                f"{tracker.entry_price:.2f}",
+#                f"{pnl_percent:.2f}%",
+#                f"${pnl_usd:.2f}",
+#                tracker.amount,
+#                f"${tracker.get_trailing_stop():.2f}" if tracker.get_trailing_stop() else "N/A"
+#            ])
+#
+#        os.system('clear' if os.name == 'posix' else 'cls')
+#        print("="*110)
+#        print(f"🚀 POSITIONS OUVERTES - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+#        print(f"💰 PnL Total: ${total_pnl:.2f}")
+#        print("="*110)
+#        print(tabulate(table_data, headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "Amount", "Trailing Stop"]))
+#        print("="*110)
+#        await asyncio.sleep(1)  # rafraîchissement chaque seconde
 
-        for symbol, tracker in trackers.items():
-            # Utiliser le prix actuel pour PnL
-            current_price = tracker.max_price if tracker.side == "long" else tracker.min_price
-            pnl_usd, pnl_percent = tracker.get_unrealized_pnl(current_price)
-            total_pnl += pnl_usd
-
-            table_data.append([
-                symbol,
-                tracker.side,
-                f"{tracker.entry_price:.2f}",
-                f"{pnl_percent:.2f}%",
-                f"${pnl_usd:.2f}",
-                tracker.amount,
-                f"${tracker.get_trailing_stop():.2f}" if tracker.get_trailing_stop() else "N/A"
-            ])
-
-        os.system('clear' if os.name == 'posix' else 'cls')
-        print("="*110)
-        print(f"🚀 POSITIONS OUVERTES - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        print(f"💰 PnL Total: ${total_pnl:.2f}")
-        print("="*110)
-        print(tabulate(table_data, headers=["Symbol", "Side", "Entry", "PnL%", "PnL$", "Amount", "Trailing Stop"]))
-        print("="*110)
-        await asyncio.sleep(1)  # rafraîchissement chaque seconde
-
-def main():
-    try:
-        asyncio.run(display_dashboard_loop())
-    except KeyboardInterrupt:
-        log("Dashboard stopped by user.")
+# def main():
+#     try:
+#        asyncio.run(display_dashboard_loop())
+#     except KeyboardInterrupt:
+#         log("Dashboard stopped by user.")
 
 if __name__ == "__main__":
     main()
