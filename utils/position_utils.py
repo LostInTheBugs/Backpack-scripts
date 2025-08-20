@@ -59,19 +59,36 @@ async def position_already_open(symbol: str):
             return True
     return False
 
-async def get_real_pnl(symbol: str, side: str, entry_price: float, amount: float, leverage: float = 1.0) -> dict:
+async def get_real_pnl(symbol, side, entry_price, amount, leverage):
     from utils.get_market import get_market
 
     market = await get_market(symbol)
-    mark_price = market.get("price", entry_price) or entry_price
-
-    if side.lower() == "long":
-        pnl_usd = (mark_price - entry_price) * amount
+    if not market:
+        log(f"[WARN] Market data not found for {symbol}, using entry_price as mark_price")
+        mark_price = entry_price
     else:
-        pnl_usd = (entry_price - mark_price) * amount
+        mark_price = market.get("price") or entry_price
 
-    pnl_percent = (pnl_usd / (entry_price * amount)) * leverage * 100
-    return {"pnl_usd": pnl_usd, "pnl_percent": pnl_percent}
+    # Calcul du PnL en $ (brut)
+    if side.lower() == "long":
+        pnl = (mark_price - entry_price) * amount
+    else:  # short
+        pnl = (entry_price - mark_price) * amount
+
+    # Calcul du PnL en %
+    if entry_price > 0:
+        if side.lower() == "long":
+            pnl_percent = (mark_price - entry_price) / entry_price * 100 * leverage
+        else:
+            pnl_percent = (entry_price - mark_price) / entry_price * 100 * leverage
+    else:
+        pnl_percent = 0.0
+
+    return {
+        "pnl": pnl,
+        "pnl_percent": pnl_percent,
+        "mark_price": mark_price
+    }
 
 def safe_float(val, default=0.0):
     """Convertit val en float, même si c'est une string invalide ou vide."""
