@@ -160,13 +160,8 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
             if real_run:
                 try:
                     log(f"[{symbol}] 🎯 Closing position due to stop loss/trailing stop trigger", level="INFO")
-                    # ✅ CORRECTION: Utiliser la bonne fonction de fermeture
-                    try:
-                        await close_position_percent_async(symbol, 100)  # Essayer avec pourcentage
-                    except TypeError:
-                        # Si ça ne marche pas, essayer sans pourcentage
-                        from execute.async_wrappers import close_position_async
-                        await close_position_async(symbol)
+                    # ✅ CORRECTION: Utiliser la bonne signature de la fonction
+                    await close_position_percent_async(symbol, 100.0)  # Le wrapper gère déjà public_key et secret_key
                     
                     # Nettoyer le trailing stop de la mémoire
                     from live.live_engine import TRAILING_STOPS
@@ -182,6 +177,11 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
                     log(f"[{symbol}] ✅ Position closed successfully", level="INFO")
                 except Exception as e:
                     log(f"[{symbol}] ❌ Error closing position: {e}", level="ERROR")
+                    # En cas d'erreur, au moins nettoyer la mémoire
+                    from live.live_engine import TRAILING_STOPS
+                    key = f"{symbol}_{side}_{entry_price}"
+                    if key in TRAILING_STOPS:
+                        del TRAILING_STOPS[key]
             elif dry_run:
                 log(f"[{symbol}] 🧪 DRY-RUN: Would close position due to stop loss/trailing stop", level="DEBUG")
 
