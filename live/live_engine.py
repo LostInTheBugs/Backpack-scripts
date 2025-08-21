@@ -329,9 +329,9 @@ def parse_position(pos):
             return None
     return None
 
-def should_close_position(pnl_pct, trailing_stop, side, duration_sec):
+def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=None):
     """
-    Détermine si une position doit être fermée basée sur les conditions de trailing stop
+    Détermine si une position doit être fermée basée sur les conditions de trailing stop ET stop loss fixe
     """
     # Conditions de fermeture basées sur la configuration
     min_duration = 60  # Minimum 1 minute avant de pouvoir fermer
@@ -339,12 +339,33 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec):
     if duration_sec < min_duration:
         return False
     
-    # ✅ NOUVEAU: Logique de trailing stop améliorée
+    # ✅ NOUVEAU: Logique de stop loss fixe quand trailing stop pas encore activé
+    if trailing_stop is None:
+        # Récupérer le stop loss par défaut de la stratégie
+        try:
+            current_strategy = strategy or config.strategy.default_strategy.lower()
+            
+            if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
+                stop_loss_pct = -config.strategy.three_out_of_four.stop_loss_pct
+            elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
+                stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
+            else:
+                stop_loss_pct = -2.0  # Valeur par défaut
+            
+            # Vérifier si le PnL a touché le stop loss fixe
+            if pnl_pct <= stop_loss_pct:
+                log(f"Fixed stop loss triggered: PnL {pnl_pct:.2f}% <= Stop Loss {stop_loss_pct:.2f}%", level="INFO")
+                return True
+                
+        except Exception as e:
+            log(f"Error checking fixed stop loss: {e}", level="ERROR")
+    
+    # ✅ Logique de trailing stop (existante)
     if trailing_stop is not None and pnl_pct <= trailing_stop:
         log(f"Trailing stop triggered: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}%", level="INFO")
         return True
     
-    # Autres conditions de fermeture (stop loss, take profit, etc.)
+    # Autres conditions de fermeture (take profit, etc.)
     # Ajouter ici d'autres logiques si nécessaire
     
     return False
@@ -406,8 +427,8 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
             level="INFO"
         )
 
-        # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position
-        if should_close_position(pnl_pct, trailing_stop, side, duration_sec):
+        # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position avec stratégie
+        if should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy):
             if real_run:
                 try:
                     log(f"[{symbol}] 🎯 Closing position due to trailing stop trigger", level="INFO")
