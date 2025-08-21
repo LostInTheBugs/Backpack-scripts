@@ -33,8 +33,51 @@ MIN_PNL_FOR_TRAILING = trading_config.min_pnl_for_trailing
 
 MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 
+# ✅ NOUVEAU: Stockage global des trailing stops
+TRAILING_STOPS = {}  # {symbol: trailing_stop_value}
+
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
+
+async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
+    """
+    Calcule et retourne le trailing stop pour une position
+    Le trailing stop ne descend jamais, seulement monte
+    """
+    try:
+        # Calcul du PnL actuel
+        if side == "long":
+            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
+        else:  # short
+            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
+        
+        # Clé unique pour cette position
+        key = f"{symbol}_{side}_{entry_price}"
+        
+        # Si PnL >= seuil minimum, trailing stop activé
+        if pnl_pct >= MIN_PNL_FOR_TRAILING:
+            current_trailing = pnl_pct - TRAILING_STOP_TRIGGER
+            
+            # Récupérer le trailing stop précédent ou initialiser
+            if key not in TRAILING_STOPS:
+                TRAILING_STOPS[key] = current_trailing
+                log(f"[{symbol}] 🎯 Trailing stop initialized at {current_trailing:.1f}%", level="DEBUG")
+            else:
+                # Le trailing stop ne peut QUE monter, jamais descendre
+                prev_trailing = TRAILING_STOPS[key]
+                TRAILING_STOPS[key] = max(prev_trailing, current_trailing)
+                
+                if TRAILING_STOPS[key] > prev_trailing:
+                    log(f"[{symbol}] 📈 Trailing stop updated: {prev_trailing:.1f}% → {TRAILING_STOPS[key]:.1f}%", level="DEBUG")
+            
+            return TRAILING_STOPS[key]
+        else:
+            # Pas encore activé, pas de trailing stop
+            return None
+            
+    except Exception as e:
+        log(f"[{symbol}] ❌ Error calculating trailing stop: {e}", level="ERROR")
+        return None
 
 def handle_live_symbol(symbol, current_price, side, entry_price, amount):
     if symbol not in trackers:
@@ -296,15 +339,10 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec):
     if duration_sec < min_duration:
         return False
     
-    # Trailing stop logic
-    if side == "long":
-        # Pour une position long, fermer si le PnL descend en dessous du trailing stop
-        if pnl_pct > MIN_PNL_FOR_TRAILING and pnl_pct <= (trailing_stop - TRAILING_STOP_TRIGGER):
-            return True
-    else:  # short
-        # Pour une position short, fermer si le PnL descend en dessous du trailing stop
-        if pnl_pct > MIN_PNL_FOR_TRAILING and pnl_pct <= (trailing_stop - TRAILING_STOP_TRIGGER):
-            return True
+    # ✅ NOUVEAU: Logique de trailing stop améliorée
+    if trailing_stop is not None and pnl_pct <= trailing_stop:
+        log(f"Trailing stop triggered: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}%", level="INFO")
+        return True
     
     # Autres conditions de fermeture (stop loss, take profit, etc.)
     # Ajouter ici d'autres logiques si nécessaire
@@ -329,7 +367,6 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         amount = safe_float(pos.get("amount"), 0.0)
         leverage = safe_float(pos.get("leverage", 1), 1.0)  # défaut 1 si non renseigné
         ts = safe_float(pos.get("timestamp", datetime.utcnow().timestamp()), datetime.utcnow().timestamp())
-        trailing_stop = safe_float(pos.get("trailing_stop", 0), 0.0)
 
         # ✅ CORRECTION: Calcul du PnL réel avec gestion des types
         pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
@@ -356,11 +393,8 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         if pnl_pct == 0.0 and margin > 0:
             pnl_pct = (pnl_usdc / margin * 100)
 
-        # Mise à jour du trailing stop
-        if side == "long":
-            new_trailing_stop = max(trailing_stop, pnl_pct - 1.0)
-        else:  # short
-            new_trailing_stop = min(trailing_stop, pnl_pct + 1.0)
+        # ✅ NOUVEAU: Mise à jour du trailing stop via la nouvelle fonction
+        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
 
         duration_sec = datetime.utcnow().timestamp() - ts
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
@@ -368,16 +402,23 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         log(
             f"[{symbol}] Open {side} | Entry {entry_price:.6f} | Mark {mark_price:.6f} | "
             f"PnL: {pnl_pct:.2f}% / ${pnl_usdc:.2f} | Amount: {amount:.4f} | "
-            f"Duration: {duration_str} | Trailing Stop: {new_trailing_stop:.2f}%",
+            f"Duration: {duration_str} | Trailing Stop: {trailing_stop:.2f}%" if trailing_stop else "N/A",
             level="INFO"
         )
 
         # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position
-        if should_close_position(pnl_pct, new_trailing_stop, side, duration_sec):
+        if should_close_position(pnl_pct, trailing_stop, side, duration_sec):
             if real_run:
                 try:
                     log(f"[{symbol}] 🎯 Closing position due to trailing stop trigger", level="INFO")
                     await close_position_percent_async(symbol, 100)  # Fermer 100% de la position
+                    
+                    # ✅ NOUVEAU: Nettoyer le trailing stop de la mémoire
+                    key = f"{symbol}_{side}_{entry_price}"
+                    if key in TRAILING_STOPS:
+                        del TRAILING_STOPS[key]
+                        log(f"[{symbol}] 🧹 Trailing stop cleaned from memory", level="DEBUG")
+                    
                     log(f"[{symbol}] ✅ Position closed successfully", level="INFO")
                 except Exception as e:
                     log(f"[{symbol}] ❌ Error closing position: {e}", level="ERROR")
