@@ -138,7 +138,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
     """
-    Récupère le trailing stop depuis live_engine.py
+    Récupère le trailing stop depuis live_engine.py ou stop loss par défaut
     """
     try:
         # Import et appel de la fonction du live_engine
@@ -150,9 +150,28 @@ async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
         if trailing_stop is not None:
             return f"{trailing_stop:+.1f}% ✅"
         else:
-            # Calculer le seuil nécessaire pour activation
-            min_pnl = config.trading.min_pnl_for_trailing
-            return f"N/A (need {min_pnl:+.1f}%)"
+            # Pas encore activé, utiliser le stop loss par défaut de la stratégie
+            try:
+                # Récupérer la stratégie actuelle (vous pouvez adapter selon votre logique)
+                # Pour l'instant, on prend la stratégie par défaut
+                current_strategy = config.strategy.default_strategy.lower()
+                
+                # Mapping des stratégies vers les configs de stop loss
+                if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
+                    default_stop = config.strategy.three_out_of_four.stop_loss_pct
+                elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
+                    default_stop = config.strategy.two_out_of_four_scalp.stop_loss_pct
+                else:
+                    # Stratégie par défaut ou autres stratégies
+                    default_stop = 2.0  # Valeur par défaut
+                
+                # Afficher le stop loss fixe en négatif (protection)
+                return f"-{default_stop:.1f}% ⏸️"
+                
+            except Exception as e2:
+                log(f"Erreur récupération stop loss par défaut: {e2}", level="WARNING")
+                min_pnl = config.trading.min_pnl_for_trailing
+                return f"N/A (need {min_pnl:+.1f}%)"
         
     except Exception as e:
         log(f"Erreur récupération trailing stop pour {symbol}: {e}", level="ERROR")
@@ -227,7 +246,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                 tablefmt="grid"
             ))
             print("=" * 120)
-            print(f"Legend: Trailing Stop = PnL% - {config.trading.trailing_stop_trigger}% (min PnL: {config.trading.min_pnl_for_trailing}%)")  # ✅ LÉGENDE
+            print(f"Legend: ✅ = Trailing stop active | ⏸️ = Fixed stop loss ({config.strategy.default_strategy}) | Trigger: {config.trading.trailing_stop_trigger}% | Min PnL: {config.trading.min_pnl_for_trailing}%")  # ✅ LÉGENDE
             print("=" * 120)
         else:
             print("💰 PnL Total: $+0.00")
