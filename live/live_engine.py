@@ -334,7 +334,7 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
     Détermine si une position doit être fermée basée sur les conditions de trailing stop ET stop loss fixe
     """
     # Conditions de fermeture basées sur la configuration
-    min_duration = 60  # Minimum 1 minute avant de pouvoir fermer
+    min_duration = 2  # Minimum 1 minute avant de pouvoir fermer
     
     if duration_sec < min_duration:
         return False
