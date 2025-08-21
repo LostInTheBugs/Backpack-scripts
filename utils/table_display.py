@@ -160,7 +160,13 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
             if real_run:
                 try:
                     log(f"[{symbol}] 🎯 Closing position due to stop loss/trailing stop trigger", level="INFO")
-                    await close_position_percent_async(symbol, 100)  # Fermer 100% de la position
+                    # ✅ CORRECTION: Utiliser la bonne fonction de fermeture
+                    try:
+                        await close_position_percent_async(symbol, 100)  # Essayer avec pourcentage
+                    except TypeError:
+                        # Si ça ne marche pas, essayer sans pourcentage
+                        from execute.async_wrappers import close_position_async
+                        await close_position_async(symbol)
                     
                     # Nettoyer le trailing stop de la mémoire
                     from live.live_engine import TRAILING_STOPS
