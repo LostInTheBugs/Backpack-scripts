@@ -173,17 +173,11 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
                 try:
                     log(f"[{symbol}] 🎯 Closing position due to stop loss/trailing stop trigger", level="INFO")
                     
-                    # ✅ CORRECTION: Appel direct de la fonction sync avec les bons paramètres
+                    # ✅ CORRECTION: Appel direct de la fonction async avec les bons paramètres
                     from execute.close_position_percent import close_position_percent
-                    import os
                     
-                    public_key = os.environ.get("bpx_bot_public_key")
-                    secret_key = os.environ.get("bpx_bot_secret_key")
-                    
-                    # Appel direct synchrone (dans un thread pour ne pas bloquer)
-                    import asyncio
-                    loop = asyncio.get_event_loop()
-                    result = await loop.run_in_executor(None, close_position_percent, public_key, secret_key, symbol, 100.0)
+                    # La fonction est déjà async, pas besoin de wrapper !
+                    result = await close_position_percent(symbol, 100.0)
                     
                     log(f"[{symbol}] Close position result: {result}", level="DEBUG")
                     
@@ -206,6 +200,7 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
                     key = f"{symbol}_{side}_{entry_price}"
                     if key in TRAILING_STOPS:
                         del TRAILING_STOPS[key]
+                        log(f"[{symbol}] 🧹 Trailing stop cleaned from memory (error case)", level="DEBUG")
             elif dry_run:
                 log(f"[{symbol}] 🧪 DRY-RUN: Would close position due to stop loss/trailing stop", level="DEBUG")
 
