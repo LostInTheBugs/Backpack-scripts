@@ -88,16 +88,23 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
         # Parse des positions (en utilisant votre fonction parse_position existante)
         parsed_positions = []
         for p in raw_positions:
-            if isinstance(p, dict):
-                parsed_positions.append(p)
-            elif isinstance(p, str):
-                try:
-                    import json
-                    parsed_pos = json.loads(p.strip()) if p.strip() else None
-                    if parsed_pos:
-                        parsed_positions.append(parsed_pos)
-                except:
+            try:
+                if isinstance(p, dict):
+                    parsed_positions.append(p)
+                elif isinstance(p, str):
+                    if p.strip():  # Vérifier que ce n'est pas une chaîne vide
+                        import json
+                        parsed_pos = json.loads(p.strip())
+                        if parsed_pos and isinstance(parsed_pos, dict):
+                            parsed_positions.append(parsed_pos)
+                else:
+                    # Si ce n'est ni dict ni str, skip
+                    log(f"[DEBUG] Skipping position of type {type(p)}: {p}", level="DEBUG")
                     continue
+            except (json.JSONDecodeError, AttributeError) as e:
+                log(f"[ERROR] parse_position failed for {type(p)}: {e}", level="ERROR")
+                log(f"[ERROR] Raw data: {repr(p)}", level="DEBUG")
+                continue
 
         pos = next((p for p in parsed_positions if p and p.get("symbol") == symbol), None)
         if not pos:
@@ -116,6 +123,9 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
         # Calcul du PnL réel
         pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
         
+        # ✅ DEBUG: Log pour comprendre pourquoi PnL=0.00%
+        log(f"[{symbol}] DEBUG PnL calculation: pnl_data={pnl_data}, type={type(pnl_data)}", level="DEBUG")
+        
         if isinstance(pnl_data, dict):
             pnl_usdc = safe_float(pnl_data.get("pnl_usd", 0), 0.0)
             pnl_percent = safe_float(pnl_data.get("pnl_percent", 0), 0.0)
@@ -124,6 +134,8 @@ async def handle_existing_position_with_table(symbol, real_run=True, dry_run=Fal
             pnl_usdc = 0.0
             pnl_percent = 0.0
             mark_price = entry_price
+            
+        log(f"[{symbol}] DEBUG: entry={entry_price}, mark={mark_price}, pnl_pct={pnl_percent}, pnl_usd={pnl_usdc}", level="DEBUG")
 
         # Calcul de la durée
         duration_sec = datetime.utcnow().timestamp() - ts
