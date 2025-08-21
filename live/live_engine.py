@@ -428,7 +428,12 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         )
 
         # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position avec stratégie
-        if should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy):
+        should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
+        
+        # ✅ DEBUG: Log détaillé pour débugger
+        log(f"[{symbol}] CLOSE CHECK: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Duration={duration_sec}s, ShouldClose={should_close}", level="INFO")
+        
+        if should_close:
             if real_run:
                 try:
                     log(f"[{symbol}] 🎯 Closing position due to trailing stop trigger", level="INFO")
