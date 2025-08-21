@@ -138,22 +138,25 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
     """
-    Trailing stop = PnL% - 1%
+    Récupère le trailing stop depuis live_engine.py
     """
     try:
-        # Calcul du PnL actuel
-        if side == "long":
-            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
-        else:  # short
-            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
+        # Import et appel de la fonction du live_engine
+        from live.live_engine import get_position_trailing_stop
         
-        # Trailing stop = PnL - 1%
-        trailing_stop_pct = pnl_pct - 1.0
+        # Récupération du trailing stop réel
+        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
         
-        return f"{trailing_stop_pct:+.1f}%"
+        if trailing_stop is not None:
+            return f"{trailing_stop:+.1f}% ✅"
+        else:
+            # Calculer le seuil nécessaire pour activation
+            min_pnl = config.trading.min_pnl_for_trailing
+            return f"N/A (need {min_pnl:+.1f}%)"
         
-    except:
-        return "N/A"
+    except Exception as e:
+        log(f"Erreur récupération trailing stop pour {symbol}: {e}", level="ERROR")
+        return "ERROR"
 
 
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
@@ -224,7 +227,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                 tablefmt="grid"
             ))
             print("=" * 120)
-            print("Legend: Trailing Stop = PnL% - 1%")  # ✅ LÉGENDE
+            print(f"Legend: Trailing Stop = PnL% - {config.trading.trailing_stop_trigger}% (min PnL: {config.trading.min_pnl_for_trailing}%)")  # ✅ LÉGENDE
             print("=" * 120)
         else:
             print("💰 PnL Total: $+0.00")
