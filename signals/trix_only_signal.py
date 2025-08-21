@@ -1,3 +1,4 @@
+# signals/trix_only_signal.py
 from indicators.combined_indicators import calculate_trix
 
 def get_combined_signal(df, symbol):

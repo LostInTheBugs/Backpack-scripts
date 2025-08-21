@@ -1,7 +1,6 @@
 #execute/open_position_usdc.py
 import math
 import os
-from decimal import Decimal
 from tabulate import tabulate
 import asyncio
 

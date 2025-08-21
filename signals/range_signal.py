@@ -1,4 +1,4 @@
-import pandas as pd
+# signals/range_signal.py
 from indicators.range_indicators import compute_range_indicators
 from utils.logger import log
 

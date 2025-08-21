@@ -1,3 +1,4 @@
+# ScriptDatabase/backfill_pgsql.py
 import asyncio
 from datetime import datetime, timezone, timedelta
 import time
@@ -6,8 +7,8 @@ import os
 from typing import List, Optional
 from utils.logger import log
 
-from bpx.public import Public  # import SDK bpx-py
-from config.settings import get_config  # Chargement config
+from bpx.public import Public
+from config.settings import get_config
 
 
 config = get_config()

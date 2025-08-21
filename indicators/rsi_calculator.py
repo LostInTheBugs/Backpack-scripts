@@ -2,7 +2,7 @@
 import os
 import pandas as pd
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from utils.logger import log
 from bpx.public import Public
 

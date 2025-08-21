@@ -1,5 +1,4 @@
-# indicators/combined_indicators.py (version modifiée)
-import os
+# indicators/combined_indicators.py
 import pandas as pd
 import asyncio
 from datetime import datetime, timezone, timedelta

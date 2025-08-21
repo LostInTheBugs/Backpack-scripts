@@ -1,6 +1,5 @@
 #signals/two_out_of_four_scalp.py
 from indicators.combined_indicators import compute_all
-import pandas as pd
 
 # Paramètres par défaut
 STOP_LOSS_PERCENT = 0.5   # -0.5%

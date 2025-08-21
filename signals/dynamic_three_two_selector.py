@@ -1,5 +1,4 @@
 # signal/dynamic_three_two_selector.py
-import pandas as pd
 from signals.three_out_of_four_conditions import get_combined_signal as three_out_of_four
 from signals.two_out_of_four_scalp import get_combined_signal as two_out_of_four
 from utils.logger import log

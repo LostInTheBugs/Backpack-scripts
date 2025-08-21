@@ -1,5 +1,5 @@
+# signals/macd_rsi_bo_trix.py
 from indicators.combined_indicators import compute_all
-import pandas as pd
 
 def get_combined_signal(df, symbol):
     df = df.copy()

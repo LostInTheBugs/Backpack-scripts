@@ -1,4 +1,3 @@
-import pandas as pd
 import ta
 
 def compute_range_indicators(df):

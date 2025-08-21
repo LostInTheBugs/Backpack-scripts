@@ -1,8 +1,7 @@
-# signals/three_out_of_four_conditions.py - Version simple
+# signals/three_out_of_four_conditions.py
 from indicators.combined_indicators import compute_all
 from indicators.rsi_calculator import get_cached_rsi
 from utils.logger import log
-import pandas as pd
 
 STOP_LOSS_PERCENT = 0.5
 TAKE_PROFIT_PERCENT = 1.0
