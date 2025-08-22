@@ -71,6 +71,19 @@ async def create_table_if_not_exists(conn, symbol):
 
 async def delete_old_data(conn, symbol, retention_days=RETENTION_DAYS):
     table_name = table_name_from_symbol(symbol)
+    
+    # Vérifier si la table existe avant de tenter la suppression
+    table_exists = await conn.fetchval("""
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_name = $1
+        )
+    """, table_name)
+    
+    if not table_exists:
+        log(f"⚠️ Table {table_name} n'existe pas, skip suppression", level="DEBUG")
+        return
+    
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     result = await conn.execute(f"DELETE FROM {table_name} WHERE timestamp < $1;", cutoff)
     log(f"🗑️ Suppression données > {retention_days} jours dans {table_name} : {result}", level="INFO")
@@ -173,7 +186,10 @@ async def periodic_cleanup(pool, get_symbols_func, retention_days=RETENTION_DAYS
         symbols = await get_symbols_func()
         async with pool.acquire() as conn:
             for symbol in symbols:
-                await delete_old_data(conn, symbol, retention_days)
+                try:
+                    await delete_old_data(conn, symbol, retention_days)
+                except Exception as e:
+                    log(f"❌ Erreur lors du nettoyage de {symbol}: {e}", level="ERROR")
         await asyncio.sleep(24 * 3600)  # 24h
 
 async def fetch_all_symbols() -> list[str]:

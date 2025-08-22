@@ -1,83 +1,19 @@
+# backtest/backtest_engine.py
 import asyncio
 import asyncpg
 import re
 import argparse
 import pandas as pd
 import os
-import json
 import traceback
 from utils.logger import log
 from utils.position_tracker import PositionTracker
+from utils.i18n import t
 from importlib import import_module
 from datetime import datetime, timedelta, timezone
 
-class BacktestTranslator:
-    def __init__(self, language='fr'):
-        self.language = language
-        self.translations = {}
-        self.load_translations()
-    
-    def load_translations(self):
-        """Charge les traductions depuis les fichiers JSON"""
-        try:
-            lang_file = f"locales/{self.language}.json"
-            if os.path.exists(lang_file):
-                with open(lang_file, 'r', encoding='utf-8') as f:
-                    self.translations = json.load(f)
-            else:
-                # Fallback vers français si le fichier n'existe pas
-                with open("locales/fr.json", 'r', encoding='utf-8') as f:
-                    self.translations = json.load(f)
-                print(f"Warning: {lang_file} not found, using French")
-        except Exception as e:
-            print(f"Error loading translations: {e}")
-            # Traductions de fallback intégrées
-            self.translations = self._get_fallback_translations()
-    
-    def _get_fallback_translations(self):
-        """Traductions de secours si les fichiers JSON ne sont pas disponibles"""
-        return {
-            "backtest": {
-                "no_ohlcv_data": "❌ Pas de données OHLCV en base pour backtest",
-                "error_fetch_ohlcv": "❌ Erreur fetch OHLCV backtest: {}",
-                "no_data": "❌ Pas de données OHLCV",
-                "start": "✅ Début du backtest avec {} bougies",
-                "end": "🔚 Backtest terminé",
-                "stats_positions": "📊 Positions: {} | Gagnantes: {} | Perdantes: {}",
-                "stats_pnl": "📈 PnL total: {:.2f}% | moyen: {:.2f}% | médian: {:.2f}% | taux de succès: {:.2f}%",
-                "no_positions": "⚠️ Aucune position prise",
-                "exception": "💥 Exception dans le backtest complet: {}"
-            }
-        }
-    
-    def t(self, category, key, *args, **kwargs):
-        """Traduit une clé avec des paramètres optionnels"""
-        try:
-            text = self.translations.get(category, {}).get(key, f"[MISSING:{category}.{key}]")
-            # Support pour les arguments positionnels et nommés
-            if args:
-                return text.format(*args)
-            elif kwargs:
-                return text.format(**kwargs)
-            return text
-        except Exception as e:
-            return f"[TRANSLATION_ERROR:{category}.{key}]"
-    
-    def set_language(self, language):
-        """Change la langue courante"""
-        if language != self.language:
-            self.language = language
-            self.load_translations()
-
-# Instance globale du traducteur
-bt_translator = BacktestTranslator()
-
-def set_backtest_language(language):
-    """Configure la langue pour les messages de backtest"""
-    bt_translator.set_language(language)
-
-# Cette fonction charge dynamiquement la stratégie demandée
 def get_signal_function(strategy_name):
+    """Charge dynamiquement la stratégie demandée"""
     if strategy_name == "Trix":
         module = import_module("signals.trix_only_signal")
     elif strategy_name == "Combo":
@@ -87,9 +23,9 @@ def get_signal_function(strategy_name):
     return module.get_combined_signal
 
 def parse_backtest(value):
+    """Parse les arguments de backtest (durée ou plage de dates)"""
     if ":" in value and re.match(r"^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$", value):
         start_str, end_str = value.split(":")
-        from datetime import datetime
         start_dt = datetime.strptime(start_str, "%Y-%m-%d")
         end_dt = datetime.strptime(end_str, "%Y-%m-%d")
         if start_dt >= end_dt:
@@ -115,6 +51,7 @@ def parse_backtest(value):
     return amount * multipliers_in_hours[unit]
 
 async def fetch_ohlcv_from_db(pool, symbol):
+    """Récupère les données OHLCV depuis la base PostgreSQL"""
     table_name = "ohlcv_" + "__".join(symbol.lower().split("_"))
 
     async with pool.acquire() as conn:
@@ -128,7 +65,7 @@ async def fetch_ohlcv_from_db(pool, symbol):
             rows = await conn.fetch(query)
 
             if not rows:
-                log(f"[{symbol}] {bt_translator.t('backtest', 'no_ohlcv_data')}")
+                log(f"[{symbol}] {t('backtest', 'no_ohlcv_data')}")
                 return pd.DataFrame()
 
             df = pd.DataFrame([dict(row) for row in rows])
@@ -147,46 +84,42 @@ async def fetch_ohlcv_from_db(pool, symbol):
             return df
 
         except Exception as e:
-            log(f"[{symbol}] {bt_translator.t('backtest', 'error_fetch_ohlcv', str(e))}")
+            log(f"[{symbol}] {t('backtest', 'error_fetch_ohlcv', str(e))}")
             traceback.print_exc()
             return pd.DataFrame()
 
-async def run_backtest_async(symbol: str, interval, dsn: str, strategy_name: str, language: str = 'fr'):
-    # Configure la langue pour ce backtest
-    bt_translator.set_language(language)
-    
+async def run_backtest_async(symbol: str, interval, dsn: str, strategy_name: str):
     try:
         pool = await asyncpg.create_pool(dsn=dsn)
         df = await fetch_ohlcv_from_db(pool, symbol)
         await pool.close()
 
         if df.empty:
-            log(f"[{symbol}] {bt_translator.t('backtest', 'no_data')}")
+            log(f"[{symbol}] {t('backtest', 'no_data')}")
             return
         
-        # --- Filtrage des données selon interval ---
+        # Filtrage des données selon interval
         if isinstance(interval, (int, float)):
             # interval en heures, on prend les dernières interval heures
             end_time = df.index[-1]
             start_time = end_time - timedelta(hours=interval)
             df = df.loc[start_time:end_time]
-            log(f"[{symbol}] {bt_translator.t('backtest', 'info_filter_duration', interval)}")
+            log(f"[{symbol}] Filtrage sur les dernières {interval} heures")
         elif isinstance(interval, tuple) and len(interval) == 2:
             start_time, end_time = interval
             # Assurer que start_time et end_time ont le bon timezone (UTC)
-            # Si ce sont des datetime naïfs, on les localise en UTC
             if start_time.tzinfo is None:
                 start_time = start_time.replace(tzinfo=timezone.utc)
             if end_time.tzinfo is None:
                 end_time = end_time.replace(tzinfo=timezone.utc)
             df = df.loc[start_time:end_time]
-            log(f"[{symbol}] {bt_translator.t('backtest', 'info_filter_dates', start_time, end_time)}")
+            log(f"[{symbol}] Filtrage entre {start_time} et {end_time}")
 
         if df.empty:
-            log(f"[{symbol}] {bt_translator.t('backtest', 'no_data_after_filter')}")
+            log(f"[{symbol}] {t('backtest', 'no_data_after_filter')}")
             return
 
-        log(f"[{symbol}] {bt_translator.t('backtest', 'start', len(df))}")
+        log(f"[{symbol}] {t('backtest', 'start', len(df))}")
 
         tracker = PositionTracker(symbol)
         stats = {"total": 0, "win": 0, "loss": 0, "pnl": []}
@@ -204,6 +137,7 @@ async def run_backtest_async(symbol: str, interval, dsn: str, strategy_name: str
             else:
                 signal = result
                 indicators = {}
+            
             debug_msg = f"[DEBUG] {symbol} | {current_time} | Signal={signal} | Prix={current_df.iloc[-1]['close']}"
             if indicators:
                 debug_msg += " | " + " | ".join(f"{k}={v:.2f}" for k, v in indicators.items())
@@ -229,7 +163,7 @@ async def run_backtest_async(symbol: str, interval, dsn: str, strategy_name: str
                     else:
                         stats["loss"] += 1
 
-        log(f"[{symbol}] {bt_translator.t('backtest', 'end')}")
+        log(f"[{symbol}] {t('backtest', 'end')}")
         
         if stats["total"] > 0:
             pnl_total = sum(stats["pnl"])
@@ -237,37 +171,22 @@ async def run_backtest_async(symbol: str, interval, dsn: str, strategy_name: str
             pnl_median = pd.Series(stats["pnl"]).median()
             win_rate = stats["win"] / stats["total"] * 100
             
-            log(f"[{symbol}] {bt_translator.t('backtest', 'stats_positions', stats['total'], stats['win'], stats['loss'])}")
-            log(f"[{symbol}] {bt_translator.t('backtest', 'stats_pnl', pnl_total, pnl_moyen, pnl_median, win_rate)}")
+            log(f"[{symbol}] {t('backtest', 'stats_positions', stats['total'], stats['win'], stats['loss'])}")
+            log(f"[{symbol}] {t('backtest', 'stats_pnl', pnl_total, pnl_moyen, pnl_median, win_rate)}")
         else:
-            log(f"[{symbol}] {bt_translator.t('backtest', 'no_positions')}")
+            log(f"[{symbol}] {t('backtest', 'no_positions')}")
 
     except Exception as e:
-        log(f"[{symbol}] {bt_translator.t('backtest', 'exception', str(e))}")
+        log(f"[{symbol}] {t('backtest', 'exception', str(e))}")
         traceback.print_exc()
 
-# Appel principal depuis main.py
-def run_backtest(symbol: str, interval: str, strategy_name: str, language: str = 'fr'):
-    """
-    Lance un backtest avec support multilingue
-    
-    Args:
-        symbol: Symbole à analyser
-        interval: Intervalle de temps
-        strategy_name: Nom de la stratégie
-        language: Langue des messages ('fr', 'en')
-    """
+def run_backtest(symbol: str, interval: str, strategy_name: str):
     dsn = os.environ.get("PG_DSN")
-    asyncio.run(run_backtest_async(symbol, interval, dsn, strategy_name, language))
+    asyncio.run(run_backtest_async(symbol, interval, dsn, strategy_name))
 
-# Fonction utilitaire pour obtenir les langues supportées
 def get_supported_languages():
-    """Retourne la liste des langues supportées en scannant le dossier locales/"""
     try:
-        locales_dir = "locales"
-        if os.path.exists(locales_dir):
-            files = [f for f in os.listdir(locales_dir) if f.endswith('.json')]
-            return [f.replace('.json', '') for f in files]
-        return ['fr']  # Fallback
-    except:
+        from utils.i18n import get_available_locales
+        return get_available_locales()
+    except ImportError:
         return ['fr', 'en']

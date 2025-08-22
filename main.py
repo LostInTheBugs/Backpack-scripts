@@ -16,57 +16,50 @@ from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
 from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
-from utils.i18n import t, set_locale, get_available_locales
 from live.live_engine import handle_live_symbol
 
-# Charge la config au démarrage
+# ✅ CONFIGURATION CENTRALISÉE ET SIMPLIFIÉE
 config = load_config()
 
-public_key = config.bpx_bot_public_key or os.getenv("bpx_bot_public_key")
-secret_key = config.bpx_bot_secret_key or os.getenv("bpx_bot_secret_key")
+# ✅ RÉCUPÉRATION SÉCURISÉE DES SYMBOLES AUTO
+def get_auto_symbols():
+    """Récupère les symboles automatiques avec gestion d'erreur"""
+    try:
+        auto_symbols_result = fetch_top_n_volatility_volume(
+            n=config.strategy.auto_select_top_n
+        )
+        symbols = auto_symbols_result if auto_symbols_result is not None else []
+        log(f"Auto symbols récupérés avec succès: {symbols}", level="DEBUG")
+        return symbols
+    except Exception as e:
+        log(f"Erreur lors de la récupération des auto_symbols: {e}", level="ERROR")
+        return []
 
-# Essayer de charger depuis la config si disponible
-try:
-    if hasattr(config, 'performance') and hasattr(config.performance, 'api_call_interval'):
-        API_CALL_INTERVAL = config.performance.api_call_interval
-    if hasattr(config, 'performance') and hasattr(config.performance, 'dashboard_refresh_interval'):
-        DASHBOARD_REFRESH_INTERVAL = config.performance.dashboard_refresh_interval
-    if hasattr(config, 'performance') and hasattr(config.performance, 'symbols_check_interval'):
-        SYMBOLS_CHECK_INTERVAL = config.performance.symbols_check_interval
-except AttributeError:
-    # Utiliser les valeurs par défaut si la config n'a pas ces champs
-    pass
 
-# Sécurise auto_symbols avec gestion d'erreur améliorée
-try:
-    auto_symbols_result = fetch_top_n_volatility_volume(n=getattr(config.strategy, "auto_select_top_n", 10))
-    auto_symbols = auto_symbols_result if auto_symbols_result is not None else []
-    log(f"Auto symbols récupérés avec succès: {auto_symbols}", level="DEBUG")
-except Exception as e:
-    log(f"Erreur lors de la récupération des auto_symbols: {e}", level="ERROR")
-    auto_symbols = []
+def calculate_final_symbols():
+    """Calcule la liste finale des symboles en appliquant include/exclude"""
+    auto_symbols = get_auto_symbols()
+    include_symbols = getattr(config.strategy, 'include', []) or []
+    exclude_symbols = getattr(config.strategy, 'exclude', []) or []
+    
+    log(f"Auto symbols: {auto_symbols}", level="DEBUG")
+    log(f"Include symbols: {include_symbols}", level="DEBUG")
+    log(f"Exclude symbols: {exclude_symbols}", level="DEBUG")
+    
+    # Fusion avec include (ajoute les symboles forcés)
+    all_symbols = list(set(auto_symbols + include_symbols))
+    
+    # Application du filtre exclude (retire les symboles interdits)
+    final_symbols = [s for s in all_symbols if s not in exclude_symbols]
+    
+    log(f"Final symbols: {final_symbols}", level="DEBUG")
+    return final_symbols
 
-# Vérifier si include et exclude existent dans la config
-include_symbols = getattr(config.strategy, 'include', []) or []
-exclude_symbols = getattr(config.strategy, 'exclude', []) or []
-
-log(f"Auto symbols: {auto_symbols}", level="DEBUG")
-log(f" Include symbols: {include_symbols}", level="DEBUG")
-log(f" Exclude symbols: {exclude_symbols}", level="DEBUG")
-
-# On fusionne avec include (ajoute les symboles forcés)
-all_symbols = list(set(auto_symbols + include_symbols))
-
-# On applique le filtre exclude (retire les symboles interdits)
-final_symbols = [s for s in all_symbols if s not in exclude_symbols]
-
-log(f" Final symbols: {final_symbols}", level="DEBUG")
-
-symbols_container = {'list': final_symbols}
+# ✅ INITIALISATION PROPRE DES SYMBOLES
+symbols_container = {'list': calculate_final_symbols()}
 
 # Lance le thread de mise à jour périodique des symboles (thread daemon)
 update_symbols_periodically(symbols_container)
-
 
 async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_select=False, symbols_container=None, args=None):
     """Version optimisée de la boucle principale classique"""
@@ -78,10 +71,10 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         
         if auto_select and symbols_container:
             symbols = symbols_container.get('list', [])
-            log(f" Symbols list updated in main_loop: {symbols}", level="DEBUG")
+            log(f"Symbols list updated in main_loop: {symbols}", level="DEBUG")
 
-        # Vérifier les symboles actifs moins fréquemment
-        if current_time - last_symbols_check >= SYMBOLS_CHECK_INTERVAL:
+        # ✅ UTILISATION DIRECTE DE LA CONFIG au lieu de variables globales
+        if current_time - last_symbols_check >= config.performance.symbols_check_interval:
             active_symbols = []
             ignored_symbols = []
             
@@ -94,7 +87,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
             last_symbols_check = current_time
             
             if active_symbols:
-                log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="DEBUG")
+                log(f"Active symbols ({len(active_symbols)}): {active_symbols}", level="DEBUG")
             
             if ignored_symbols:
                 ignored_details = []
@@ -110,15 +103,14 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                         ignored_details.append(f"{sym} (inactive for {human_delay})")
                 
                 if ignored_details:
-                    log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="DEBUG")
-    
+                    log(f"Ignored symbols ({len(ignored_details)}): {ignored_details}", level="DEBUG")
         
         # Traiter les symboles actifs avec throttling
         for symbol in active_symbols:
-            # Vérifier si assez de temps s'est écoulé depuis le dernier appel
+            # ✅ UTILISATION DIRECTE DE LA CONFIG
             if symbol in last_api_calls:
                 time_since_last = current_time - last_api_calls[symbol]
-                if time_since_last < API_CALL_INTERVAL:
+                if time_since_last < config.performance.api_call_interval:
                     continue  # Skip ce symbole pour cette itération
             
             try:
@@ -128,73 +120,54 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
                 log(f"[ERROR] Erreur lors du traitement de {symbol}: {e}", level="ERROR")
         
         if not active_symbols:
-            log(f" No active symbols for this iteration", level="DEBUG")
+            log(f"No active symbols for this iteration", level="DEBUG")
 
-        # Attendre avant la prochaine itération
-        await asyncio.sleep(max(1, API_CALL_INTERVAL // len(symbols) if symbols else 1))
+        # ✅ CALCUL DYNAMIQUE DE L'ATTENTE basé sur la config
+        sleep_time = max(1, config.performance.api_call_interval // len(symbols) if symbols else 1)
+        await asyncio.sleep(sleep_time)
 
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
-    """
-    Récupère le trailing stop depuis live_engine.py ou stop loss par défaut
-    """
+    """Récupère le trailing stop depuis live_engine.py ou stop loss par défaut"""
     try:
-        # Import et appel de la fonction du live_engine
         from live.live_engine import get_position_trailing_stop
         
-        # Récupération du trailing stop réel
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
         
         if trailing_stop is not None:
             return f"{trailing_stop:+.1f}% ✅"
         else:
-            # Pas encore activé, utiliser le stop loss par défaut de la stratégie
-            try:
-                # Récupérer la stratégie actuelle (vous pouvez adapter selon votre logique)
-                # Pour l'instant, on prend la stratégie par défaut
-                current_strategy = config.strategy.default_strategy.lower()
+            # ✅ UTILISATION DIRECTE DE LA CONFIG pour le stop loss par défaut
+            current_strategy = config.strategy.default_strategy.lower()
+            
+            if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
+                default_stop = config.strategy.three_out_of_four.stop_loss_pct
+            elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
+                default_stop = config.strategy.two_out_of_four_scalp.stop_loss_pct
+            else:
+                default_stop = 2.0  # Valeur par défaut
+            
+            return f"-{default_stop:.1f}% ⏸️"
                 
-                # Mapping des stratégies vers les configs de stop loss
-                if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
-                    default_stop = config.strategy.three_out_of_four.stop_loss_pct
-                elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
-                    default_stop = config.strategy.two_out_of_four_scalp.stop_loss_pct
-                else:
-                    # Stratégie par défaut ou autres stratégies
-                    default_stop = 2.0  # Valeur par défaut
-                
-                # Afficher le stop loss fixe en négatif (protection)
-                return f"-{default_stop:.1f}% ⏸️"
-                
-            except Exception as e2:
-                log(f"Erreur récupération stop loss par défaut: {e2}", level="WARNING")
-                min_pnl = config.trading.min_pnl_for_trailing
-                return f"N/A (need {min_pnl:+.1f}%)"
-        
     except Exception as e:
         log(f"Erreur récupération trailing stop pour {symbol}: {e}", level="ERROR")
         return "ERROR"
 
-
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
-    """
-    Rafraîchit le dashboard avec les compteurs corrects - VERSION avec stop suiveur
-    """
+    """Rafraîchit le dashboard avec les compteurs corrects"""
     import os
     from datetime import datetime
     from tabulate import tabulate
     
     try:
         os.system("clear")
-        print("=" * 120)  # Élargi pour accommoder la nouvelle colonne
+        print("=" * 120)
         print(f"🚀 VERSION 24 FINALE - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"Active symbols: {len(active_symbols)}, Ignored symbols: {len(ignored_symbols)}")
         
-        # Afficher quelques symboles actifs
         if active_symbols:
             print(f"📈 Active: {', '.join(active_symbols[:5])}" + ("..." if len(active_symbols) > 5 else ""))
         
-        # ✅ UTILISATION DIRECTE de get_real_positions (on sait que ça marche)
         from utils.position_utils import get_real_positions
         positions = await get_real_positions()
         
@@ -214,7 +187,6 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                     
                 simple_symbol = pos['symbol'].split('_')[0]
                 
-                # ✅ NOUVEAU: Récupération des informations du stop suiveur
                 trailing_stop_info = await get_trailing_stop_info(
                     pos['symbol'], 
                     pos['side'], 
@@ -230,7 +202,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                     f"{pnl_icon} {pos['pnl_pct']:+.2f}%",
                     f"${pos['pnl_usd']:+.2f}",
                     f"{pos['amount']:.6f}",
-                    trailing_stop_info  # ✅ NOUVELLE COLONNE
+                    trailing_stop_info
                 ])
                 
                 total_pnl += pos["pnl_usd"]
@@ -240,11 +212,13 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
             
             print(tabulate(
                 positions_data,
-                headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amount", "Trailing Stop"],  # ✅ NOUVEAU HEADER
+                headers=["Symbol", "S", "Entry", "Mark", "PnL%", "PnL$", "Amount", "Trailing Stop"],
                 tablefmt="grid"
             ))
             print("=" * 120)
-            print(f"Legend: ✅ = Trailing stop active | ⏸️ = Fixed stop loss ({config.strategy.default_strategy}) | Trigger: {config.trading.trailing_stop_trigger}% | Min PnL: {config.trading.min_pnl_for_trailing}%")  # ✅ LÉGENDE
+            # ✅ UTILISATION DIRECTE DE LA CONFIG
+            print(f"Legend: ✅ = Trailing stop active | ⏸️ = Fixed stop loss ({config.strategy.default_strategy}) | "
+                  f"Trigger: {config.trading.trailing_stop_trigger}% | Min PnL: {config.trading.min_pnl_for_trailing}%")
             print("=" * 120)
         else:
             print("💰 PnL Total: $+0.00")
@@ -257,28 +231,25 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
         import traceback
         traceback.print_exc()
 
-
 async def async_main(args):
-    db_config = config.database
-    pg_dsn = config.pg_dsn or os.environ.get("PG_DSN")
-
+    # ✅ UTILISATION DIRECTE DE LA CONFIG
     pool = await asyncpg.create_pool(
-        dsn=pg_dsn,
-        min_size=db_config.pool_min_size,
-        max_size=db_config.pool_max_size
+        dsn=config.pg_dsn or os.environ.get("PG_DSN"),
+        min_size=config.database.pool_min_size,
+        max_size=config.database.pool_max_size
     )
 
     from utils.scan_all_symbols import scan_all_symbols
 
     # Choix des symbols à scanner
     if args.auto_select:
-        initial_symbols = auto_symbols
+        initial_symbols = get_auto_symbols()
     elif args.symbols:
         initial_symbols = args.symbols.split(",")
     else:
         initial_symbols = load_symbols_from_file()
 
-    log(f" Initial scan of symbols before main loop: {initial_symbols}", level="DEBUG")
+    log(f"Initial scan of symbols before main loop: {initial_symbols}", level="DEBUG")
     await scan_all_symbols(pool, initial_symbols)
 
     loop = asyncio.get_running_loop()
@@ -296,35 +267,31 @@ async def async_main(args):
 
     try:
         if args.backtest:
-            # -------------------------
             # Mode backtest
-            # -------------------------
-            log(" Mode backtest activé", level="DEBUG")
+            log("Mode backtest activé", level="DEBUG")
             if args.symbols:
                 symbols = args.symbols.split(",")
             else:
                 symbols = load_symbols_from_file()
 
             if not symbols:
-                log(" Liste de symboles vide, backtest annulé", level="ERROR")
+                log("Liste de symboles vide, backtest annulé", level="ERROR")
                 return
 
             if isinstance(args.backtest, tuple):
                 start_dt, end_dt = args.backtest
                 for symbol in symbols:
-                    await run_backtest_async(symbol, (start_dt, end_dt), pg_dsn, args.strategie)
+                    await run_backtest_async(symbol, (start_dt, end_dt), config.pg_dsn or os.environ.get("PG_DSN"), args.strategie)
             else:
                 for symbol in symbols:
-                    await run_backtest_async(symbol, args.backtest, pg_dsn, args.strategie)
+                    await run_backtest_async(symbol, args.backtest, config.pg_dsn or os.environ.get("PG_DSN"), args.strategie)
 
         else:
-            # -------------------------
             # Mode live
-            # -------------------------
             from live.live_engine import handle_live_symbol
 
             async def dashboard_loop():
-                """Boucle pour le mode textdashboard avec positions ouvertes - VERSION CORRIGÉE"""
+                """Boucle pour le mode textdashboard avec positions ouvertes"""
                 last_symbols_check = 0
                 last_api_calls = {}
                 active_symbols = []
@@ -341,8 +308,8 @@ async def async_main(args):
                     else:
                         current_symbols = []
                     
-                    # ✅ CORRECTION : Vérifier les symboles actifs comme dans main_loop
-                    if current_time - last_symbols_check >= SYMBOLS_CHECK_INTERVAL:
+                    # ✅ UTILISATION DIRECTE DE LA CONFIG
+                    if current_time - last_symbols_check >= config.performance.symbols_check_interval:
                         active_symbols = []
                         ignored_symbols = []
                         
@@ -355,7 +322,7 @@ async def async_main(args):
                         last_symbols_check = current_time
                         
                         if active_symbols:
-                            log(f" Active symbols ({len(active_symbols)}): {active_symbols}", level="DEBUG")
+                            log(f"Active symbols ({len(active_symbols)}): {active_symbols}", level="DEBUG")
                         
                         if ignored_symbols:
                             ignored_details = []
@@ -371,17 +338,16 @@ async def async_main(args):
                                     ignored_details.append(f"{sym} (inactive for {human_delay})")
                             
                             if ignored_details:
-                                log(f" Ignored symbols ({len(ignored_details)}): {ignored_details}", level="DEBUG")
+                                log(f"Ignored symbols ({len(ignored_details)}): {ignored_details}", level="DEBUG")
                     
-                    # ✅ AMÉLIORATION : Affichage du dashboard avec les bons compteurs
                     await refresh_dashboard_with_counts(active_symbols, ignored_symbols)
                     
-                    # ✅ CORRECTION : Traitement des symboles actifs avec throttling comme main_loop
+                    # Traitement des symboles actifs avec throttling
                     for symbol in active_symbols:
-                        # Vérifier si assez de temps s'est écoulé depuis le dernier appel
+                        # ✅ UTILISATION DIRECTE DE LA CONFIG
                         if symbol in last_api_calls:
                             time_since_last = current_time - last_api_calls[symbol]
-                            if time_since_last < API_CALL_INTERVAL:
+                            if time_since_last < config.performance.api_call_interval:
                                 continue  # Skip ce symbole pour cette itération
                         
                         try:
@@ -426,10 +392,7 @@ async def async_main(args):
         traceback.print_exc()
     finally:
         await pool.close()
-        log(f" Connection pool closed, program terminated", level="ERROR")
-
-
-
+        log(f"Connection pool closed, program terminated", level="ERROR")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bot for Backpack Exchange")
@@ -442,47 +405,39 @@ if __name__ == "__main__":
     parser.add_argument("--no-limit", action="store_true", help="Disable symbol count limit")
     parser.add_argument("--config", type=str, default="config/settings.yaml", help="Configuration file path")
     parser.add_argument("--mode", type=str, default="text", choices=["text", "textdashboard", "webdashboard"], help="Mode d'affichage")
-    
-    # Arguments pour les intervalles de performance
-    parser.add_argument("--api-interval", type=int, default=None, help="API call interval in seconds (default: 5)")
-    parser.add_argument("--dashboard-interval", type=int, default=None, help="Dashboard refresh interval in seconds (default: 2)")
-    parser.add_argument("--symbols-check-interval", type=int, default=None, help="Symbols status check interval in seconds (default: 30)")
-    
+    parser.add_argument("--api-interval", type=int, default=None, help="API call interval in seconds")
+    parser.add_argument("--dashboard-interval", type=int, default=None, help="Dashboard refresh interval in seconds")
+    parser.add_argument("--symbols-check-interval", type=int, default=None, help="Symbols status check interval in seconds")
     args = parser.parse_args()
 
-    # Override des intervalles si spécifiés en ligne de commande
-    if args.api_interval:
-        API_CALL_INTERVAL = args.api_interval
-    if args.dashboard_interval:
-        DASHBOARD_REFRESH_INTERVAL = args.dashboard_interval
-    if args.symbols_check_interval:
-        SYMBOLS_CHECK_INTERVAL = args.symbols_check_interval
-
+    # ✅ RECHARGEMENT DE CONFIG SI FICHIER DIFFÉRENT SPÉCIFIÉ
     if args.config != "config/settings.yaml":
         config = load_config(args.config)
+
+    # ✅ OVERRIDE PROPRE DES VALEURS DE CONFIG
+    if args.api_interval:
+        config.performance.api_call_interval = args.api_interval
+    if args.dashboard_interval:
+        config.performance.dashboard_refresh_interval = args.dashboard_interval
+    if args.symbols_check_interval:
+        config.performance.symbols_check_interval = args.symbols_check_interval
 
     if args.strategie is None:
         args.strategie = config.strategy.default_strategy
 
     try:
-        if args.strategie == "Trix":
-            from signals.trix_only_signal import get_combined_signal
-            args.get_combined_signal = get_combined_signal
-        elif args.strategie == "Combo":
-            from signals.macd_rsi_bo_trix import get_combined_signal
-            args.get_combined_signal = get_combined_signal
-        elif args.strategie == "RangeSoft":
-            from signals.range_soft_signal import get_combined_signal
-            args.get_combined_signal = get_combined_signal
-        elif args.strategie == "ThreeOutOfFour":
-            from signals.three_out_of_four_conditions import get_combined_signal
-            args.get_combined_signal = get_combined_signal
-        elif args.strategie == "TwoOutOfFourScalp":
-            from signals.two_out_of_four_scalp import get_combined_signal
-            args.get_combined_signal = get_combined_signal
-        elif args.strategie == "DynamicThreeTwo":
-            from signals.dynamic_three_two_selector import get_combined_signal
-            args.get_combined_signal = get_combined_signal
+        strategy_imports = {
+            "Trix": "signals.trix_only_signal",
+            "Combo": "signals.macd_rsi_bo_trix", 
+            "RangeSoft": "signals.range_soft_signal",
+            "ThreeOutOfFour": "signals.three_out_of_four_conditions",
+            "TwoOutOfFourScalp": "signals.two_out_of_four_scalp",
+            "DynamicThreeTwo": "signals.dynamic_three_two_selector"
+        }
+        
+        if args.strategie in strategy_imports:
+            module = __import__(strategy_imports[args.strategie], fromlist=['get_combined_signal'])
+            args.get_combined_signal = module.get_combined_signal
         elif args.strategie in ["Auto", "AutoSoft", "Range"]:
             args.get_combined_signal = None
         else:
