@@ -28,7 +28,7 @@ def format_log_entry(level, message):
     now = get_now_paris().strftime("%Y-%m-%d %H:%M:%S %Z")
     return f"[{now}] [{level}] {message}"
 
-def log(message, level="INFO", write_to_file=True, show_console=True):
+def log(message, level="INFO", write_to_file=True, show_console=False):
     level = level.upper()
     current_level_value = LEVELS.get(LOG_LEVEL, 20)
     message_level_value = LEVELS.get(level, 20)
