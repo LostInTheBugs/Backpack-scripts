@@ -1,8 +1,8 @@
-from utils.i18n import t
 #utils/fetch_top_n_volatility_volume.py
 import requests
 import sys
 from utils.logger import log
+from utils.i18n import t
 
 API_URL = "https://api.backpack.exchange/api/v1/tickers"
 OUTPUT_FILE = "symbol.lst"
