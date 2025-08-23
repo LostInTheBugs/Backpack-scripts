@@ -15,9 +15,8 @@ from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from signals.strategy_selector import get_strategy_for_market
 from config.settings import get_config
 from indicators.rsi_calculator import get_cached_rsi
-from utils.position_utils import get_real_positions
 from utils.table_display import handle_existing_position_with_table
-from utils.position_tracker import PositionTracker
+from utils.position_utils import PositionTracker, get_real_positions
 
 trackers = {}  # symbol -> PositionTracker
 
