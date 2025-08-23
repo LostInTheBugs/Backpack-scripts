@@ -19,12 +19,19 @@ def filter_symbols_by_config(symbols: list[str]) -> list[str]:
     - config.symbols.include : garde uniquement ces symboles + les ajoute si manquants
     - config.symbols.exclude : retire définitivement certains symboles
     """
-    include_list = getattr(config.symbols, "include", [])
-    exclude_list = getattr(config.symbols, "exclude", [])
+    # ✅ CORRECTION: Protection contre None avec or []
+    include_list = getattr(config.symbols, "include", []) or []
+    exclude_list = getattr(config.symbols, "exclude", []) or []
 
-    # Normaliser en majuscule
-    include_list = [s.upper() for s in include_list]
-    exclude_list = [s.upper() for s in exclude_list]
+    # ✅ CORRECTION: Vérification supplémentaire de type
+    if not isinstance(include_list, list):
+        include_list = []
+    if not isinstance(exclude_list, list):
+        exclude_list = []
+
+    # Normaliser en majuscule - SEULEMENT si les listes ne sont pas vides
+    include_list = [s.upper() for s in include_list] if include_list else []
+    exclude_list = [s.upper() for s in exclude_list] if exclude_list else []
 
     if include_list:
         # Garde uniquement les symboles dans include
@@ -37,6 +44,7 @@ def filter_symbols_by_config(symbols: list[str]) -> list[str]:
         filtered = symbols.copy()
 
     # Retirer ceux présents dans exclude
-    filtered = [s for s in filtered if s.upper() not in exclude_list]
+    if exclude_list:
+        filtered = [s for s in filtered if s.upper() not in exclude_list]
 
     return filtered
