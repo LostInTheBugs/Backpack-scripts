@@ -2,32 +2,32 @@
     "symbols": {
         "update_auto": "🔄 Auto symbols update: {}",
         "update_error": "❌ Auto symbols update error: {}",
-        "active": "✅ Active symbols ({}) : {}",
-        "ignored": "⛔ Ignored symbols ({}) : {}",
+        "active": "✅ Active symbols ({}): {}",
+        "ignored": "⛔ Ignored symbols ({}): {}",
         "no_active": "⚠️ No active symbols for this iteration.",
         "file_reloaded": "🔁 symbol.lst reloaded: {}",
-        "table_missing": "{} (missing table)",
+        "table_missing": "{} (table missing)",
         "inactive_since": "{} (inactive since {})"
     },
     "system": {
         "manual_stop": "🛑 Manual stop requested",
         "manual_stop_ctrl_c": "🛑 Manual stop requested (Ctrl+C)",
         "watcher_error": "💥 Watcher error: {}",
-        "pool_closed": "Connection pool closed, program ended.",
+        "pool_closed": "Connection pool closed, program ending.",
         "clean_shutdown": "🛑 Manual stop requested via KeyboardInterrupt, clean shutdown..."
     },
     "backtest": {
         "launch": "[{}] 🧪 Launching {}h backtest with {} strategy",
         "no_ohlcv_data": "❌ No OHLCV data in database for backtest",
-        "error_fetch_ohlcv": "❌ Error fetching OHLCV backtest data: {}",
-        "no_data": "❌ No OHLCV data available",
+        "error_fetch_ohlcv": "❌ Error fetching OHLCV backtest: {}",
+        "no_data": "❌ No OHLCV data",
         "start": "✅ Starting backtest with {} candles",
         "end": "🔚 Backtest completed",
-        "stats_positions": "📊 Positions: {} | Winning: {} | Losing: {}",
-        "stats_pnl": "📈 Total PnL: {:.2f}% | Average: {:.2f}% | Median: {:.2f}% | Win rate: {:.2f}%",
+        "stats_positions": "📊 Positions: {} | Winners: {} | Losers: {}",
+        "stats_pnl": "📈 Total PnL: {:.2f}% | avg: {:.2f}% | median: {:.2f}% | success rate: {:.2f}%",
         "no_positions": "⚠️ No positions taken",
-        "exception": "💥 Exception in complete backtest: {}",
-        "info_filter_duration": "🔎 Filtering data for the last {:.2f} hours",
+        "exception": "💥 Exception in full backtest: {}",
+        "info_filter_duration": "🔎 Filtering data over the last {:.2f} hours",
         "info_filter_dates": "🔎 Filtering data between {} and {}",
         "no_data_after_filter": "❌ No data after filtering"
     },
@@ -41,21 +41,122 @@
         "market_list_failed": "❌ Failed to retrieve market list.",
         "symbol_not_found": "❌ Symbol '{}' not found.",
         "ticker_failed": "❌ Failed to retrieve ticker data.",
-        "invalid_price": "❌ Invalid mark price from ticker.",
-        "below_min_qty": "❌ Order quantity {0} is below the minimum allowed ({1}) for {2}.",
+        "invalid_price": "❌ Invalid price returned by ticker.",
+        "below_min_qty": "❌ Quantity {0} is below minimum allowed ({1}) for {2}.",
         "increase_amount": "➡️ Increase your USDC amount or choose another symbol.",
-        "invalid_qty_or_price": "⚠️ Quantity or price not valid for this market.",
+        "invalid_qty_or_price": "⚠️ Invalid quantity or price for this market.",
         "step_error": " ➤ Quantity {0} does not respect stepSize ({1})",
         "tick_error": " ➤ Price {0} does not respect tickSize ({1})",
         "adjusted_qty": "✅ Adjusted quantity: {0}",
-        "adjusted_price": "✅ Adjusted price   : {0:.{1}f}",
-        "dry_run": "[DRY RUN] Would submit {0} {1} order on {2} using {3:.2f} USDC ≈ {4} units",
-        "submitting": "🚀 Submitting {0} {1} order on {2} using {3:.2f} USDC ≈ {4} units",
+        "adjusted_price": "✅ Adjusted price: {0:.{1}f}",
+        "dry_run": "[DRY RUN] {0} {1} order on {2} for {3:.2f} USDC ≈ {4} units (simulation)",
+        "submitting": "🚀 Submitting {0} {1} order on {2} for {3:.2f} USDC ≈ {4} units",
         "invalid_response": "❌ Invalid response from order execution.",
         "response": "✅ Order response:",
-        "usage": "Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> [--dry-run]\nExample: python open_position_usdc.py SOL_USDC_PERP 25 long --dry-run",
+        "usage": "Usage: python open_position_usdc.py <SYMBOL> <USDC_AMOUNT> <DIRECTION> [--dry-run]\\nExample: python open_position_usdc.py SOL_USDC_PERP 25 long --dry-run",
         "amount_must_be_number": "❌ USDC amount must be a number.",
-        "market_info": "📊 {0} market info:"
+        "market_info": "📊 Market data for {0}:"
+    },
+    "config": {
+        "loaded": "✅ Configuration loaded from {}",
+        "error": "❌ Configuration loading error: {}",
+        "missing_file": "❌ Missing configuration file: {}",
+        "invalid_format": "❌ Invalid configuration format: {}"
+    },
+    "general": {
+        "starting": "🚀 Starting script...",
+        "stopping": "🛑 Stopping script...",
+        "error": "💥 Error: {}",
+        "success": "✅ Success: {}"
+    },
+    "live_engine": {
+        "trailing_stop": {
+            "initialized": "[{symbol}] 🎯 Trailing stop initialized at {percentage:.1f}%",
+            "updated": "[{symbol}] 📈 Trailing stop updated: {prev:.1f}% → {new:.1f}%",
+            "error": "[{symbol}] ❌ Error calculating trailing stop: {error}",
+            "cleaned": "[{symbol}] 🧹 Trailing stop cleaned from memory",
+            "triggered": "Trailing stop triggered: PnL {pnl:.2f}% <= Trailing {trailing:.2f}%",
+            "closing": "[{symbol}] 🎯 Closing position due to trailing stop trigger"
+        },
+        "indicators": {
+            "rsi_retrieved": "[{symbol}] ✅ RSI retrieved via API: {rsi:.2f}",
+            "rsi_error_fallback": "[{symbol}] ⚠️ RSI API error, trying local calculation: {error}",
+            "rsi_calculated": "[{symbol}] 🔄 RSI calculated locally: {rsi:.2f}",
+            "rsi_failed": "[{symbol}] ⚠️ Unable to calculate RSI locally, neutral value: {error}",
+            "macd_calculated": "[{symbol}] ✅ MACD calculated automatically",
+            "missing": "[{symbol}] ⚠️ Missing indicators: {missing} — signal ignored",
+            "nan_detected": "[{symbol}] ⚠️ NaN detected in {column} — signal ignored",
+            "calculation_failed": "[{symbol}] ❌ Indicators calculation failed"
+        },
+        "data": {
+            "loading": "[{symbol}] 📈 Loading OHLCV data for {interval}",
+            "no_recent": "[{symbol}] ❌ Ignored: no recent data in local database",
+            "no_1s_data": "[{symbol}] ❌ No 1s data retrieved from local database",
+            "dataframe_validated": "[{symbol}] DataFrame validated - shape: {shape}, columns: {columns}",
+            "dataframe_empty": "[{symbol}] ⚠️ DataFrame empty after indicators calculation",
+            "dataframe_error": "[{symbol}] ❌ Expected DataFrame but got {type}"
+        },
+        "strategy": {
+            "market_detected": "[{symbol}] 📊 Market detected: {condition} — Strategy selected: {strategy}",
+            "manual_selected": "[{symbol}] 📊 Strategy manually selected: {strategy}",
+            "about_to_call": "[{symbol}] About to call strategy: {strategy}",
+            "calling_async": "[{symbol}] 🔄 Calling async strategy function",
+            "calling_sync": "[{symbol}] 🔄 Calling sync strategy function",
+            "returned": "[{symbol}] Strategy returned: {type} - {result}",
+            "error": "[{symbol}] ❌ Error calling strategy function: {error}"
+        },
+        "signals": {
+            "detected": "[{symbol}] 🎯 Signal detected: {signal} | Details: {details}",
+            "try_open": "{symbol} 🚨 Try open position: {signal}",
+            "no_actionable": "{symbol} ❌ No actionable signal detected: {signal}"
+        },
+        "positions": {
+            "opened_success": "[{symbol}] ✅ Position opened successfully",
+            "closed_success": "[{symbol}] ✅ Position closed successfully",
+            "opening_real": "[{symbol}] ✅ REAL position opening: {direction}",
+            "opening_dry": "[{symbol}] 🧪 DRY-RUN: Simulated {direction} position opening",
+            "dry_run_close": "[{symbol}] 🧪 DRY-RUN: Would close position due to trailing stop",
+            "open_error": "[{symbol}] ❌ Error opening position: {error}",
+            "close_error": "[{symbol}] ❌ Error closing position: {error}",
+            "no_valid_found": "[{symbol}] ⚠️ No valid open position found",
+            "unexpected_pnl_type": "[{symbol}] ⚠️ Unexpected return type from get_real_pnl: {type}",
+            "limit_reached": "[{symbol}] ⚠️ Maximum positions limit ({max}) reached - skipping",
+            "neither_run_mode": "[{symbol}] ❌ Neither --real-run nor --dry-run specified: no action"
+        },
+        "scan": {
+            "launch": "🔍 Launching indicators scan…",
+            "launch_trade": "🔍 Launching indicators scan and parallel trading…",
+            "unexpected_result": "⚠️ Unexpected result in scan_all_symbols: {result}",
+            "ok_symbols": "✅ OK: {symbols}",
+            "ko_symbols": "❌ KO: {symbols}",
+            "summary": "📊 Summary: {ok_count} OK / {ko_count} KO out of {total} pairs"
+        },
+        "debug": {
+            "ensure_indicators_type": "[{symbol}] ensure_indicators returned type: {type}",
+            "is_coroutine": "[{symbol}] Is coroutine? {is_coroutine}",
+            "awaiting_coroutine": "[{symbol}] Awaiting coroutine from ensure_indicators...",
+            "function_type": "[{symbol}] Function type: {type}",
+            "is_coroutine_function": "[{symbol}] Is coroutine function? {is_coroutine}",
+            "dataframe_before_call": "[{symbol}] DataFrame type before call: {type}",
+            "dataframe_shape": "[{symbol}] DataFrame shape: {shape}",
+            "close_check": "[{symbol}] CLOSE CHECK: PnL={pnl:.2f}%, Trailing={trailing}, Duration={duration}s, ShouldClose={should_close}",
+            "pnl_calculation": "[{symbol}] DEBUG PnL calculation: pnl_data={pnl_data}, type={type}",
+            "pnl_details": "[{symbol}] DEBUG: entry={entry}, mark={mark}, pnl_pct={pnl_pct}, pnl_usd={pnl_usd}"
+        },
+        "errors": {
+            "generic": "[{symbol}] 💥 Error: {error}",
+            "position_handling": "[{symbol}] ❌ Error in handle_existing_position: {error}",
+            "position_limit": "⚠️ Error checking position limit: {error}",
+            "position_stats": "⚠️ Error getting position stats: {error}",
+            "dataframe_info": "[{symbol}] DataFrame info at time of error:",
+            "dataframe_type": "[{symbol}]   - Type: {type}",
+            "dataframe_is_coroutine": "[{symbol}]   - Is coroutine? {is_coroutine}",
+            "dataframe_shape_error": "[{symbol}]   - Shape: {shape}",
+            "dataframe_columns_error": "[{symbol}]   - Columns: {columns}"
+        },
+        "stop_loss": {
+            "fixed_triggered": "Fixed stop loss triggered: PnL {pnl:.2f}% <= Stop Loss {stop_loss:.2f}%",
+            "check_error": "Error checking fixed stop loss: {error}"
+        }
     }
-  
 }
