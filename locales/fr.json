@@ -68,5 +68,94 @@
         "stopping": "🛑 Arrêt du script...",
         "error": "💥 Erreur : {}",
         "success": "✅ Succès : {}"
-    }
+    },
+        "live_engine": {
+        "trailing_stop": {
+            "initialized": "[{symbol}] 🎯 Trailing stop initialisé à {percentage:.1f}%",
+            "updated": "[{symbol}] 📈 Trailing stop mis à jour: {prev:.1f}% → {new:.1f}%",
+            "error": "[{symbol}] ❌ Erreur calcul trailing stop: {error}",
+            "cleaned": "[{symbol}] 🧹 Trailing stop nettoyé de la mémoire",
+            "triggered": "Trailing stop déclenché: PnL {pnl:.2f}% <= Trailing {trailing:.2f}%",
+            "closing": "[{symbol}] 🎯 Fermeture position suite au déclenchement trailing stop"
+        },
+        "indicators": {
+            "rsi_retrieved": "[{symbol}] ✅ RSI récupéré via API: {rsi:.2f}",
+            "rsi_error_fallback": "[{symbol}] ⚠️ Erreur RSI API, tentative calcul local: {error}",
+            "rsi_calculated": "[{symbol}] 🔄 RSI calculé localement: {rsi:.2f}",
+            "rsi_failed": "[{symbol}] ⚠️ Impossible de calculer RSI localement, valeur neutre: {error}",
+            "macd_calculated": "[{symbol}] ✅ MACD calculé automatiquement",
+            "missing": "[{symbol}] ⚠️ Indicateurs manquants: {missing} — signal ignoré",
+            "nan_detected": "[{symbol}] ⚠️ NaN détecté dans {column} — signal ignoré",
+            "calculation_failed": "[{symbol}] ❌ Échec calcul des indicateurs"
+        },
+        "data": {
+            "loading": "[{symbol}] 📈 Chargement données OHLCV pour {interval}",
+            "no_recent": "[{symbol}] ❌ Ignoré: pas de données récentes en base locale",
+            "no_1s_data": "[{symbol}] ❌ Aucune donnée 1s récupérée de la base locale",
+            "dataframe_validated": "[{symbol}] DataFrame validé - shape: {shape}, columns: {columns}",
+            "dataframe_empty": "[{symbol}] ⚠️ DataFrame vide après calcul des indicateurs",
+            "dataframe_error": "[{symbol}] ❌ Attendu DataFrame mais reçu {type}"
+        },
+        "strategy": {
+            "market_detected": "[{symbol}] 📊 Marché détecté: {condition} — Stratégie sélectionnée: {strategy}",
+            "manual_selected": "[{symbol}] 📊 Stratégie sélectionnée manuellement: {strategy}",
+            "about_to_call": "[{symbol}] Sur le point d'appeler la stratégie: {strategy}",
+            "calling_async": "[{symbol}] 🔄 Appel fonction stratégie async",
+            "calling_sync": "[{symbol}] 🔄 Appel fonction stratégie sync",
+            "returned": "[{symbol}] Stratégie retournée: {type} - {result}",
+            "error": "[{symbol}] ❌ Erreur appel fonction stratégie: {error}"
+        },
+        "signals": {
+            "detected": "[{symbol}] 🎯 Signal détecté: {signal} | Détails: {details}",
+            "try_open": "{symbol} 🚨 Tentative ouverture position: {signal}",
+            "no_actionable": "{symbol} ❌ Aucun signal actionnable détecté: {signal}"
+        },
+        "positions": {
+            "opened_success": "[{symbol}] ✅ Position ouverte avec succès",
+            "closed_success": "[{symbol}] ✅ Position fermée avec succès",
+            "opening_real": "[{symbol}] ✅ Ouverture position RÉELLE: {direction}",
+            "opening_dry": "[{symbol}] 🧪 DRY-RUN: Simulation ouverture position {direction}",
+            "open_error": "[{symbol}] ❌ Erreur ouverture position: {error}",
+            "close_error": "[{symbol}] ❌ Erreur fermeture position: {error}",
+            "no_valid_found": "[{symbol}] ⚠️ Aucune position ouverte valide trouvée",
+            "unexpected_pnl_type": "[{symbol}] ⚠️ Type de retour inattendu de get_real_pnl: {type}",
+            "limit_reached": "[{symbol}] ⚠️ Limite max positions ({max}) atteinte - ignoré",
+            "neither_run_mode": "[{symbol}] ❌ Ni --real-run ni --dry-run spécifié: aucune action"
+        },
+        "scan": {
+            "launch": "🔍 Lancement du scan indicateurs…",
+            "launch_trade": "🔍 Lancement du scan indicateurs et trading en parallèle…",
+            "unexpected_result": "⚠️ Résultat inattendu dans scan_all_symbols: {result}",
+            "ok_symbols": "✅ OK: {symbols}",
+            "ko_symbols": "❌ KO: {symbols}",
+            "summary": "📊 Résumé: {ok_count} OK / {ko_count} KO sur {total} paires"
+        },
+        "debug": {
+            "ensure_indicators_type": "[{symbol}] ensure_indicators returned type: {type}",
+            "is_coroutine": "[{symbol}] Is coroutine? {is_coroutine}",
+            "awaiting_coroutine": "[{symbol}] Awaiting coroutine from ensure_indicators...",
+            "function_type": "[{symbol}] Function type: {type}",
+            "is_coroutine_function": "[{symbol}] Is coroutine function? {is_coroutine}",
+            "dataframe_before_call": "[{symbol}] DataFrame type before call: {type}",
+            "dataframe_shape": "[{symbol}] DataFrame shape: {shape}",
+            "close_check": "[{symbol}] CLOSE CHECK: PnL={pnl:.2f}%, Trailing={trailing}, Duration={duration}s, ShouldClose={should_close}",
+            "pnl_calculation": "[{symbol}] DEBUG PnL calculation: pnl_data={pnl_data}, type={type}",
+            "pnl_details": "[{symbol}] DEBUG: entry={entry}, mark={mark}, pnl_pct={pnl_pct}, pnl_usd={pnl_usd}"
+        },
+        "errors": {
+            "generic": "[{symbol}] 💥 Erreur: {error}",
+            "position_handling": "[{symbol}] ❌ Erreur dans handle_existing_position: {error}",
+            "position_limit": "⚠️ Erreur vérification limite positions: {error}",
+            "position_stats": "⚠️ Erreur récupération stats positions: {error}",
+            "dataframe_info": "[{symbol}] Infos DataFrame au moment de l'erreur:",
+            "dataframe_type": "[{symbol}]   - Type: {type}",
+            "dataframe_is_coroutine": "[{symbol}]   - Is coroutine? {is_coroutine}",
+            "dataframe_shape_error": "[{symbol}]   - Shape: {shape}",
+            "dataframe_columns_error": "[{symbol}]   - Columns: {columns}"
+        },
+        "stop_loss": {
+            "fixed_triggered": "Stop loss fixe déclenché: PnL {pnl:.2f}% <= Stop Loss {stop_loss:.2f}%",
+            "check_error": "Erreur vérification stop loss fixe: {error}"
+        }
+    }  
 }

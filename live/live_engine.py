@@ -17,6 +17,7 @@ from config.settings import get_config
 from indicators.rsi_calculator import get_cached_rsi
 from utils.table_display import handle_existing_position_with_table
 from utils.position_utils import PositionTracker, get_real_positions
+from utils.i18n import t
 
 trackers = {}  # symbol -> PositionTracker
 
@@ -60,7 +61,7 @@ async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
             # Récupérer le trailing stop précédent ou initialiser
             if key not in TRAILING_STOPS:
                 TRAILING_STOPS[key] = current_trailing
-                log(f"[{symbol}] 🎯 Trailing stop initialized at {current_trailing:.1f}%", level="DEBUG")
+                log(t("live_engine.trailing_stop.initialized", symbol=symbol, percentage=current_trailing), level="DEBUG")
             else:
                 # Le trailing stop ne peut QUE monter, jamais descendre
                 prev_trailing = TRAILING_STOPS[key]
@@ -169,7 +170,7 @@ async def ensure_indicators(df, symbol):
     try:
         rsi_value = await get_cached_rsi(symbol, interval="5m")
         df['RSI'] = rsi_value
-        log(f"[{symbol}] ✅ RSI récupéré via API: {rsi_value:.2f}", level="DEBUG")
+        log(t("live_engine.indicators.rsi_retrieved", symbol=symbol, rsi=rsi_value), level="DEBUG")
     except Exception as e:
         log(f"[{symbol}] ⚠️ Erreur RSI API, tentative calcul local: {e}", level="WARNING")
         try:
@@ -188,7 +189,7 @@ async def ensure_indicators(df, symbol):
         df['MACD'] = ema_short - ema_long
         df['MACD_signal'] = df['MACD'].ewm(span=signal_window, adjust=False).mean()
         df['MACD_hist'] = df['MACD'] - df['MACD_signal']
-        log(f"[{symbol}] ✅ MACD calculé automatiquement.", level="DEBUG")
+        log(t("live_engine.indicators.macd_calculated", symbol=symbol), level="DEBUG")
 
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
