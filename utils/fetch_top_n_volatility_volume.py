@@ -1,3 +1,4 @@
+from utils.i18n import t
 #utils/fetch_top_n_volatility_volume.py
 import requests
 import sys
@@ -140,15 +141,15 @@ if __name__ == "__main__":
             try:
                 n = int(arg)
                 if n <= 0:
-                    print("N doit être un entier positif")
+                    print(t("utils.fetch_symbols.must_be_positive"))
                     sys.exit(1)
             except ValueError:
-                print("N doit être un entier ou --no-limit")
+                print(t("utils.fetch_symbols.must_be_integer"))
                 sys.exit(1)
     else:
-        print(f"Usage: python3 {sys.argv[0]} N | --no-limit")
-        print("  N : nombre de symboles à récupérer")
-        print("  --no-limit : récupérer tous les symboles")
+        print(t("utils.fetch_symbols.usage", script=sys.argv[0]))
+        print(t("utils.fetch_symbols.usage_n"))
+        print(t("utils.fetch_symbols.usage_no_limit"))
         sys.exit(1)
 
     # Appeler la fonction et sauvegarder les résultats
@@ -156,9 +157,9 @@ if __name__ == "__main__":
     
     if symbols:
         save_symbols_to_file(symbols)
-        print(f"✅ {len(symbols)} symboles récupérés et sauvegardés dans {OUTPUT_FILE}")
+        print(t("utils.fetch_symbols.symbols_saved", count=len(symbols), file=OUTPUT_FILE))
         for i, symbol in enumerate(symbols, 1):
-            print(f"  {i:2d}. {symbol}")
+            print(t("utils.fetch_symbols.symbol_item", i=i, symbol=symbol))
     else:
-        print("❌ Aucun symbole récupéré")
+        print(t("utils.fetch_symbols.no_symbols"))
         sys.exit(1)

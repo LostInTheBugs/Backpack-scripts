@@ -69,7 +69,7 @@
         "error": "💥 Erreur : {}",
         "success": "✅ Succès : {}"
     },
-        "live_engine": {
+    "live_engine": {
         "trailing_stop": {
             "initialized": "[{symbol}] 🎯 Trailing stop initialisé à {percentage:.1f}%",
             "updated": "[{symbol}] 📈 Trailing stop mis à jour: {prev:.1f}% → {new:.1f}%",
@@ -157,5 +157,26 @@
             "fixed_triggered": "Stop loss fixe déclenché: PnL {pnl:.2f}% <= Stop Loss {stop_loss:.2f}%",
             "check_error": "Erreur vérification stop loss fixe: {error}"
         }
-    }  
+    }, 
+    "utils": {
+        "logger": {
+            "write_error": "[❌] Erreur écriture log : {error}"
+        },
+        "public": {
+            "ohlcv_called": " get_ohlcv called with startTime={startTime}",
+            "ohlcv_error": " get_ohlcv(): {error}",
+            "table_not_exists": "❌ Table {table_name} n'existe pas.",
+            "table_check_error": "❌ Erreur lors de la vérification de la table {table_name}: {error}"
+        },
+        "fetch_symbols": {
+            "must_be_positive": "N doit être un entier positif",
+            "must_be_integer": "N doit être un entier ou --no-limit",
+            "usage": "Usage: python3 {script} N | --no-limit",
+            "usage_n": "  N : nombre de symboles à récupérer",
+            "usage_no_limit": "  --no-limit : récupérer tous les symboles",
+            "symbols_saved": "✅ {count} symboles récupérés et sauvegardés dans {file}",
+            "symbol_item": "  {i:2d}. {symbol}",
+            "no_symbols": "❌ Aucun symbole récupéré"
+        }
+    }
 }

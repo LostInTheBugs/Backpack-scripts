@@ -4,6 +4,7 @@ import os
 import psycopg2
 import json
 from config.settings import get_logging_config
+from utils.i18n import t
 
 # Chemin du fichier de log
 logging_config = get_logging_config()
@@ -46,7 +47,7 @@ def log(message, level="INFO", write_to_file=True, show_console=False):
             with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
                 f.write(entry + "\n")
         except Exception as e:
-            print(f"[❌] Erreur écriture log : {e}")
+            print(t("utils.logger.write_error", error=e))
 
 def utc_to_local(dt_utc):
     paris_tz = pytz.timezone("Europe/Paris")

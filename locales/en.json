@@ -158,5 +158,26 @@
             "fixed_triggered": "Fixed stop loss triggered: PnL {pnl:.2f}% <= Stop Loss {stop_loss:.2f}%",
             "check_error": "Error checking fixed stop loss: {error}"
         }
+    },
+    "utils": {
+        "logger": {
+            "write_error": "[❌] Log write error: {error}"
+        },
+        "public": {
+            "ohlcv_called": " get_ohlcv called with startTime={startTime}",
+            "ohlcv_error": " get_ohlcv(): {error}",
+            "table_not_exists": "❌ Table {table_name} does not exist.",
+            "table_check_error": "❌ Error checking table {table_name}: {error}"
+        },
+        "fetch_symbols": {
+            "must_be_positive": "N must be a positive integer",
+            "must_be_integer": "N must be an integer or --no-limit",
+            "usage": "Usage: python3 {script} N | --no-limit",
+            "usage_n": "  N: number of symbols to retrieve",
+            "usage_no_limit": "  --no-limit: retrieve all symbols",
+            "symbols_saved": "✅ {count} symbols retrieved and saved in {file}",
+            "symbol_item": "  {i:2d}. {symbol}",
+            "no_symbols": "❌ No symbols retrieved"
+        }
     }
 }

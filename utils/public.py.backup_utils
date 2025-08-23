@@ -1,0 +1,215 @@
+import requests
+from datetime import datetime, timedelta, timezone
+import time
+import os
+import asyncpg
+
+def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = None):
+    if startTime is not None:
+        print(f" get_ohlcv called with startTime={startTime}")
+        startTime_ms = int(startTime * 1000)
+    else:
+        startTime_ms = None
+
+    if endTime is not None:
+        endTime_ms = int(endTime * 1000)
+    else:
+        endTime_ms = None
+
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit,
+    }
+    if startTime_ms is not None:
+        params["startTime"] = startTime_ms
+    if endTime_ms is not None:
+        params["endTime"] = endTime_ms
+
+    try:
+        response = requests.get("https://api.backpack.exchange/api/v1/klines", params=params)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        print(f" get_ohlcv(): {e}")
+        return None
+
+def merge_symbols_with_config(auto_symbols: list) -> list:
+    """
+    Fusionne auto-select avec include, puis enlève exclude.
+    
+    Args:
+        auto_symbols (list): Liste des symboles auto-sélectionnés
+        
+    Returns:
+        list: Liste finale des symboles après merge avec la config
+    """
+    from config.settings import get_config
+    from utils.logger import log
+    
+    try:
+        config = get_config()
+        
+        # Sécurité : s'assurer qu'auto_symbols est une liste valide
+        if auto_symbols is None:
+            log(" ⚠️ merge_symbols_with_config: auto_symbols est None, utilisation d'une liste vide", level="WARNING")
+            auto_symbols = []
+        elif not isinstance(auto_symbols, list):
+            log(f" ⚠️ merge_symbols_with_config: auto_symbols n'est pas une liste ({type(auto_symbols)}), conversion", level="WARNING")
+            auto_symbols = list(auto_symbols) if auto_symbols else []
+        
+        # Créer une copie pour éviter de modifier l'original
+        working_symbols = auto_symbols.copy()
+        
+        # Récupérer les listes include/exclude avec gestion d'erreur
+        try:
+            include_list = getattr(config.symbols, "include", []) or []
+            exclude_list = getattr(config.symbols, "exclude", []) or []
+        except AttributeError as e:
+            log(f" ⚠️ Erreur d'accès à config.symbols: {e}, utilisation de listes vides", level="WARNING")
+            include_list = []
+            exclude_list = []
+        
+        # Sécurité : s'assurer que include et exclude sont des listes
+        if not isinstance(include_list, list):
+            log(f" ⚠️ include_list n'est pas une liste ({type(include_list)}), conversion", level="WARNING")
+            include_list = list(include_list) if include_list else []
+            
+        if not isinstance(exclude_list, list):
+            log(f" ⚠️ exclude_list n'est pas une liste ({type(exclude_list)}), conversion", level="WARNING")
+            exclude_list = list(exclude_list) if exclude_list else []
+        
+        # Normaliser toutes les listes en majuscules pour la comparaison
+        symbols_upper = [str(s).upper() for s in working_symbols]
+        include_upper = [str(s).upper() for s in include_list]
+        exclude_upper = [str(s).upper() for s in exclude_list]
+        
+        log(f" 📋 Auto symbols: {working_symbols}", level="DEBUG")
+        log(f" ➕ Include list: {include_list}", level="DEBUG")
+        log(f" ➖ Exclude list: {exclude_list}", level="DEBUG")
+        
+        # Ajouter tous les symboles include qui ne sont pas déjà présents
+        for original_symbol, upper_symbol in zip(include_list, include_upper):
+            if upper_symbol not in symbols_upper:
+                working_symbols.append(original_symbol)
+                symbols_upper.append(upper_symbol)
+                log(f" ➕ Ajout du symbole forcé: {original_symbol}", level="DEBUG")
+        
+        # Retirer tous les symboles exclude
+        final_symbols = []
+        for symbol in working_symbols:
+            symbol_upper = str(symbol).upper()
+            if symbol_upper not in exclude_upper:
+                final_symbols.append(symbol)
+            else:
+                log(f" ➖ Exclusion du symbole: {symbol}", level="DEBUG")
+        
+        log(f" ✅ Symboles finaux après merge: {final_symbols}", level="DEBUG")
+        
+        return final_symbols
+        
+    except Exception as e:
+        log(f" ❌ Erreur dans merge_symbols_with_config: {e}", level="ERROR")
+        import traceback
+        log(f" Stack trace: {traceback.format_exc()}", level="ERROR")
+        
+        # En cas d'erreur, retourner au moins auto_symbols ou une liste vide
+        if auto_symbols is not None and isinstance(auto_symbols, list):
+            return auto_symbols
+        else:
+            return []
+
+
+def merge_symbols_with_config_simple(auto_symbols: list) -> list:
+    """
+    Version simplifiée sans logging excessif pour les cas où on veut juste le résultat.
+    
+    Args:
+        auto_symbols (list): Liste des symboles auto-sélectionnés
+        
+    Returns:
+        list: Liste finale des symboles après merge avec la config
+    """
+    try:
+        from config.settings import get_config
+        config = get_config()
+        
+        # Validation des entrées
+        if not isinstance(auto_symbols, list):
+            auto_symbols = list(auto_symbols) if auto_symbols else []
+        
+        working_symbols = auto_symbols.copy()
+        
+        # Récupérer les listes de config
+        include_list = getattr(config.symbols, "include", []) or []
+        exclude_list = getattr(config.symbols, "exclude", []) or []
+        
+        if not isinstance(include_list, list):
+            include_list = []
+        if not isinstance(exclude_list, list):
+            exclude_list = []
+        
+        # Normaliser en majuscules
+        symbols_upper = [str(s).upper() for s in working_symbols]
+        include_upper = [str(s).upper() for s in include_list]
+        exclude_upper = [str(s).upper() for s in exclude_list]
+        
+        # Ajouter les includes manquants
+        for original_symbol, upper_symbol in zip(include_list, include_upper):
+            if upper_symbol not in symbols_upper:
+                working_symbols.append(original_symbol)
+                symbols_upper.append(upper_symbol)
+        
+        # Retirer les excludes
+        final_symbols = [
+            symbol for symbol in working_symbols 
+            if str(symbol).upper() not in exclude_upper
+        ]
+        
+        return final_symbols
+        
+    except Exception:
+        # Fallback silencieux
+        return auto_symbols if isinstance(auto_symbols, list) else []
+
+def format_table_name(symbol: str) -> str:
+    parts = symbol.lower().split("_")
+    return "ohlcv_" + "__".join(parts)
+
+async def check_table_and_fresh_data(pool, symbol, max_age_seconds=600):
+    table_name = format_table_name(symbol)
+    async with pool.acquire() as conn:
+        try:
+            recent_rows = await conn.fetch(
+                f"""
+                SELECT * FROM {table_name}
+                WHERE timestamp >= $1
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds),
+            )
+            return bool(recent_rows)
+        except asyncpg.exceptions.UndefinedTableError:
+            print(f"❌ Table {table_name} n'existe pas.")
+            return False
+        except Exception as e:
+            print(f"❌ Erreur lors de la vérification de la table {table_name}: {e}")
+            return False
+        
+async def get_last_timestamp(pool, symbol):
+    table_name = format_table_name(symbol)
+    async with pool.acquire() as conn:
+        try:
+            row = await conn.fetchrow(
+                f"SELECT timestamp FROM {table_name} ORDER BY timestamp DESC LIMIT 1"
+            )
+            return row["timestamp"] if row else None
+        except asyncpg.exceptions.UndefinedTableError:
+            return None        
+
+def load_symbols_from_file(filepath: str = "symbol.lst") -> list:
+    if not os.path.exists(filepath):
+        return []
+    with open(filepath, "r") as f:
+        return [line.strip() for line in f if line.strip()]

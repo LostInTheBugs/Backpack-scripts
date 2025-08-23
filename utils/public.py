@@ -3,10 +3,11 @@ from datetime import datetime, timedelta, timezone
 import time
 import os
 import asyncpg
+from utils.i18n import t
 
 def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int = None, endTime: int = None):
     if startTime is not None:
-        print(f" get_ohlcv called with startTime={startTime}")
+        print(t("utils.public.ohlcv_called", startTime=startTime))
         startTime_ms = int(startTime * 1000)
     else:
         startTime_ms = None
@@ -31,7 +32,7 @@ def get_ohlcv(symbol: str, interval: str = "1m", limit: int = 21, startTime: int
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
-        print(f" get_ohlcv(): {e}")
+        print(t("utils.public.ohlcv_error", error=e))
         return None
 
 def merge_symbols_with_config(auto_symbols: list) -> list:
@@ -191,10 +192,10 @@ async def check_table_and_fresh_data(pool, symbol, max_age_seconds=600):
             )
             return bool(recent_rows)
         except asyncpg.exceptions.UndefinedTableError:
-            print(f"❌ Table {table_name} n'existe pas.")
+            print(t("utils.public.table_not_exists", table_name=table_name))
             return False
         except Exception as e:
-            print(f"❌ Erreur lors de la vérification de la table {table_name}: {e}")
+            print(t("utils.public.table_check_error", table_name=table_name, error=e))
             return False
         
 async def get_last_timestamp(pool, symbol):
