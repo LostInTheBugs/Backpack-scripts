@@ -112,8 +112,8 @@ async def scan_all_symbols(pool, symbols):
         else:
             log(f"⚠️ Unexpected result in scan_all_symbols: {res}", level="WARNING")
 
-    log(f"✅ OK: {ok_symbols}", level="DEBUG")
-    log(f"❌ KO: {ko_symbols}", level="DEBUG")
+    log(t("live_engine.scan.ok_symbols", symbols=ok_symbols), level="DEBUG")
+    log(t("live_engine.scan.ko_symbols", symbols=ko_symbols), level="DEBUG")
     log(f"📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.", level="DEBUG")
 
 async def scan_symbol(pool, symbol):
@@ -174,10 +174,10 @@ async def ensure_indicators(df, symbol):
             from indicators.rsi_calculator import calculate_rsi
             rsi_value = calculate_rsi(df['close'], period=14)
             df['RSI'] = rsi_value
-            log(f"[{symbol}] 🔄 RSI calculé localement: {rsi_value.iloc[-1]:.2f}", level="DEBUG")
+            log(t("live_engine.indicators.rsi_calculated", symbol=symbol, rsi=rsi_value.iloc[-1]), level="DEBUG")
         except Exception as e2:
             df['RSI'] = 50
-            log(f"[{symbol}] ⚠️ Impossible de calculer RSI localement, valeur neutre: {e2}", level="ERROR")
+            log(t("live_engine.indicators.rsi_failed", symbol=symbol, error=e2), level="ERROR")
 
     if 'MACD' not in df.columns or 'MACD_signal' not in df.columns:
         short_window, long_window, signal_window = 12,26,9
@@ -211,7 +211,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         start_ts = end_ts - timedelta(seconds=600)
         df = await fetch_ohlcv_1s(symbol, start_ts, end_ts, pool=pool)
         if df is None or df.empty:
-            log(f"[{symbol}] ❌ No 1s data retrieved from local database", level="ERROR")
+            log(t("live_engine.data.no_1s_data", symbol=symbol), level="ERROR")
             return
 
         df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -233,8 +233,8 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         df_result = await ensure_indicators(df, symbol)
         
         # 🔍 DEBUG: Vérification détaillée du type de retour
-        log(f"[{symbol}] ensure_indicators returned type: {type(df_result)}", level="DEBUG")
-        log(f"[{symbol}] Is coroutine? {asyncio.iscoroutine(df_result)}", level="DEBUG")
+        log(t("live_engine.debug.ensure_indicators_type", symbol=symbol, type=type(df_result)), level="DEBUG")
+        log(t("live_engine.debug.is_coroutine", symbol=symbol, is_coroutine=asyncio.iscoroutine(df_result)), level="DEBUG")
         
         # Si c'est une coroutine, on l'await
         if asyncio.iscoroutine(df_result):
@@ -257,28 +257,28 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             return
             
         # 🔍 DEBUG: Validation finale du DataFrame
-        log(f"[{symbol}] DataFrame validated - shape: {df.shape}, columns: {list(df.columns)}", level="DEBUG")
+        log(t("live_engine.data.dataframe_validated", symbol=symbol, shape=df.shape, columns=list(df.columns)), level="DEBUG")
 
         # ✅ CORRECTION: Vérification si get_combined_signal est async et gestion appropriée
         try:
             # 🔍 DEBUG: Logs détaillés avant l'appel
-            log(f"[{symbol}] About to call strategy: {selected_strategy}", level="DEBUG")
+            log(t("live_engine.strategy.about_to_call", symbol=symbol, strategy=selected_strategy), level="DEBUG")
             log(f"[{symbol}] Function type: {type(get_combined_signal)}", level="DEBUG")
             log(f"[{symbol}] Is coroutine function? {inspect.iscoroutinefunction(get_combined_signal)}", level="DEBUG")
             log(f"[{symbol}] DataFrame type before call: {type(df)}", level="DEBUG")
             log(f"[{symbol}] DataFrame shape: {df.shape}", level="DEBUG")
             
             if inspect.iscoroutinefunction(get_combined_signal):
-                log(f"[{symbol}] 🔄 Calling async strategy function", level="DEBUG")
+                log(t("live_engine.strategy.calling_async", symbol=symbol), level="DEBUG")
                 result = await get_combined_signal(df, symbol)
             else:
                 log(f"[{symbol}] 🔄 Calling sync strategy function", level="DEBUG")
                 result = get_combined_signal(df, symbol)
                 
-            log(f"[{symbol}] Strategy returned: {type(result)} - {result}", level="DEBUG")
+            log(t("live_engine.strategy.returned", symbol=symbol, type=type(result), result=result), level="DEBUG")
             
         except Exception as e:
-            log(f"[{symbol}] ❌ Error calling strategy function: {e}", level="ERROR")
+            log(t("live_engine.strategy.error", symbol=symbol, error=e), level="ERROR")
             log(f"[{symbol}] DataFrame info at time of error:", level="ERROR")
             log(f"[{symbol}]   - Type: {type(df)}", level="ERROR")
             log(f"[{symbol}]   - Is coroutine? {asyncio.iscoroutine(df)}", level="ERROR")
@@ -306,10 +306,10 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             await handle_new_position(symbol, signal, real_run, dry_run)
             log(f"{symbol} 🚨 Try open position: {signal}", level="DEBUG")
         else:
-            log(f"{symbol} ❌ No actionable signal detected: {signal}", level="DEBUG")
+            log(t("live_engine.signals.no_actionable", symbol=symbol, signal=signal), level="DEBUG")
 
     except Exception as e:
-        log(f"[{symbol}] 💥 Error: {e}", level="ERROR")
+        log(t("live_engine.errors.generic", symbol=symbol, error=e), level="ERROR")
         traceback.print_exc()
 
 def parse_position(pos):
@@ -442,7 +442,7 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
                         del TRAILING_STOPS[key]
                         log(f"[{symbol}] 🧹 Trailing stop cleaned from memory", level="DEBUG")
                     
-                    log(f"[{symbol}] ✅ Position closed successfully", level="INFO")
+                    log(t("live_engine.positions.closed_success", symbol=symbol), level="INFO")
                 except Exception as e:
                     log(f"[{symbol}] ❌ Error closing position: {e}", level="ERROR")
             elif dry_run:
@@ -469,7 +469,7 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
             MAX_PNL_TRACKER[symbol] = 0.0
             log(t("live_engine.positions.opened_success", symbol=symbol), level="DEBUG")
         except Exception as e:
-            log(f"[{symbol}] ❌ Error opening position: {e}", level="ERROR")
+            log(t("live_engine.positions.open_error", symbol=symbol, error=e), level="ERROR")
     else:
         log(f"[{symbol}] ❌ Neither --real-run nor --dry-run specified: no action", level="ERROR")
 
