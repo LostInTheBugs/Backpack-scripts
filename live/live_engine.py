@@ -76,7 +76,7 @@ async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
             return None
             
     except Exception as e:
-        log(f"[{symbol}] ❌ Error calculating trailing stop: {e}", level="ERROR")
+        log(t("live_engine.trailing_stop.error", symbol=symbol, error=e), level="ERROR")
         return None
 
 def handle_live_symbol(symbol, current_price, side, entry_price, amount):
@@ -110,11 +110,11 @@ async def scan_all_symbols(pool, symbols):
             else:
                 ko_symbols.append((symbol, status))
         else:
-            log(f"⚠️ Unexpected result in scan_all_symbols: {res}", level="WARNING")
+            log(t("live_engine.scan.unexpected_result", result=res), level="WARNING")
 
     log(t("live_engine.scan.ok_symbols", symbols=ok_symbols), level="DEBUG")
     log(t("live_engine.scan.ko_symbols", symbols=ko_symbols), level="DEBUG")
-    log(f"📊 Résumé: {len(ok_symbols)} OK / {len(ko_symbols)} KO sur {len(symbols)} paires.", level="DEBUG")
+    log(t("live_engine.scan.summary", ok_count=len(ok_symbols), ko_count=len(ko_symbols), total=len(symbols)), level="DEBUG")
 
 async def scan_symbol(pool, symbol):
     try:
@@ -190,12 +190,12 @@ async def ensure_indicators(df, symbol):
 
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
-        log(f"[{symbol}] ⚠️ Indicateurs manquants: {missing} — signal ignoré.", level="WARNING")
+        log(t("live_engine.indicators.missing", symbol=symbol, missing=missing), level="WARNING")
         return None
 
     for col in required_cols:
         if col != 'RSI' and df[col].isna().any():
-            log(f"[{symbol}] ⚠️ NaN détecté dans {col} — signal ignoré.", level="WARNING")
+            log(t("live_engine.indicators.nan_detected", symbol=symbol, column=col), level="WARNING")
             return None
 
     return df
@@ -238,22 +238,22 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         
         # Si c'est une coroutine, on l'await
         if asyncio.iscoroutine(df_result):
-            log(f"[{symbol}] Awaiting coroutine from ensure_indicators...", level="DEBUG")
+            log(t("live_engine.debug.awaiting_coroutine", symbol=symbol), level="DEBUG")
             df = await df_result
         else:
             df = df_result
             
         if df is None:
-            log(f"[{symbol}] ❌ Indicators calculation failed", level="ERROR")
+            log(t("live_engine.indicators.calculation_failed", symbol=symbol), level="ERROR")
             return
 
         # ✅ CORRECTION: Vérification robuste du type de df avant de l'utiliser
         if not isinstance(df, pd.DataFrame):
-            log(f"[{symbol}] ❌ Expected DataFrame but got {type(df)}", level="ERROR")
+            log(t("live_engine.data.dataframe_error", symbol=symbol, type=type(df)), level="ERROR")
             return
             
         if df.empty:
-            log(f"[{symbol}] ⚠️ DataFrame is empty after indicators calculation", level="WARNING")
+            log(t("live_engine.data.dataframe_empty", symbol=symbol), level="WARNING")
             return
             
         # 🔍 DEBUG: Validation finale du DataFrame
@@ -263,29 +263,29 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         try:
             # 🔍 DEBUG: Logs détaillés avant l'appel
             log(t("live_engine.strategy.about_to_call", symbol=symbol, strategy=selected_strategy), level="DEBUG")
-            log(f"[{symbol}] Function type: {type(get_combined_signal)}", level="DEBUG")
-            log(f"[{symbol}] Is coroutine function? {inspect.iscoroutinefunction(get_combined_signal)}", level="DEBUG")
-            log(f"[{symbol}] DataFrame type before call: {type(df)}", level="DEBUG")
-            log(f"[{symbol}] DataFrame shape: {df.shape}", level="DEBUG")
+            log(t("live_engine.debug.function_type", symbol=symbol, type=type(get_combined_signal)), level="DEBUG")
+            log(t("live_engine.debug.is_coroutine_function", symbol=symbol, is_coroutine=inspect.iscoroutinefunction(get_combined_signal)), level="DEBUG")
+            log(t("live_engine.debug.dataframe_before_call", symbol=symbol, type=type(df)), level="DEBUG")
+            log(t("live_engine.debug.dataframe_shape", symbol=symbol, shape=df.shape), level="DEBUG")
             
             if inspect.iscoroutinefunction(get_combined_signal):
                 log(t("live_engine.strategy.calling_async", symbol=symbol), level="DEBUG")
                 result = await get_combined_signal(df, symbol)
             else:
-                log(f"[{symbol}] 🔄 Calling sync strategy function", level="DEBUG")
+                log(t("live_engine.strategy.calling_sync", symbol=symbol), level="DEBUG")
                 result = get_combined_signal(df, symbol)
                 
             log(t("live_engine.strategy.returned", symbol=symbol, type=type(result), result=result), level="DEBUG")
             
         except Exception as e:
             log(t("live_engine.strategy.error", symbol=symbol, error=e), level="ERROR")
-            log(f"[{symbol}] DataFrame info at time of error:", level="ERROR")
-            log(f"[{symbol}]   - Type: {type(df)}", level="ERROR")
-            log(f"[{symbol}]   - Is coroutine? {asyncio.iscoroutine(df)}", level="ERROR")
+            log(t("live_engine.errors.dataframe_info", symbol=symbol), level="ERROR")
+            log(t("live_engine.errors.dataframe_type", symbol=symbol, type=type(df)), level="ERROR")
+            log(t("live_engine.errors.dataframe_is_coroutine", symbol=symbol, is_coroutine=asyncio.iscoroutine(df)), level="ERROR")
             if hasattr(df, 'shape'):
-                log(f"[{symbol}]   - Shape: {df.shape}", level="ERROR")
+                log(t("live_engine.errors.dataframe_shape_error", symbol=symbol, shape=df.shape), level="ERROR")
             if hasattr(df, 'columns'):
-                log(f"[{symbol}]   - Columns: {list(df.columns)}", level="ERROR")
+                log(t("live_engine.errors.dataframe_columns_error", symbol=symbol, columns=list(df.columns)), level="ERROR")
             traceback.print_exc()
             return
 
@@ -304,7 +304,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
         if signal in ["BUY","SELL"]:
             await handle_new_position(symbol, signal, real_run, dry_run)
-            log(f"{symbol} 🚨 Try open position: {signal}", level="DEBUG")
+            log(t("live_engine.signals.try_open", symbol=symbol, signal=signal), level="DEBUG")
         else:
             log(t("live_engine.signals.no_actionable", symbol=symbol, signal=signal), level="DEBUG")
 
@@ -351,15 +351,15 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
             
             # Vérifier si le PnL a touché le stop loss fixe
             if pnl_pct <= stop_loss_pct:
-                log(f"Fixed stop loss triggered: PnL {pnl_pct:.2f}% <= Stop Loss {stop_loss_pct:.2f}%", level="INFO")
+                log(t("live_engine.stop_loss.fixed_triggered", pnl=pnl_pct, stop_loss=stop_loss_pct), level="INFO")
                 return True
                 
         except Exception as e:
-            log(f"Error checking fixed stop loss: {e}", level="ERROR")
+            log(t("live_engine.stop_loss.check_error", error=e), level="ERROR")
     
     # ✅ Logique de trailing stop (existante)
     if trailing_stop is not None and pnl_pct <= trailing_stop:
-        log(f"Trailing stop triggered: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}%", level="INFO")
+        log(t("live_engine.trailing_stop.triggered", pnl=pnl_pct, trailing=trailing_stop), level="INFO")
         return True
     
     # Autres conditions de fermeture (take profit, etc.)
@@ -376,7 +376,7 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
 
         pos = next((p for p in parsed_positions if p["symbol"] == symbol), None)
         if not pos:
-            log(f"[{symbol}] ⚠️ No valid open position found", level="WARNING")
+            log(t("live_engine.positions.no_valid_found", symbol=symbol), level="WARNING")
             return
 
         # ✅ CORRECTION: Conversion sécurisée en float avec safe_float
@@ -396,7 +396,7 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
             mark_price = safe_float(pnl_data.get("mark_price", entry_price), entry_price)
         else:
             # Fallback si le format de retour est différent
-            log(f"[{symbol}] ⚠️ Unexpected return type from get_real_pnl: {type(pnl_data)}", level="WARNING")
+            log(t("live_engine.positions.unexpected_pnl_type", symbol=symbol, type=type(pnl_data)), level="WARNING")
             pnl_usdc = 0.0
             pnl_percent = 0.0
             mark_price = entry_price
@@ -428,28 +428,28 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
         
         # ✅ DEBUG: Log détaillé pour débugger
-        log(f"[{symbol}] CLOSE CHECK: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Duration={duration_sec}s, ShouldClose={should_close}", level="INFO")
+        log(t("live_engine.debug.close_check", symbol=symbol, pnl=pnl_pct, trailing=trailing_stop, duration=duration_sec, should_close=should_close), level="INFO")
         
         if should_close:
             if real_run:
                 try:
-                    log(f"[{symbol}] 🎯 Closing position due to trailing stop trigger", level="INFO")
+                    log(t("live_engine.trailing_stop.closing", symbol=symbol), level="INFO")
                     await close_position_percent_async(symbol, 100)  # Fermer 100% de la position
                     
                     # ✅ NOUVEAU: Nettoyer le trailing stop de la mémoire
                     key = f"{symbol}_{side}_{entry_price}"
                     if key in TRAILING_STOPS:
                         del TRAILING_STOPS[key]
-                        log(f"[{symbol}] 🧹 Trailing stop cleaned from memory", level="DEBUG")
+                        log(t("live_engine.trailing_stop.cleaned", symbol=symbol), level="DEBUG")
                     
                     log(t("live_engine.positions.closed_success", symbol=symbol), level="INFO")
                 except Exception as e:
-                    log(f"[{symbol}] ❌ Error closing position: {e}", level="ERROR")
+                    log(t("live_engine.positions.close_error", symbol=symbol, error=e), level="ERROR")
             elif dry_run:
-                log(f"[{symbol}] 🧪 DRY-RUN: Would close position due to trailing stop", level="DEBUG")
+                log(t("live_engine.positions.dry_run_close", symbol=symbol), level="DEBUG")
 
     except Exception as e:
-        log(f"[{symbol}] ❌ Error in handle_existing_position: {e}", level="ERROR")
+        log(t("live_engine.errors.position_handling", symbol=symbol, error=e), level="ERROR")
         import traceback
         traceback.print_exc()
 
@@ -457,13 +457,13 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
     direction = "long" if signal=="BUY" else "short"
     
     if real_run and not await check_position_limit():
-        log(f"[{symbol}] ⚠️ Maximum positions limit ({trading_config.max_positions}) reached - skipping", level="WARNING")
+        log(t("live_engine.positions.limit_reached", symbol=symbol, max=trading_config.max_positions), level="WARNING")
         return
 
     if dry_run:
-        log(f"[{symbol}] 🧪 DRY-RUN: Simulated {direction.upper()} position opening", level="DEBUG")
+        log(t("live_engine.positions.opening_dry", symbol=symbol, direction=direction.upper()), level="DEBUG")
     elif real_run:
-        log(f"[{symbol}] ✅ REAL position opening: {direction.upper()}", level="DEBUG")
+        log(t("live_engine.positions.opening_real", symbol=symbol, direction=direction.upper()), level="DEBUG")
         try:
             await open_position_async(symbol, POSITION_AMOUNT_USDC, direction)
             MAX_PNL_TRACKER[symbol] = 0.0
@@ -471,7 +471,7 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
         except Exception as e:
             log(t("live_engine.positions.open_error", symbol=symbol, error=e), level="ERROR")
     else:
-        log(f"[{symbol}] ❌ Neither --real-run nor --dry-run specified: no action", level="ERROR")
+        log(t("live_engine.positions.neither_run_mode", symbol=symbol), level="ERROR")
 
 async def check_position_limit() -> bool:
     try:
@@ -479,7 +479,7 @@ async def check_position_limit() -> bool:
         current_positions = len([p for p in positions.values() if p])
         return current_positions < trading_config.max_positions
     except Exception as e:
-        log(f"⚠️ Error checking position limit: {e}", level="WARNING")
+        log(t("live_engine.errors.position_limit", error=e), level="WARNING")
         return True
 
 async def get_position_stats() -> dict:
@@ -494,7 +494,7 @@ async def get_position_stats() -> dict:
             'min_pnl_for_trailing': MIN_PNL_FOR_TRAILING
         }
     except Exception as e:
-        log(f"⚠️ Error getting position stats: {e}", level="ERROR")
+        log(t("live_engine.errors.position_stats", error=e), level="ERROR")
         return {}
 
 async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: bool, args=None):
