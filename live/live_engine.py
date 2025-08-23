@@ -68,7 +68,7 @@ async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
                 TRAILING_STOPS[key] = max(prev_trailing, current_trailing)
                 
                 if TRAILING_STOPS[key] > prev_trailing:
-                    log(f"[{symbol}] 📈 Trailing stop updated: {prev_trailing:.1f}% → {TRAILING_STOPS[key]:.1f}%", level="DEBUG")
+                    log(t("live_engine.trailing_stop.updated", symbol=symbol, prev=prev_trailing, new=TRAILING_STOPS[key]), level="DEBUG")
             
             return TRAILING_STOPS[key]
         else:
@@ -97,7 +97,7 @@ def handle_live_symbol(symbol, current_price, side, entry_price, amount):
     }
 
 async def scan_all_symbols(pool, symbols):
-    log("🔍 Lancement du scan indicateurs…", level="INFO")
+    log(t("live_engine.scan.launch"), level="INFO")
     tasks = [scan_symbol(pool, symbol) for symbol in symbols]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -159,9 +159,6 @@ def import_strategy_signal(strategy):
     return get_combined_signal
 
 async def ensure_indicators(df, symbol):
-    """
-    ✅ CORRECTION: Cette fonction est maintenant async car elle appelle get_cached_rsi
-    """
     required_cols = ["EMA20", "EMA50", "EMA200", "RSI", "MACD"]
     for period, col in [(20,"EMA20"),(50,"EMA50"),(200,"EMA200")]:
         if col not in df.columns:
@@ -172,7 +169,7 @@ async def ensure_indicators(df, symbol):
         df['RSI'] = rsi_value
         log(t("live_engine.indicators.rsi_retrieved", symbol=symbol, rsi=rsi_value), level="DEBUG")
     except Exception as e:
-        log(f"[{symbol}] ⚠️ Erreur RSI API, tentative calcul local: {e}", level="WARNING")
+        log(t("live_engine.indicators.rsi_error_fallback", symbol=symbol, error=e), level="WARNING")
         try:
             from indicators.rsi_calculator import calculate_rsi
             rsi_value = calculate_rsi(df['close'], period=14)
@@ -205,9 +202,9 @@ async def ensure_indicators(df, symbol):
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args=None):
     try:
-        log(f"[{symbol}] 📈 Loading OHLCV data for {INTERVAL}", level="DEBUG")
+        log(t("live_engine.data.loading", symbol=symbol, interval=INTERVAL), level="DEBUG")
         if not await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
-            log(f"[{symbol}] ❌ Ignored: no recent data in local database", level="ERROR")
+            log(t("live_engine.data.no_recent", symbol=symbol), level="ERROR")
             return
 
         end_ts = datetime.now(timezone.utc)
@@ -225,10 +222,10 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
         if args.strategie == "Auto":
             market_condition, selected_strategy = get_strategy_for_market(df)
-            log(f"[{symbol}] 📊 Market detected: {market_condition.upper()} — Strategy selected: {selected_strategy}", level="DEBUG")
+            log(t("live_engine.strategy.market_detected", symbol=symbol, condition=market_condition.upper(), strategy=selected_strategy), level="DEBUG")
         else:
             selected_strategy = args.strategie
-            log(f"[{symbol}] 📊 Strategy manually selected: {selected_strategy}", level="DEBUG")
+            log(t("live_engine.strategy.manual_selected", symbol=symbol, strategy=selected_strategy), level="DEBUG")
 
         get_combined_signal = import_strategy_signal(selected_strategy)
         
@@ -299,7 +296,7 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             signal = result
             details = {}  # valeur vide si la stratégie ne renvoie pas de détails
 
-        log(f"[{symbol}] 🎯 Signal detected: {signal} | Details: {details}", level="DEBUG")
+        log(t("live_engine.signals.detected", symbol=symbol, signal=signal, details=details), level="DEBUG")
 
         if await position_already_open(symbol):
             await handle_existing_position_with_table(symbol, real_run, dry_run)
@@ -470,7 +467,7 @@ async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run:
         try:
             await open_position_async(symbol, POSITION_AMOUNT_USDC, direction)
             MAX_PNL_TRACKER[symbol] = 0.0
-            log(f"[{symbol}] ✅ Position opened successfully", level="DEBUG")
+            log(t("live_engine.positions.opened_success", symbol=symbol), level="DEBUG")
         except Exception as e:
             log(f"[{symbol}] ❌ Error opening position: {e}", level="ERROR")
     else:
