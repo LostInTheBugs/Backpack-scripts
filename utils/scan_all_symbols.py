@@ -1,4 +1,4 @@
-import asyncio
+# utils/scan_all_symbols.py
 from utils.public import check_table_and_fresh_data  # ou autre fonction utile
 from utils.logger import log
 

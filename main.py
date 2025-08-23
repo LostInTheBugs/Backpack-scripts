@@ -17,7 +17,7 @@ from config.settings import load_config
 from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
 from live.live_engine import handle_live_symbol
-
+from utils.i18n import t
 # ✅ CONFIGURATION CENTRALISÉE ET SIMPLIFIÉE
 config = load_config()
 
