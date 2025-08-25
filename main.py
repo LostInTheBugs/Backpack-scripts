@@ -337,7 +337,25 @@ async def async_main(args):
                     else:
                         current_symbols = []
                     
-                    # ✅ DEBUG LOG AJOUTÉ
+                    # ✅ NOUVEAU: Inclure automatiquement tous les symboles avec positions ouvertes
+                    try:
+                        from utils.position_utils import get_real_positions
+                        open_positions = await get_real_positions()
+                        open_symbols = [pos["symbol"] for pos in open_positions if pos.get("symbol")]
+                        
+                        added_symbols = []
+                        for symbol in open_symbols:
+                            if symbol not in current_symbols:
+                                current_symbols.append(symbol)
+                                added_symbols.append(symbol)
+                        
+                        if added_symbols:
+                            log(f"[AUTO-INCLUDE] Added symbols with open positions: {added_symbols}", level="INFO")
+                            
+                    except Exception as e:
+                        log(f"[ERROR] Failed to auto-include open positions: {e}", level="ERROR")
+                    
+                    # ✅ DEBUG LOG 
                     log(f"[DEBUG] Current symbols to check: {current_symbols}", level="INFO")
                     
                     # ✅ UTILISATION DIRECTE DE LA CONFIG
@@ -351,7 +369,7 @@ async def async_main(args):
                             else:
                                 ignored_symbols.append(symbol)
                         
-                        # ✅ DEBUG LOGS DÉPLACÉS APRÈS LA BOUCLE
+                        # ✅ DEBUG LOGS APRÈS LA BOUCLE
                         log(f"[DEBUG] Active symbols list: {active_symbols}", level="INFO")
                         log(f"[DEBUG] Ignored symbols list: {ignored_symbols}", level="INFO")
                         
