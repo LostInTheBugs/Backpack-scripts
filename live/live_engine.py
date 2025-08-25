@@ -329,16 +329,20 @@ def parse_position(pos):
 def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=None):
     """
     Détermine si une position doit être fermée basée sur les conditions de trailing stop ET stop loss fixe
+    ✅ CORRECTION: Ajout de logs de debug avec variables correctes
     """
+    # ✅ DEBUG LOG avec variables disponibles
+    log(f"[DEBUG CLOSE]: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Side={side}, Duration={duration_sec:.1f}s", level="INFO")
+    
     # Conditions de fermeture basées sur la configuration
-    min_duration = 0.5  # Minimum 1 minute avant de pouvoir fermer
+    min_duration = 0.5  # Minimum 0.5 seconde avant de pouvoir fermer
     
     if duration_sec < min_duration:
+        log(f"[DEBUG CLOSE] Duration {duration_sec:.1f}s < min {min_duration}s - Skip", level="INFO")
         return False
     
-    # ✅ NOUVEAU: Logique de stop loss fixe quand trailing stop pas encore activé
+    # Logique de stop loss fixe quand trailing stop pas encore activé
     if trailing_stop is None:
-        # Récupérer le stop loss par défaut de la stratégie
         try:
             current_strategy = strategy or config.strategy.default_strategy.lower()
             
@@ -351,19 +355,20 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
             
             # Vérifier si le PnL a touché le stop loss fixe
             if pnl_pct <= stop_loss_pct:
-                log(t("live_engine.stop_loss.fixed_triggered", pnl=pnl_pct, stop_loss=stop_loss_pct), level="INFO")
+                log(f"[CLOSE TRIGGERED] Fixed stop loss: PnL {pnl_pct:.2f}% <= Stop {stop_loss_pct:.2f}%", level="INFO")
                 return True
                 
         except Exception as e:
-            log(t("live_engine.stop_loss.check_error", error=e), level="ERROR")
+            log(f"[ERROR] Stop loss check error: {e}", level="ERROR")
     
-    # ✅ Logique de trailing stop (existante)
+    # ✅ Logique de trailing stop (avec debug)
     if trailing_stop is not None and pnl_pct <= trailing_stop:
-        log(t("live_engine.trailing_stop.triggered", pnl=pnl_pct, trailing=trailing_stop), level="INFO")
+        log(f"[CLOSE TRIGGERED] Trailing stop: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}%", level="INFO")
         return True
     
-    # Autres conditions de fermeture (take profit, etc.)
-    # Ajouter ici d'autres logiques si nécessaire
+    # ✅ DEBUG: Log quand aucune condition de fermeture n'est remplie
+    if trailing_stop is not None:
+        log(f"[DEBUG CLOSE] No close: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
     
     return False
 
