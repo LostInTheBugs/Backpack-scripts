@@ -341,6 +341,8 @@ async def async_main(args):
                     if current_time - last_symbols_check >= config.performance.symbols_check_interval:
                         active_symbols = []
                         ignored_symbols = []
+                        log(f"Active symbols list: {active_symbols}", level="DEBUG")
+                        log(f"Ignored symbols list: {ignored_symbols}", level="DEBUG")
                         
                         for symbol in current_symbols:
                             if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
