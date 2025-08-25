@@ -299,6 +299,10 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         log(t("live_engine.signals.detected", symbol=symbol, signal=signal, details=details), level="DEBUG")
 
         if await position_already_open(symbol):
+            position_exists = await position_already_open(symbol)
+            log(f"[MAIN LOOP] {symbol} position_already_open: {position_exists}", level="INFO")
+            position_exists = await position_already_open(symbol)
+            log(f"[MAIN LOOP] {symbol} position_already_open: {position_exists}", level="INFO")
             await handle_existing_position_with_table(symbol, real_run, dry_run)
             return
 

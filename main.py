@@ -108,6 +108,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         
         # Traiter les symboles actifs avec throttling
         for symbol in active_symbols:
+            log(f"[MAIN LOOP] Processing symbol: {symbol}", level="DEBUG")
             # ✅ UTILISATION DIRECTE DE LA CONFIG
             if symbol in last_api_calls:
                 time_since_last = current_time - last_api_calls[symbol]
@@ -372,6 +373,7 @@ async def async_main(args):
                     
                     # Traitement des symboles actifs avec throttling
                     for symbol in active_symbols:
+                        log(f"[MAIN LOOP] Processing symbol: {symbol}", level="DEBUG")
                         # ✅ UTILISATION DIRECTE DE LA CONFIG
                         if symbol in last_api_calls:
                             time_since_last = current_time - last_api_calls[symbol]
