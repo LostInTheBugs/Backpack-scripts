@@ -130,7 +130,7 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
     """
-    ✅ CORRECTION: Affichage correct du trailing stop
+    ✅ CORRECTION: Logique d'affichage trailing stop corrigée
     """
     try:
         from live.live_engine import get_position_trailing_stop
@@ -143,10 +143,25 @@ async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
         
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
         
+        # ✅ DEBUG LOG pour diagnostiquer
+        log(f"[DISPLAY DEBUG] {symbol}: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}", level="INFO")
+        
         if trailing_stop is not None:
-            # ✅ CORRECTION: Le trailing stop n'est actif que si PnL <= trailing_stop
-            is_active = pnl_pct <= trailing_stop
-            status = "✅" if is_active else "🟡"  # 🟡 = configuré mais pas encore touché
+            # ✅ CORRECTION: Le trailing stop est "actif" dès qu'il est configuré
+            # Il se "déclenche" quand PnL <= trailing_stop (pour fermer la position)
+            # Mais l'affichage ✅ signifie "trailing configuré et opérationnel"
+            
+            # La position se fermerait si PnL descendait à trailing_stop
+            will_trigger_soon = pnl_pct <= trailing_stop
+            
+            if will_trigger_soon:
+                status = "⚠️"  # Danger, sur le point de se déclencher
+            else:
+                status = "✅"   # Trailing actif et protège les profits
+            
+            # ✅ DEBUG LOG
+            log(f"[DISPLAY DEBUG] {symbol}: Will trigger={will_trigger_soon}, Status={status}", level="INFO")
+            
             return f"{trailing_stop:+.1f}% {status}"
         else:
             # Stop loss fixe par défaut
