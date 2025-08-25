@@ -337,18 +337,23 @@ async def async_main(args):
                     else:
                         current_symbols = []
                     
+                    # ✅ DEBUG LOG AJOUTÉ
+                    log(f"[DEBUG] Current symbols to check: {current_symbols}", level="INFO")
+                    
                     # ✅ UTILISATION DIRECTE DE LA CONFIG
                     if current_time - last_symbols_check >= config.performance.symbols_check_interval:
                         active_symbols = []
                         ignored_symbols = []
-                        log(f"Active symbols list: {active_symbols}", level="DEBUG")
-                        log(f"Ignored symbols list: {ignored_symbols}", level="DEBUG")
                         
                         for symbol in current_symbols:
                             if await check_table_and_fresh_data(pool, symbol, max_age_seconds=config.database.max_age_seconds):
                                 active_symbols.append(symbol)
                             else:
                                 ignored_symbols.append(symbol)
+                        
+                        # ✅ DEBUG LOGS DÉPLACÉS APRÈS LA BOUCLE
+                        log(f"[DEBUG] Active symbols list: {active_symbols}", level="INFO")
+                        log(f"[DEBUG] Ignored symbols list: {ignored_symbols}", level="INFO")
                         
                         last_symbols_check = current_time
                         
