@@ -147,13 +147,13 @@ def safe_float(val, default=0.0):
 
 def parse_position(raw_pos: dict) -> dict:
     """
-    Transforme une position brute de Backpack en dict normalisé avec floats.
+    ✅ CORRECTION: Parse position avec gestion correcte du PnL
     """
     try:
         entry_price = safe_float(raw_pos.get("entryPrice"), 0.0)
         mark_price = safe_float(raw_pos.get("markPrice"), entry_price)
         net_qty = safe_float(raw_pos.get("netQuantity"), 0.0)
-        pnl_unrealized = safe_float(raw_pos.get("pnlUnrealized"), 0.0)
+        pnl_unrealized = safe_float(raw_pos.get("pnlUnrealized"), 0.0)  # ✅ PnL réel de l'API
 
         if net_qty == 0:
             return {}
@@ -161,13 +161,19 @@ def parse_position(raw_pos: dict) -> dict:
         # Déterminer le sens de la position
         side = "long" if net_qty > 0 else "short"
 
-        # Calcul du PnL % en fonction du side
-        pnl_pct = 0.0
-        if entry_price > 0:
-            if side == "long":
-                pnl_pct = (mark_price - entry_price) / entry_price * 100
-            else:  # short
-                pnl_pct = (entry_price - mark_price) / entry_price * 100
+        # ✅ CORRECTION: Utiliser le PnL de l'API ET calculer le % cohérent
+        pnl_usd = pnl_unrealized  # Utiliser directement le PnL de l'API
+        
+        # Calcul du PnL % basé sur le PnL USD réel
+        notional = abs(net_qty) * entry_price
+        if notional > 0:
+            pnl_percent = (pnl_usd / notional) * 100
+        else:
+            pnl_percent = 0.0
+            
+        # ✅ DEBUG: Log pour vérification
+        log(f"[PARSE] {raw_pos.get('symbol')} {side}: Entry={entry_price:.6f}, Mark={mark_price:.6f}", level="DEBUG")
+        log(f"[PARSE] Amount={abs(net_qty):.6f}, PnL_API=${pnl_usd:.6f}, PnL%={pnl_percent:.2f}%", level="DEBUG")
 
         return {
             "symbol": raw_pos.get("symbol"),
@@ -175,8 +181,9 @@ def parse_position(raw_pos: dict) -> dict:
             "mark_price": mark_price,
             "side": side,
             "amount": abs(net_qty),
-            "pnl_usd": pnl_unrealized,
-            "pnl_pct": pnl_pct
+            "pnl_usd": pnl_usd,          # ✅ PnL réel de l'API
+            "pnl_pct": pnl_percent,      # ✅ % calculé à partir du PnL réel
+            "leverage": safe_float(raw_pos.get("leverage", 1), 1.0)
         }
 
     except Exception as e:
@@ -222,38 +229,98 @@ async def position_already_open(symbol: str) -> bool:
 
 async def get_real_pnl(symbol, side, entry_price, amount, leverage):
     """
-    Calcule le PnL réel d'une position.
+    ✅ SIMPLIFICATION: Utiliser directement les données de parse_position
     """
-    from utils.get_market import get_market
+    try:
+        # Récupérer la position depuis l'API plutôt que recalculer
+        positions = await get_open_positions()
+        pos = positions.get(symbol)
+        
+        if pos:
+            # ✅ Utiliser directement les données parsées qui sont correctes
+            return {
+                "pnl": pos["pnl_usd"],
+                "pnl_usd": pos["pnl_usd"],
+                "pnl_percent": pos["pnl_pct"],
+                "mark_price": pos["mark_price"]
+            }
+        else:
+            # ✅ Fallback si position non trouvée
+            log(f"Position not found for {symbol}, using manual calculation", level="WARNING")
+            from utils.get_market import get_market
+            
+            market = await get_market(symbol)
+            mark_price = safe_float(market.get("price"), entry_price) if market else entry_price
 
-    market = await get_market(symbol)
-    if not market:
-        log(f"Market data not found for {symbol}, using entry_price as mark_price", level="WARNING")
-        mark_price = entry_price
-    else:
-        mark_price = safe_float(market.get("price"), entry_price)
+            # Calcul manuel simple
+            if side.lower() == "long":
+                pnl_usd = (mark_price - entry_price) * amount
+                pnl_percent = (mark_price - entry_price) / entry_price * 100
+            else:  # short
+                pnl_usd = (entry_price - mark_price) * amount
+                pnl_percent = (entry_price - mark_price) / entry_price * 100
 
-    # ✅ PnL USD (sans leverage car amount est déjà la taille réelle)
+            return {
+                "pnl": pnl_usd,
+                "pnl_usd": pnl_usd,
+                "pnl_percent": pnl_percent,
+                "mark_price": mark_price
+            }
+            
+    except Exception as e:
+        log(f"[ERROR] get_real_pnl failed for {symbol}: {e}", level="ERROR")
+        return {"pnl": 0.0, "pnl_usd": 0.0, "pnl_percent": 0.0, "mark_price": entry_price}
+
+async def debug_pnl_calculation(symbol, side, entry_price, amount, leverage, mark_price):
+    """
+    Debug détaillé du calcul de PnL pour identifier les problèmes
+    """
+    log(f"[DEBUG PnL] {symbol} {side}:", level="INFO")
+    log(f"  Entry Price: {entry_price:.6f}", level="INFO")
+    log(f"  Mark Price: {mark_price:.6f}", level="INFO")
+    log(f"  Amount (from API): {amount:.6f}", level="INFO")
+    log(f"  Leverage: {leverage}", level="INFO")
+    
+    # Calcul PnL USD
     if side.lower() == "long":
         pnl_usd = (mark_price - entry_price) * amount
+        price_diff = mark_price - entry_price
     else:  # short
         pnl_usd = (entry_price - mark_price) * amount
-
-    # ✅ PnL % (SANS leverage - le leverage est déjà dans le calcul du margin)
-    pnl_percent = 0.0
+        price_diff = entry_price - mark_price
+    
+    log(f"  Price Diff: {price_diff:.6f}", level="INFO")
+    log(f"  PnL USD (calculated): {pnl_usd:.6f}", level="INFO")
+    
+    # Calcul PnL %
     if entry_price > 0:
         if side.lower() == "long":
-            pnl_percent = (mark_price - entry_price) / entry_price * 100  # ✅ SANS leverage
+            pnl_percent = (mark_price - entry_price) / entry_price * 100
         else:
-            pnl_percent = (entry_price - mark_price) / entry_price * 100   # ✅ SANS leverage
-
+            pnl_percent = (entry_price - mark_price) / entry_price * 100
+    else:
+        pnl_percent = 0.0
+    
+    log(f"  PnL % (calculated): {pnl_percent:.2f}%", level="INFO")
+    
+    # Vérification de cohérence
+    notional = amount * entry_price
+    expected_pnl_usd = notional * (pnl_percent / 100)
+    
+    log(f"  Notional (amount * entry): {notional:.2f}", level="INFO")
+    log(f"  Expected PnL USD: {expected_pnl_usd:.6f}", level="INFO")
+    log(f"  Difference: {abs(pnl_usd - expected_pnl_usd):.6f}", level="INFO")
+    
     return {
-        "pnl": pnl_usd,             
         "pnl_usd": pnl_usd,
         "pnl_percent": pnl_percent,
-        "mark_price": mark_price
+        "mark_price": mark_price,
+        "debug_info": {
+            "notional": notional,
+            "expected_pnl_usd": expected_pnl_usd,
+            "price_diff": price_diff
+        }
     }
-
 
 async def get_real_positions() -> List[dict]:
     """
