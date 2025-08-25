@@ -223,7 +223,6 @@ async def position_already_open(symbol: str) -> bool:
 async def get_real_pnl(symbol, side, entry_price, amount, leverage):
     """
     Calcule le PnL réel d'une position.
-    Retourne toujours un dict homogène.
     """
     from utils.get_market import get_market
 
@@ -234,22 +233,22 @@ async def get_real_pnl(symbol, side, entry_price, amount, leverage):
     else:
         mark_price = safe_float(market.get("price"), entry_price)
 
-    # ✅ PnL USD
+    # ✅ PnL USD (sans leverage car amount est déjà la taille réelle)
     if side.lower() == "long":
         pnl_usd = (mark_price - entry_price) * amount
     else:  # short
         pnl_usd = (entry_price - mark_price) * amount
 
-    # ✅ PnL %
+    # ✅ PnL % (SANS leverage - le leverage est déjà dans le calcul du margin)
     pnl_percent = 0.0
     if entry_price > 0:
         if side.lower() == "long":
-            pnl_percent = (mark_price - entry_price) / entry_price * 100 * leverage
+            pnl_percent = (mark_price - entry_price) / entry_price * 100  # ✅ SANS leverage
         else:
-            pnl_percent = (entry_price - mark_price) / entry_price * 100 * leverage
+            pnl_percent = (entry_price - mark_price) / entry_price * 100   # ✅ SANS leverage
 
     return {
-        "pnl": pnl_usd,             # alias pour compatibilité
+        "pnl": pnl_usd,             
         "pnl_usd": pnl_usd,
         "pnl_percent": pnl_percent,
         "mark_price": mark_price

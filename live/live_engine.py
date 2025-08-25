@@ -41,8 +41,7 @@ secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
 async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
     """
-    Calcule et retourne le trailing stop pour une position
-    Le trailing stop ne descend jamais, seulement monte
+    ✅ CORRECTION: Logique de trailing stop corrigée
     """
     try:
         # Calcul du PnL actuel
@@ -54,29 +53,30 @@ async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
         # Clé unique pour cette position
         key = f"{symbol}_{side}_{entry_price}"
         
-        # Si PnL >= seuil minimum, trailing stop activé
+        # ✅ CORRECTION: Si PnL >= seuil minimum, trailing stop activé
         if pnl_pct >= MIN_PNL_FOR_TRAILING:
             current_trailing = pnl_pct - TRAILING_STOP_TRIGGER
             
             # Récupérer le trailing stop précédent ou initialiser
             if key not in TRAILING_STOPS:
                 TRAILING_STOPS[key] = current_trailing
-                log(t("live_engine.trailing_stop.initialized", symbol=symbol, percentage=current_trailing), level="DEBUG")
+                log(f"[{symbol}] Trailing stop initialized at {current_trailing:.1f}%", level="DEBUG")
+                return current_trailing  # ✅ Retourner mais pas encore "actif"
             else:
                 # Le trailing stop ne peut QUE monter, jamais descendre
                 prev_trailing = TRAILING_STOPS[key]
                 TRAILING_STOPS[key] = max(prev_trailing, current_trailing)
                 
                 if TRAILING_STOPS[key] > prev_trailing:
-                    log(t("live_engine.trailing_stop.updated", symbol=symbol, prev=prev_trailing, new=TRAILING_STOPS[key]), level="DEBUG")
-            
-            return TRAILING_STOPS[key]
+                    log(f"[{symbol}] Trailing stop updated: {prev_trailing:.1f}% → {TRAILING_STOPS[key]:.1f}%", level="DEBUG")
+                
+                return TRAILING_STOPS[key]
         else:
-            # Pas encore activé, pas de trailing stop
+            # ✅ CORRECTION: Pas encore activé, retourner None (pas de trailing)
             return None
             
     except Exception as e:
-        log(t("live_engine.trailing_stop.error", symbol=symbol, error=e), level="ERROR")
+        log(f"Error calculating trailing stop for {symbol}: {e}", level="ERROR")
         return None
 
 def handle_live_symbol(symbol, current_price, side, entry_price, amount):

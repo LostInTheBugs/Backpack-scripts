@@ -128,24 +128,35 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
-    """Récupère le trailing stop depuis live_engine.py ou stop loss par défaut"""
+    """
+    ✅ CORRECTION: Affichage correct du trailing stop
+    """
     try:
         from live.live_engine import get_position_trailing_stop
+        
+        # Calcul du PnL actuel pour comparaison
+        if side == "long":
+            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
+        else:  # short
+            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
         
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
         
         if trailing_stop is not None:
-            return f"{trailing_stop:+.1f}% ✅"
+            # ✅ CORRECTION: Le trailing stop n'est actif que si PnL <= trailing_stop
+            is_active = pnl_pct <= trailing_stop
+            status = "✅" if is_active else "🟡"  # 🟡 = configuré mais pas encore touché
+            return f"{trailing_stop:+.1f}% {status}"
         else:
-            # ✅ UTILISATION DIRECTE DE LA CONFIG pour le stop loss par défaut
+            # Stop loss fixe par défaut
             current_strategy = config.strategy.default_strategy.lower()
             
-            if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
+            if "threeoutoffour" in current_strategy:
                 default_stop = config.strategy.three_out_of_four.stop_loss_pct
-            elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
+            elif "twooutoffourscalp" in current_strategy:
                 default_stop = config.strategy.two_out_of_four_scalp.stop_loss_pct
             else:
-                default_stop = 2.0  # Valeur par défaut
+                default_stop = 2.0
             
             return f"-{default_stop:.1f}% ⏸️"
                 
