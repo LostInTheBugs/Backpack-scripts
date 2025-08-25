@@ -1,4 +1,4 @@
-# utils/position_tracker.py
+# utils/position_utils.py
 from config.settings import get_config
 from utils.logger import log
 import os
@@ -147,13 +147,17 @@ def safe_float(val, default=0.0):
 
 def parse_position(raw_pos: dict) -> dict:
     """
-    ✅ CORRECTION: Parse position avec gestion correcte du PnL
+    ✅ CORRECTION FINALE: Utiliser PnL total (realized + unrealized)
     """
     try:
         entry_price = safe_float(raw_pos.get("entryPrice"), 0.0)
         mark_price = safe_float(raw_pos.get("markPrice"), entry_price)
         net_qty = safe_float(raw_pos.get("netQuantity"), 0.0)
-        pnl_unrealized = safe_float(raw_pos.get("pnlUnrealized"), 0.0)  # ✅ PnL réel de l'API
+        
+        # ✅ CORRECTION: PnL TOTAL = realized + unrealized
+        pnl_realized = safe_float(raw_pos.get("pnlRealized"), 0.0)
+        pnl_unrealized = safe_float(raw_pos.get("pnlUnrealized"), 0.0)
+        pnl_total = pnl_realized + pnl_unrealized  # 🎯 C'EST ÇA LE FIX !
 
         if net_qty == 0:
             return {}
@@ -161,19 +165,18 @@ def parse_position(raw_pos: dict) -> dict:
         # Déterminer le sens de la position
         side = "long" if net_qty > 0 else "short"
 
-        # ✅ CORRECTION: Utiliser le PnL de l'API ET calculer le % cohérent
-        pnl_usd = pnl_unrealized  # Utiliser directement le PnL de l'API
+        # ✅ UTILISER LE PnL TOTAL
+        pnl_usd = pnl_total
         
-        # Calcul du PnL % basé sur le PnL USD réel
+        # Calcul du PnL % basé sur le PnL total
         notional = abs(net_qty) * entry_price
         if notional > 0:
-            pnl_percent = (pnl_usd / notional) * 100
+            pnl_percent = (pnl_total / notional) * 100
         else:
             pnl_percent = 0.0
-            
-        # ✅ DEBUG: Log pour vérification
-        log(f"[PARSE] {raw_pos.get('symbol')} {side}: Entry={entry_price:.6f}, Mark={mark_price:.6f}", level="DEBUG")
-        log(f"[PARSE] Amount={abs(net_qty):.6f}, PnL_API=${pnl_usd:.6f}, PnL%={pnl_percent:.2f}%", level="DEBUG")
+
+        # ✅ Log pour vérification
+        log(f"[PARSE] {raw_pos.get('symbol')}: PnL_realized=${pnl_realized:.3f} + PnL_unrealized=${pnl_unrealized:.3f} = Total=${pnl_total:.3f}", level="DEBUG")
 
         return {
             "symbol": raw_pos.get("symbol"),
@@ -181,9 +184,11 @@ def parse_position(raw_pos: dict) -> dict:
             "mark_price": mark_price,
             "side": side,
             "amount": abs(net_qty),
-            "pnl_usd": pnl_usd,          # ✅ PnL réel de l'API
-            "pnl_pct": pnl_percent,      # ✅ % calculé à partir du PnL réel
-            "leverage": safe_float(raw_pos.get("leverage", 1), 1.0)
+            "pnl_usd": pnl_usd,           # ✅ PnL TOTAL
+            "pnl_pct": pnl_percent,       # ✅ % basé sur PnL TOTAL
+            "leverage": safe_float(raw_pos.get("leverage", 1), 1.0),
+            "pnl_realized": pnl_realized,     # ✅ Garder pour debug
+            "pnl_unrealized": pnl_unrealized  # ✅ Garder pour debug
         }
 
     except Exception as e:
