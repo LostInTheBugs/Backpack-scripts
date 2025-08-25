@@ -335,7 +335,7 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
     log(f"[DEBUG CLOSE]: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Side={side}, Duration={duration_sec:.1f}s", level="INFO")
     
     # Conditions de fermeture basées sur la configuration
-    min_duration = 0.5  # Minimum 0.5 seconde avant de pouvoir fermer
+    min_duration = 30  # Minimum 0.5 seconde avant de pouvoir fermer
     
     if duration_sec < min_duration:
         log(f"[DEBUG CLOSE] Duration {duration_sec:.1f}s < min {min_duration}s - Skip", level="INFO")
