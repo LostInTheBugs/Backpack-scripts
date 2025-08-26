@@ -16,7 +16,7 @@ from backtest.backtest_engine import run_backtest_async, parse_backtest
 from config.settings import load_config
 from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
-from live.live_engine import handle_live_symbol
+from live.live_engine import handle_live_symbol, get_trailing_stop_info, cleanup_trailing_stops
 from utils.i18n import t
 from debug.debug_kaito import debug_kaito_position
 
@@ -129,57 +129,6 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         await asyncio.sleep(sleep_time)
 
 
-async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
-    """
-    ✅ CORRECTION: Logique d'affichage trailing stop corrigée
-    """
-    try:
-        from live.live_engine import get_position_trailing_stop
-        
-        # Calcul du PnL actuel pour comparaison
-        if side == "long":
-            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
-        else:  # short
-            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
-        
-        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
-        
-        # ✅ DEBUG LOG pour diagnostiquer
-        log(f"[DISPLAY DEBUG] {symbol}: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}", level="INFO")
-        
-        if trailing_stop is not None:
-            # ✅ CORRECTION: Le trailing stop est "actif" dès qu'il est configuré
-            # Il se "déclenche" quand PnL <= trailing_stop (pour fermer la position)
-            # Mais l'affichage ✅ signifie "trailing configuré et opérationnel"
-            
-            # La position se fermerait si PnL descendait à trailing_stop
-            will_trigger_soon = pnl_pct <= trailing_stop
-            
-            if will_trigger_soon:
-                status = "⚠️"  # Danger, sur le point de se déclencher
-            else:
-                status = "✅"   # Trailing actif et protège les profits
-            
-            # ✅ DEBUG LOG
-            log(f"[DISPLAY DEBUG] {symbol}: Will trigger={will_trigger_soon}, Status={status}", level="INFO")
-            
-            return f"{trailing_stop:+.1f}% {status}"
-        else:
-            # Stop loss fixe par défaut
-            current_strategy = config.strategy.default_strategy.lower()
-            
-            if "threeoutoffour" in current_strategy:
-                default_stop = config.strategy.three_out_of_four.stop_loss_pct
-            elif "twooutoffourscalp" in current_strategy:
-                default_stop = config.strategy.two_out_of_four_scalp.stop_loss_pct
-            else:
-                default_stop = 2.0
-            
-            return f"-{default_stop:.1f}% ⏸️"
-                
-    except Exception as e:
-        log(f"Erreur récupération trailing stop pour {symbol}: {e}", level="ERROR")
-        return "ERROR"
 
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     """Rafraîchit le dashboard avec les compteurs corrects"""
@@ -325,10 +274,19 @@ async def async_main(args):
                 last_api_calls = {}
                 active_symbols = []
                 ignored_symbols = []
+                iteration_count = 0
                 
                 while not stop_event.is_set():
+                    iteration_count += 1
                     current_time = time.time()
-                    
+                    if iteration_count % 100 == 0:
+                        try:
+                            # Import de la fonction de nettoyage
+                            from live.live_engine import cleanup_trailing_stops
+                            await cleanup_trailing_stops()
+                            log(f"[CLEANUP] Trailing stops cleaned at iteration {iteration_count}", level="DEBUG")
+                        except Exception as e:
+                            log(f"[ERROR] Cleanup failed: {e}", level="ERROR")
                     # Détermination des symboles à traiter
                     if args.auto_select:
                         current_symbols = symbols_container.get('list', [])
