@@ -394,7 +394,7 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
     ✅ CORRECTION: Logique de fermeture simplifiée et corrigée
     """
     # Minimum de temps avant fermeture (éviter les fermetures trop rapides)
-    min_duration = 30  # 30 secondes
+    min_duration = 0  
     
     if duration_sec < min_duration:
         log(f"[DEBUG CLOSE] Duration {duration_sec:.1f}s < min {min_duration}s - Skip", level="DEBUG")
