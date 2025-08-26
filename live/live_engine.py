@@ -72,15 +72,12 @@ async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
         
         if trailing_stop is not None:
-            # ✅ CORRECTION: Statut basé sur si le trailing est "actif" (>= MIN_PNL) ou "fixe"
+            # ✅ CORRECTION: Logique simplifiée et corrigée
             if pnl_pct >= MIN_PNL_FOR_TRAILING:
-                # Trailing stop actif
-                if pnl_pct <= trailing_stop + 0.5:  # Dans la zone de danger
-                    status = "⚠️"  # Attention, proche du déclenchement
-                else:
-                    status = "✅"   # Trailing actif et sûr
+                # Trailing stop actif - toujours ✅ si au-dessus du seuil minimum
+                status = "✅"   # Trailing actif
             else:
-                # Stop-loss fixe
+                # Stop-loss fixe (en dessous du seuil minimum pour trailing)
                 status = "⏸️"   # Stop fixe en place
             
             return f"{trailing_stop:+.1f}% {status}"
