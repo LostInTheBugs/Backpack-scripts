@@ -18,7 +18,6 @@ from utils.update_symbols_periodically import update_symbols_periodically
 from utils.watch_symbols_file import watch_symbols_file
 from live.live_engine import handle_live_symbol
 from utils.i18n import t
-from debug.debug_kaito import debug_kaito_position
 
 config = load_config()
 
@@ -188,7 +187,6 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     from tabulate import tabulate
     
     try:
-        await debug_kaito_position()
         os.system("clear")
         print("=" * 120)
         print(f"🚀 VERSION 24 FINALE - {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -487,4 +485,5 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception:
         traceback.print_exc()
+
         sys.exit(1)
