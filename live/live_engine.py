@@ -339,7 +339,7 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
     log(f"[DEBUG CLOSE]: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Side={side}, Duration={duration_sec:.1f}s", level="INFO")
     
     # Conditions de fermeture basées sur la configuration
-    min_duration = 30  # Minimum 0.5 seconde avant de pouvoir fermer
+    min_duration = 0  # Minimum 0.5 seconde avant de pouvoir fermer
     
     if duration_sec < min_duration:
         log(f"[DEBUG CLOSE] Duration {duration_sec:.1f}s < min {min_duration}s - Skip", level="INFO")
@@ -512,4 +512,5 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     """
     log("🔍 Lancement du scan indicateurs et trading en parallèle…", level="INFO")
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
+
     await asyncio.gather(*tasks, return_exceptions=True)
