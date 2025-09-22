@@ -443,7 +443,7 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         duration_sec = datetime.utcnow().timestamp() - ts
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
 
-        # ✅ Affichage amélioré avec état du trailing stop
+        # Affichage
         trailing_status = f"{trailing_stop:.2f}%" if trailing_stop is not None else "NOT ACTIVE"
         log(
             f"📊 [{symbol}] {side.upper()} | Entry {entry_price:.6f} | Mark {mark_price:.6f} | "
@@ -452,26 +452,30 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
             level="INFO"
         )
 
-        # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position corrigée
+        # ✅ MODIFICATION: Check immédiat pour trailing stop
         should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
         
         if should_close:
             if real_run:
                 try:
-                    log(f"🚨 [{symbol}] CLOSING POSITION - Reason: {'Trailing Stop' if trailing_stop else 'Fixed Stop Loss'}", level="INFO")
-                    await close_position_percent_async(symbol, 100)  # Fermer 100% de la position
+                    close_reason = 'Trailing Stop' if trailing_stop is not None else 'Fixed Stop Loss'
+                    log(f"🚨 [{symbol}] CLOSING POSITION - Reason: {close_reason}", level="INFO")
                     
-                    # ✅ NOUVEAU: Nettoyer le trailing stop de la mémoire après fermeture
+                    # ✅ FERMETURE IMMÉDIATE
+                    await close_position_percent_async(symbol, 100)
+                    
+                    # Nettoyer le trailing stop
                     key = f"{symbol}_{side}_{entry_price}"
                     if key in TRAILING_STOPS:
                         del TRAILING_STOPS[key]
-                        log(f"🧹 [{symbol}] Trailing stop tracker cleaned from memory", level="DEBUG")
+                        log(f"🧹 [{symbol}] Trailing stop tracker cleaned", level="DEBUG")
                     
                     log(f"✅ [{symbol}] Position closed successfully", level="INFO")
+                    
                 except Exception as e:
                     log(f"❌ [{symbol}] Error closing position: {e}", level="ERROR")
             elif dry_run:
-                log(f"🔄 [{symbol}] DRY RUN: Would close position here", level="INFO")
+                log(f"🔄 [{symbol}] DRY RUN: Would close position immediately", level="INFO")
 
     except Exception as e:
         log(t("live_engine.errors.position_handling", symbol=symbol, error=e), level="ERROR")
@@ -515,7 +519,7 @@ async def get_position_stats() -> dict:
             'max_positions': trading_config.max_positions,
             'position_amount': POSITION_AMOUNT_USDC,
             'leverage': LEVERAGE,
-            'trailing_stop_trigger': TRAILING_STOP_TRIGGER,
+            '_trigger': TRAILING_STOP_TRIGGER,
             'min_pnl_for_trailing': MIN_PNL_FOR_TRAILING
         }
     except Exception as e:
@@ -530,4 +534,5 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
 
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
