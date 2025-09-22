@@ -179,6 +179,31 @@ async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
         log(f"Erreur récupération trailing stop pour {symbol}: {e}", level="ERROR")
         return "ERROR"
 
+async def trigger_immediate_close(symbol, pnl_pct, trailing_stop):
+    """
+    ✅ NOUVELLE FONCTION: Déclenche la fermeture immédiate de la position
+    """
+    try:
+        log(f"🚨 IMMEDIATE TRIGGER: {symbol} PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}%", level="INFO")
+        
+        # Import des fonctions nécessaires
+        from execute.async_wrappers import close_position_percent_async
+        from live.live_engine import TRAILING_STOPS
+        
+        # Fermer la position immédiatement
+        await close_position_percent_async(symbol, 100)
+        
+        # Nettoyer le trailing stop de la mémoire
+        keys_to_remove = [k for k in TRAILING_STOPS.keys() if k.startswith(symbol)]
+        for key in keys_to_remove:
+            del TRAILING_STOPS[key]
+            log(f"🧹 {symbol} Trailing stop tracker cleaned", level="INFO")
+        
+        log(f"✅ {symbol} Position closed immediately via trailing stop", level="INFO")
+        
+    except Exception as e:
+        log(f"❌ {symbol} Error in immediate close: {e}", level="ERROR")
+
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     """Rafraîchit le dashboard avec les compteurs corrects"""
     import os
@@ -486,4 +511,5 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         sys.exit(1)
+
 
