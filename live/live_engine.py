@@ -33,15 +33,17 @@ MIN_PNL_FOR_TRAILING = trading_config.min_pnl_for_trailing
 
 MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 
-# ✅ NOUVEAU: Stockage global des trailing stops
-TRAILING_STOPS = {}  # {symbol: trailing_stop_value}
+# ✅ NOUVEAU: Stockage global des trailing stops avec état d'activation
+TRAILING_STOPS = {}  # {symbol: {'value': trailing_stop_value, 'max_pnl': max_pnl_seen, 'active': bool}}
 
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
 async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
     """
-    ✅ CORRECTION: Logique de trailing stop corrigée
+    ✅ CORRECTION MAJEURE: Logique de trailing stop entièrement réécrite
+    Le trailing stop ne s'active que quand le PnL atteint MIN_PNL_FOR_TRAILING
+    Une fois activé, il suit le PnL max - TRAILING_STOP_TRIGGER
     """
     try:
         # Calcul du PnL actuel
@@ -53,27 +55,45 @@ async def get_position_trailing_stop(symbol, side, entry_price, mark_price):
         # Clé unique pour cette position
         key = f"{symbol}_{side}_{entry_price}"
         
-        # ✅ CORRECTION: Si PnL >= seuil minimum, trailing stop activé
-        if pnl_pct >= MIN_PNL_FOR_TRAILING:
-            current_trailing = pnl_pct - TRAILING_STOP_TRIGGER
+        # Initialisation du tracking si première fois
+        if key not in TRAILING_STOPS:
+            TRAILING_STOPS[key] = {
+                'value': None,
+                'max_pnl': pnl_pct,
+                'active': False
+            }
+            log(f"[{symbol}] Trailing stop tracker initialized - Current PnL: {pnl_pct:.2f}%", level="DEBUG")
+        
+        tracker = TRAILING_STOPS[key]
+        
+        # Mise à jour du PnL maximum observé
+        if pnl_pct > tracker['max_pnl']:
+            tracker['max_pnl'] = pnl_pct
+            log(f"[{symbol}] New max PnL recorded: {pnl_pct:.2f}%", level="DEBUG")
+        
+        # ✅ ACTIVATION du trailing stop quand le PnL atteint le seuil minimum
+        if not tracker['active'] and pnl_pct >= MIN_PNL_FOR_TRAILING:
+            tracker['active'] = True
+            tracker['value'] = pnl_pct - TRAILING_STOP_TRIGGER
+            log(f"[{symbol}] 🟢 TRAILING STOP ACTIVATED! PnL {pnl_pct:.2f}% >= {MIN_PNL_FOR_TRAILING}% - Initial trailing: {tracker['value']:.2f}%", level="INFO")
+            return tracker['value']
+        
+        # ✅ MISE À JOUR du trailing stop si déjà actif
+        if tracker['active']:
+            # Le trailing stop suit le PnL maximum moins le trigger
+            new_trailing = tracker['max_pnl'] - TRAILING_STOP_TRIGGER
             
-            # Récupérer le trailing stop précédent ou initialiser
-            if key not in TRAILING_STOPS:
-                TRAILING_STOPS[key] = current_trailing
-                log(f"[{symbol}] Trailing stop initialized at {current_trailing:.1f}%", level="DEBUG")
-                return current_trailing  # ✅ Retourner mais pas encore "actif"
-            else:
-                # Le trailing stop ne peut QUE monter, jamais descendre
-                prev_trailing = TRAILING_STOPS[key]
-                TRAILING_STOPS[key] = max(prev_trailing, current_trailing)
-                
-                if TRAILING_STOPS[key] > prev_trailing:
-                    log(f"[{symbol}] Trailing stop updated: {prev_trailing:.1f}% → {TRAILING_STOPS[key]:.1f}%", level="DEBUG")
-                
-                return TRAILING_STOPS[key]
-        else:
-            # ✅ CORRECTION: Pas encore activé, retourner None (pas de trailing)
-            return None
+            # Le trailing stop ne peut que monter (ou rester identique)
+            if new_trailing > tracker['value']:
+                old_trailing = tracker['value']
+                tracker['value'] = new_trailing
+                log(f"[{symbol}] 📈 Trailing stop updated: {old_trailing:.2f}% → {tracker['value']:.2f}% (Max PnL: {tracker['max_pnl']:.2f}%)", level="INFO")
+            
+            return tracker['value']
+        
+        # ✅ Pas encore activé - retourner None
+        log(f"[{symbol}] Trailing stop not active yet - PnL {pnl_pct:.2f}% < {MIN_PNL_FOR_TRAILING}%", level="DEBUG")
+        return None
             
     except Exception as e:
         log(f"Error calculating trailing stop for {symbol}: {e}", level="ERROR")
@@ -332,47 +352,52 @@ def parse_position(pos):
 
 def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=None):
     """
-    Détermine si une position doit être fermée basée sur les conditions de trailing stop ET stop loss fixe
-    ✅ CORRECTION: Ajout de logs de debug avec variables correctes
+    ✅ CORRECTION MAJEURE: Logique de fermeture entièrement réécrite
+    Détermine si une position doit être fermée basée sur:
+    1. Stop loss fixe quand trailing stop pas encore activé
+    2. Trailing stop quand le PnL redescend en dessous du trailing
     """
-    # ✅ DEBUG LOG avec variables disponibles
-    log(f"[DEBUG CLOSE]: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Side={side}, Duration={duration_sec:.1f}s", level="INFO")
     
-    # Conditions de fermeture basées sur la configuration
-    min_duration = 0  # Minimum 0.5 seconde avant de pouvoir fermer
+    # Minimum de durée avant de pouvoir fermer (évite les fermetures trop rapides)
+    min_duration = 1.0  # 1 seconde minimum
     
     if duration_sec < min_duration:
-        log(f"[DEBUG CLOSE] Duration {duration_sec:.1f}s < min {min_duration}s - Skip", level="INFO")
+        log(f"[{side.upper()}] Duration {duration_sec:.1f}s < min {min_duration}s - Skip close check", level="DEBUG")
         return False
     
-    # Logique de stop loss fixe quand trailing stop pas encore activé
-    if trailing_stop is None:
-        try:
-            current_strategy = strategy or config.strategy.default_strategy.lower()
-            
-            if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
-                stop_loss_pct = -config.strategy.three_out_of_four.stop_loss_pct
-            elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
-                stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
-            else:
-                stop_loss_pct = -2.0  # Valeur par défaut
-            
-            # Vérifier si le PnL a touché le stop loss fixe
-            if pnl_pct <= stop_loss_pct:
-                log(f"[CLOSE TRIGGERED] Fixed stop loss: PnL {pnl_pct:.2f}% <= Stop {stop_loss_pct:.2f}%", level="INFO")
-                return True
-                
-        except Exception as e:
-            log(f"[ERROR] Stop loss check error: {e}", level="ERROR")
-    
-    # ✅ Logique de trailing stop (avec debug)
-    if trailing_stop is not None and pnl_pct <= trailing_stop:
-        log(f"[CLOSE TRIGGERED] Trailing stop: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}%", level="INFO")
-        return True
-    
-    # ✅ DEBUG: Log quand aucune condition de fermeture n'est remplie
+    # ✅ CAS 1: TRAILING STOP ACTIVÉ - Fermer si PnL <= trailing stop
     if trailing_stop is not None:
-        log(f"[DEBUG CLOSE] No close: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
+        if pnl_pct <= trailing_stop:
+            log(f"🔴 [{side.upper()}] TRAILING STOP HIT: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}% → CLOSE POSITION", level="INFO")
+            return True
+        else:
+            log(f"✅ [{side.upper()}] Trailing OK: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
+            return False
+    
+    # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe selon stratégie
+    try:
+        current_strategy = strategy or config.strategy.default_strategy.lower()
+        
+        if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
+            stop_loss_pct = -config.strategy.three_out_of_four.stop_loss_pct
+        elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
+            stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
+        else:
+            stop_loss_pct = -2.0  # Valeur par défaut: -2%
+        
+        # Vérifier si le PnL a touché le stop loss fixe
+        if pnl_pct <= stop_loss_pct:
+            log(f"🔴 [{side.upper()}] FIXED STOP LOSS HIT: PnL {pnl_pct:.2f}% <= Stop {stop_loss_pct:.2f}% → CLOSE POSITION", level="INFO")
+            return True
+        else:
+            log(f"✅ [{side.upper()}] Stop loss OK: PnL {pnl_pct:.2f}% > Stop {stop_loss_pct:.2f}% (Trailing not active)", level="DEBUG")
+            return False
+            
+    except Exception as e:
+        log(f"[ERROR] Stop loss check error: {e} - Using default -2%", level="ERROR")
+        if pnl_pct <= -2.0:
+            log(f"🔴 [{side.upper()}] DEFAULT STOP LOSS HIT: PnL {pnl_pct:.2f}% <= -2.0% → CLOSE POSITION", level="INFO")
+            return True
     
     return False
 
@@ -420,42 +445,41 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         if pnl_pct == 0.0 and margin > 0:
             pnl_pct = (pnl_usdc / margin * 100)
 
-        # ✅ NOUVEAU: Mise à jour du trailing stop via la nouvelle fonction
+        # ✅ NOUVEAU: Mise à jour du trailing stop via la nouvelle fonction corrigée
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
 
         duration_sec = datetime.utcnow().timestamp() - ts
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
 
+        # ✅ Affichage amélioré avec état du trailing stop
+        trailing_status = f"{trailing_stop:.2f}%" if trailing_stop is not None else "NOT ACTIVE"
         log(
-            f"[{symbol}] Open {side} | Entry {entry_price:.6f} | Mark {mark_price:.6f} | "
-            f"PnL: {pnl_pct:.2f}% / ${pnl_usdc:.2f} | Amount: {amount:.4f} | "
-            f"Duration: {duration_str} | Trailing Stop: {trailing_stop:.2f}%" if trailing_stop else "N/A",
+            f"📊 [{symbol}] {side.upper()} | Entry {entry_price:.6f} | Mark {mark_price:.6f} | "
+            f"PnL: {pnl_pct:+.2f}% / ${pnl_usdc:+.2f} | Amount: {amount:.4f} | "
+            f"Duration: {duration_str} | Trailing: {trailing_status}",
             level="INFO"
         )
 
-        # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position avec stratégie
+        # ✅ AMÉLIORATION: Logique de trailing stop et fermeture de position corrigée
         should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
-        
-        # ✅ DEBUG: Log détaillé pour débugger
-        log(t("live_engine.debug.close_check", symbol=symbol, pnl=pnl_pct, trailing=trailing_stop, duration=duration_sec, should_close=should_close), level="INFO")
         
         if should_close:
             if real_run:
                 try:
-                    log(t("live_engine.trailing_stop.closing", symbol=symbol), level="INFO")
+                    log(f"🚨 [{symbol}] CLOSING POSITION - Reason: {'Trailing Stop' if trailing_stop else 'Fixed Stop Loss'}", level="INFO")
                     await close_position_percent_async(symbol, 100)  # Fermer 100% de la position
                     
-                    # ✅ NOUVEAU: Nettoyer le trailing stop de la mémoire
+                    # ✅ NOUVEAU: Nettoyer le trailing stop de la mémoire après fermeture
                     key = f"{symbol}_{side}_{entry_price}"
                     if key in TRAILING_STOPS:
                         del TRAILING_STOPS[key]
-                        log(t("live_engine.trailing_stop.cleaned", symbol=symbol), level="DEBUG")
+                        log(f"🧹 [{symbol}] Trailing stop tracker cleaned from memory", level="DEBUG")
                     
-                    log(t("live_engine.positions.closed_success", symbol=symbol), level="INFO")
+                    log(f"✅ [{symbol}] Position closed successfully", level="INFO")
                 except Exception as e:
-                    log(t("live_engine.positions.close_error", symbol=symbol, error=e), level="ERROR")
+                    log(f"❌ [{symbol}] Error closing position: {e}", level="ERROR")
             elif dry_run:
-                log(t("live_engine.positions.dry_run_close", symbol=symbol), level="DEBUG")
+                log(f"🔄 [{symbol}] DRY RUN: Would close position here", level="INFO")
 
     except Exception as e:
         log(t("live_engine.errors.position_handling", symbol=symbol, error=e), level="ERROR")
