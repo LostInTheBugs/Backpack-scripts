@@ -352,29 +352,25 @@ def parse_position(pos):
 
 def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=None):
     """
-    ✅ CORRECTION MAJEURE: Logique de fermeture entièrement réécrite
-    Détermine si une position doit être fermée basée sur:
-    1. Stop loss fixe quand trailing stop pas encore activé
-    2. Trailing stop quand le PnL redescend en dessous du trailing
+    ✅ EXÉCUTION IMMÉDIATE: Suppression du délai minimum pour trailing stop
     """
     
-    # Minimum de durée avant de pouvoir fermer (évite les fermetures trop rapides)
-    min_duration = 1.0  # 1 seconde minimum
-    
-    if duration_sec < min_duration:
-        log(f"[{side.upper()}] Duration {duration_sec:.1f}s < min {min_duration}s - Skip close check", level="DEBUG")
-        return False
-    
-    # ✅ CAS 1: TRAILING STOP ACTIVÉ - Fermer si PnL <= trailing stop
+    # ✅ CAS 1: TRAILING STOP ACTIVÉ - Fermer IMMÉDIATEMENT si PnL <= trailing stop
     if trailing_stop is not None:
         if pnl_pct <= trailing_stop:
-            log(f"🔴 [{side.upper()}] TRAILING STOP HIT: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}% → CLOSE POSITION", level="INFO")
+            log(f"🔴 [{side.upper()}] TRAILING STOP HIT: PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}% → IMMEDIATE CLOSE", level="INFO")
             return True
         else:
             log(f"✅ [{side.upper()}] Trailing OK: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
             return False
     
-    # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe selon stratégie
+    # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe avec durée minimale
+    min_duration = 1.0  # Garde la durée minimale seulement pour stop loss fixe
+    
+    if duration_sec < min_duration:
+        log(f"[{side.upper()}] Duration {duration_sec:.1f}s < min {min_duration}s - Skip fixed stop loss check", level="DEBUG")
+        return False
+    
     try:
         current_strategy = strategy or config.strategy.default_strategy.lower()
         
@@ -383,15 +379,11 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
         elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
             stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
         else:
-            stop_loss_pct = -2.0  # Valeur par défaut: -2%
+            stop_loss_pct = -2.0
         
-        # Vérifier si le PnL a touché le stop loss fixe
         if pnl_pct <= stop_loss_pct:
             log(f"🔴 [{side.upper()}] FIXED STOP LOSS HIT: PnL {pnl_pct:.2f}% <= Stop {stop_loss_pct:.2f}% → CLOSE POSITION", level="INFO")
             return True
-        else:
-            log(f"✅ [{side.upper()}] Stop loss OK: PnL {pnl_pct:.2f}% > Stop {stop_loss_pct:.2f}% (Trailing not active)", level="DEBUG")
-            return False
             
     except Exception as e:
         log(f"[ERROR] Stop loss check error: {e} - Using default -2%", level="ERROR")
@@ -538,3 +530,4 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
 
     await asyncio.gather(*tasks, return_exceptions=True)
+
