@@ -130,12 +130,12 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
     """
-    ✅ CORRECTION: Logique d'affichage trailing stop corrigée
+    ✅ MODIFICATION: Ajout du déclenchement immédiat dans l'affichage
     """
     try:
         from live.live_engine import get_position_trailing_stop
         
-        # Calcul du PnL actuel pour comparaison
+        # Calcul du PnL actuel
         if side == "long":
             pnl_pct = ((mark_price - entry_price) / entry_price) * 100
         else:  # short
@@ -143,24 +143,23 @@ async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
         
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
         
-        # ✅ DEBUG LOG pour diagnostiquer
         log(f"[DISPLAY DEBUG] {symbol}: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}", level="INFO")
         
         if trailing_stop is not None:
-            # ✅ CORRECTION: Le trailing stop est "actif" dès qu'il est configuré
-            # Il se "déclenche" quand PnL <= trailing_stop (pour fermer la position)
-            # Mais l'affichage ✅ signifie "trailing configuré et opérationnel"
+            # ✅ DÉCLENCHEMENT IMMÉDIAT: Check si doit fermer maintenant
+            will_trigger_now = pnl_pct <= trailing_stop
             
-            # La position se fermerait si PnL descendait à trailing_stop
-            will_trigger_soon = pnl_pct <= trailing_stop
-            
-            if will_trigger_soon:
-                status = "⚠️"  # Danger, sur le point de se déclencher
+            # ✅ NOUVEAU: Si Will trigger=True, déclencher la fermeture immédiate
+            if will_trigger_now:
+                status = "⚠️"
+                log(f"[DISPLAY DEBUG] {symbol}: Will trigger=True, Status={status}", level="INFO")
+                
+                # ✅ EXÉCUTION IMMÉDIATE: Déclencher la fermeture ici même
+                asyncio.create_task(trigger_immediate_close(symbol, pnl_pct, trailing_stop))
+                
             else:
-                status = "✅"   # Trailing actif et protège les profits
-            
-            # ✅ DEBUG LOG
-            log(f"[DISPLAY DEBUG] {symbol}: Will trigger={will_trigger_soon}, Status={status}", level="INFO")
+                status = "✅"
+                log(f"[DISPLAY DEBUG] {symbol}: Will trigger=False, Status={status}", level="INFO")
             
             return f"{trailing_stop:+.1f}% {status}"
         else:
@@ -487,3 +486,4 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         sys.exit(1)
+
