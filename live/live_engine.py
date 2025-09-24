@@ -264,11 +264,13 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
     try:
         current_strategy = strategy or config.strategy.default_strategy.lower()
         
+        # Stop-loss plus agressif basé sur votre préférence
         if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
             stop_loss_pct = -config.strategy.three_out_of_four.stop_loss_pct
         elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
             stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
         else:
+            # VOTRE PRÉFÉRENCE : Stop-loss à -2%
             stop_loss_pct = -2.0
         
         if pnl_pct <= stop_loss_pct:
