@@ -34,8 +34,8 @@ MIN_PNL_FOR_TRAILING = trading_config.min_pnl_for_trailing
 
 MAX_PNL_TRACKER = {}  # Tracker for max PnL per symbol
 
-# ✅ NOUVEAU: Stockage global des trailing stops avec état d'activation
-TRAILING_STOPS = {}  # {symbol: {'value': trailing_stop_value, 'max_pnl': max_pnl_seen, 'active': bool}}
+# ✅ CORRECTION: Stockage amélioré avec hash stable
+TRAILING_STOPS = {}  # {position_hash: {'value': float, 'max_pnl': float, 'active': bool, 'symbol': str, 'side': str}}
 
 public_key = config.bpx_bot_public_key or os.environ.get("bpx_bot_public_key")
 secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
@@ -43,33 +43,17 @@ secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 def get_position_hash(symbol, side, entry_price, amount):
     """
     ✅ CORRECTION: Génère un hash unique et stable pour chaque position
-    Utilise un hash au lieu de concaténer des floats variables
     """
-    # Arrondir entry_price pour éviter les variations de précision
-    rounded_entry = round(float(entry_price), 8)
-    rounded_amount = round(float(amount), 6)
-    
-    position_data = f"{symbol}_{side}_{rounded_entry}_{rounded_amount}"
-    return hashlib.md5(position_data.encode()).hexdigest()[:16]
-    
-def get_position_hash(symbol, side, entry_price, amount):
-    """
-    ✅ CORRECTION: Génère un hash unique et stable pour chaque position
-    Utilise un hash au lieu de concaténer des floats variables
-    """
-    # Arrondir entry_price pour éviter les variations de précision
+    # Arrondir pour éviter les variations de précision
     rounded_entry = round(float(entry_price), 8)
     rounded_amount = round(float(amount), 6)
     
     position_data = f"{symbol}_{side}_{rounded_entry}_{rounded_amount}"
     return hashlib.md5(position_data.encode()).hexdigest()[:16]
 
-async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amount=None):
+async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amount=1.0):
     """
-    ✅ CORRECTION COMPLÈTE: Logique de trailing stop stabilisée
-    - Hash stable pour identifier les positions
-    - Logs détaillés pour debug
-    - Gestion robuste des états
+    ✅ CORRECTION MAJEURE: Logique de trailing stop entièrement réécrite avec hash stable
     """
     try:
         # Calcul du PnL actuel
@@ -78,8 +62,8 @@ async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amou
         else:  # short
             pnl_pct = ((entry_price - mark_price) / entry_price) * 100
         
-        # ✅ CORRECTION: Hash stable au lieu de clé string
-        position_hash = get_position_hash(symbol, side, entry_price, amount or 1.0)
+        # Hash stable pour cette position
+        position_hash = get_position_hash(symbol, side, entry_price, amount)
         
         # Initialisation du tracking si première fois
         if position_hash not in TRAILING_STOPS:
@@ -89,45 +73,49 @@ async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amou
                 'active': False,
                 'symbol': symbol,
                 'side': side,
+                'entry_price': float(entry_price),
                 'created_at': datetime.utcnow().isoformat()
             }
-            log(f"🔧 [{symbol}] Trailing tracker created - Hash: {position_hash[:8]} - PnL: {pnl_pct:.2f}%", level="INFO")
+            log(f"🔧 [{symbol}] Trailing tracker created - Hash: {position_hash[:8]} - Initial PnL: {pnl_pct:.2f}%", level="INFO")
         
         tracker = TRAILING_STOPS[position_hash]
         
-        # ✅ CORRECTION: Mise à jour du PnL maximum avec logs détaillés
+        # ✅ CORRECTION: Mise à jour du PnL maximum
         if pnl_pct > tracker['max_pnl']:
             old_max = tracker['max_pnl']
             tracker['max_pnl'] = pnl_pct
-            log(f"📈 [{symbol}] Max PnL updated: {old_max:.2f}% → {pnl_pct:.2f}%", level="INFO")
+            log(f"📈 [{symbol}] Hash:{position_hash[:8]} Max PnL updated: {old_max:.2f}% → {pnl_pct:.2f}%", level="INFO")
         
-        # ✅ ACTIVATION du trailing stop
+        # ✅ DEBUG: Affichage des seuils de configuration
+        log(f"🔧 [{symbol}] Config check - MIN_PNL_FOR_TRAILING: {MIN_PNL_FOR_TRAILING}%, TRAILING_STOP_TRIGGER: {TRAILING_STOP_TRIGGER}%", level="DEBUG")
+        
+        # ✅ ACTIVATION du trailing stop quand le PnL atteint le seuil minimum
         if not tracker['active'] and pnl_pct >= MIN_PNL_FOR_TRAILING:
             tracker['active'] = True
             tracker['value'] = pnl_pct - TRAILING_STOP_TRIGGER
-            log(f"🟢 [{symbol}] TRAILING STOP ACTIVATED! PnL {pnl_pct:.2f}% ≥ {MIN_PNL_FOR_TRAILING}% - Trailing: {tracker['value']:.2f}%", level="WARNING")  # WARNING pour visibilité
+            log(f"🟢 [{symbol}] Hash:{position_hash[:8]} TRAILING STOP ACTIVATED! PnL {pnl_pct:.2f}% ≥ {MIN_PNL_FOR_TRAILING}% - Trailing: {tracker['value']:.2f}%", level="WARNING")
             return tracker['value']
         
-        # ✅ MISE À JOUR si déjà actif
+        # ✅ MISE À JOUR du trailing stop si déjà actif
         if tracker['active']:
+            # Le trailing stop suit le PnL maximum moins le trigger
             new_trailing = tracker['max_pnl'] - TRAILING_STOP_TRIGGER
             
-            # Le trailing ne peut que monter
+            # Le trailing stop ne peut que monter (ou rester identique)
             if new_trailing > tracker['value']:
                 old_trailing = tracker['value']
                 tracker['value'] = new_trailing
-                log(f"🔼 [{symbol}] Trailing updated: {old_trailing:.2f}% → {tracker['value']:.2f}% (Max: {tracker['max_pnl']:.2f}%)", level="INFO")
+                log(f"🔼 [{symbol}] Hash:{position_hash[:8]} Trailing updated: {old_trailing:.2f}% → {tracker['value']:.2f}% (Max: {tracker['max_pnl']:.2f}%)", level="INFO")
             
-            # ✅ LOGS DE CONTRÔLE pour debug
-            log(f"✅ [{symbol}] Trailing check - Current: {pnl_pct:.2f}% | Trailing: {tracker['value']:.2f}% | Max: {tracker['max_pnl']:.2f}%", level="DEBUG")
+            log(f"✅ [{symbol}] Hash:{position_hash[:8]} Trailing check - Current: {pnl_pct:.2f}% | Trailing: {tracker['value']:.2f}% | Max: {tracker['max_pnl']:.2f}%", level="DEBUG")
             return tracker['value']
         
-        # Pas encore activé
-        log(f"⏳ [{symbol}] Waiting activation - PnL: {pnl_pct:.2f}% < {MIN_PNL_FOR_TRAILING}%", level="DEBUG")
+        # ✅ Pas encore activé - message informatif
+        log(f"⏳ [{symbol}] Hash:{position_hash[:8]} Waiting activation - PnL: {pnl_pct:.2f}% < {MIN_PNL_FOR_TRAILING}%", level="DEBUG")
         return None
             
     except Exception as e:
-        log(f"❌ [{symbol}] Trailing stop error: {e}", level="ERROR")
+        log(f"❌ [{symbol}] Trailing stop calculation error: {e}", level="ERROR")
         traceback.print_exc()
         return None
 
@@ -252,6 +240,49 @@ async def ensure_indicators(df, symbol):
 
     return df
 
+def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=None):
+    """
+    ✅ CORRECTION: Logique de fermeture avec activation immédiate des trailing stops
+    """
+    
+    # ✅ CAS 1: TRAILING STOP ACTIVÉ - Fermer IMMÉDIATEMENT si PnL <= trailing stop
+    if trailing_stop is not None:
+        if pnl_pct <= trailing_stop:
+            log(f"🚨 [{side.upper()}] TRAILING STOP TRIGGERED: PnL {pnl_pct:.2f}% ≤ Trailing {trailing_stop:.2f}% → IMMEDIATE CLOSE", level="WARNING")
+            return True
+        else:
+            log(f"✅ [{side.upper()}] Trailing safe: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
+            return False
+    
+    # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe avec durée minimale très réduite
+    min_duration = 0.1  # ✅ RÉDUCTION: 0.1s pour permettre activation immédiate
+    
+    if duration_sec < min_duration:
+        log(f"⏱️ [{side.upper()}] Duration {duration_sec:.1f}s < {min_duration}s - Skip fixed stop loss check", level="DEBUG")
+        return False
+    
+    try:
+        current_strategy = strategy or config.strategy.default_strategy.lower()
+        
+        if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
+            stop_loss_pct = -config.strategy.three_out_of_four.stop_loss_pct
+        elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
+            stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
+        else:
+            stop_loss_pct = -2.0
+        
+        if pnl_pct <= stop_loss_pct:
+            log(f"🔴 [{side.upper()}] FIXED STOP LOSS: PnL {pnl_pct:.2f}% ≤ Stop {stop_loss_pct:.2f}% → CLOSE POSITION", level="WARNING")
+            return True
+            
+    except Exception as e:
+        log(f"❌ Stop loss check error: {e} - Using default -2%", level="ERROR")
+        if pnl_pct <= -2.0:
+            log(f"🔴 [{side.upper()}] DEFAULT STOP LOSS: PnL {pnl_pct:.2f}% ≤ -2.0% → CLOSE POSITION", level="WARNING")
+            return True
+    
+    return False
+
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args=None):
     try:
         log(t("live_engine.data.loading", symbol=symbol, interval=INTERVAL), level="DEBUG")
@@ -281,14 +312,8 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
 
         get_combined_signal = import_strategy_signal(selected_strategy)
         
-        # ✅ CORRECTION: ensure_indicators est maintenant async, donc on peut l'awaiter
         df_result = await ensure_indicators(df, symbol)
         
-        # 🔍 DEBUG: Vérification détaillée du type de retour
-        log(t("live_engine.debug.ensure_indicators_type", symbol=symbol, type=type(df_result)), level="DEBUG")
-        log(t("live_engine.debug.is_coroutine", symbol=symbol, is_coroutine=asyncio.iscoroutine(df_result)), level="DEBUG")
-        
-        # Si c'est une coroutine, on l'await
         if asyncio.iscoroutine(df_result):
             log(t("live_engine.debug.awaiting_coroutine", symbol=symbol), level="DEBUG")
             df = await df_result
@@ -299,7 +324,6 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             log(t("live_engine.indicators.calculation_failed", symbol=symbol), level="ERROR")
             return
 
-        # ✅ CORRECTION: Vérification robuste du type de df avant de l'utiliser
         if not isinstance(df, pd.DataFrame):
             log(t("live_engine.data.dataframe_error", symbol=symbol, type=type(df)), level="ERROR")
             return
@@ -307,19 +331,8 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         if df.empty:
             log(t("live_engine.data.dataframe_empty", symbol=symbol), level="WARNING")
             return
-            
-        # 🔍 DEBUG: Validation finale du DataFrame
-        log(t("live_engine.data.dataframe_validated", symbol=symbol, shape=df.shape, columns=list(df.columns)), level="DEBUG")
 
-        # ✅ CORRECTION: Vérification si get_combined_signal est async et gestion appropriée
         try:
-            # 🔍 DEBUG: Logs détaillés avant l'appel
-            log(t("live_engine.strategy.about_to_call", symbol=symbol, strategy=selected_strategy), level="DEBUG")
-            log(t("live_engine.debug.function_type", symbol=symbol, type=type(get_combined_signal)), level="DEBUG")
-            log(t("live_engine.debug.is_coroutine_function", symbol=symbol, is_coroutine=inspect.iscoroutinefunction(get_combined_signal)), level="DEBUG")
-            log(t("live_engine.debug.dataframe_before_call", symbol=symbol, type=type(df)), level="DEBUG")
-            log(t("live_engine.debug.dataframe_shape", symbol=symbol, shape=df.shape), level="DEBUG")
-            
             if inspect.iscoroutinefunction(get_combined_signal):
                 log(t("live_engine.strategy.calling_async", symbol=symbol), level="DEBUG")
                 result = await get_combined_signal(df, symbol)
@@ -331,31 +344,26 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
             
         except Exception as e:
             log(t("live_engine.strategy.error", symbol=symbol, error=e), level="ERROR")
-            log(t("live_engine.errors.dataframe_info", symbol=symbol), level="ERROR")
-            log(t("live_engine.errors.dataframe_type", symbol=symbol, type=type(df)), level="ERROR")
-            log(t("live_engine.errors.dataframe_is_coroutine", symbol=symbol, is_coroutine=asyncio.iscoroutine(df)), level="ERROR")
-            if hasattr(df, 'shape'):
-                log(t("live_engine.errors.dataframe_shape_error", symbol=symbol, shape=df.shape), level="ERROR")
-            if hasattr(df, 'columns'):
-                log(t("live_engine.errors.dataframe_columns_error", symbol=symbol, columns=list(df.columns)), level="ERROR")
             traceback.print_exc()
             return
 
-        # Vérifie si result est un tuple/list à deux éléments
         if isinstance(result, (tuple, list)) and len(result) == 2:
             signal, details = result
         else:
             signal = result
-            details = {}  # valeur vide si la stratégie ne renvoie pas de détails
+            details = {}
 
         log(t("live_engine.signals.detected", symbol=symbol, signal=signal, details=details), level="DEBUG")
 
-        if await position_already_open(symbol):
-            position_exists = await position_already_open(symbol)
-            log(f"[MAIN LOOP] {symbol} position_already_open: {position_exists}", level="INFO")
-            position_exists = await position_already_open(symbol)
-            log(f"[MAIN LOOP] {symbol} position_already_open: {position_exists}", level="INFO")
-            await handle_existing_position_with_table(symbol, real_run, dry_run)
+        # ✅ CORRECTION: UN SEUL APPEL à position_already_open
+        position_exists = await position_already_open(symbol)
+        log(f"[MAIN LOOP] {symbol} position_already_open: {position_exists}", level="INFO")
+        
+        if position_exists:
+            # ✅ CORRECTION: Appel direct à la fonction corrigée
+            await handle_existing_position(symbol, real_run, dry_run)
+            # ✅ Alternative si vous voulez garder l'affichage tableau
+            # await handle_existing_position_with_table(symbol, real_run, dry_run)
             return
 
         if signal in ["BUY","SELL"]:
@@ -382,52 +390,9 @@ def parse_position(pos):
             return None
     return None
 
-def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=None):
-    """
-    ✅ AMÉLIORATION: Logique de fermeture avec logs détaillés
-    """
-    
-    # ✅ CAS 1: TRAILING STOP ACTIVÉ - Fermer IMMÉDIATEMENT si PnL <= trailing stop
-    if trailing_stop is not None:
-        if pnl_pct <= trailing_stop:
-            log(f"🚨 [{side.upper()}] TRAILING STOP TRIGGERED: PnL {pnl_pct:.2f}% ≤ Trailing {trailing_stop:.2f}% → IMMEDIATE CLOSE", level="WARNING")  # WARNING pour visibilité
-            return True
-        else:
-            log(f"✅ [{side.upper()}] Trailing safe: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
-            return False
-    
-    # ✅ CAS 2: Stop loss fixe (seulement si trailing pas actif)
-    min_duration = 1.0
-    
-    if duration_sec < min_duration:
-        log(f"⏱️ [{side.upper()}] Duration {duration_sec:.1f}s < {min_duration}s - Skip fixed stop", level="DEBUG")
-        return False
-    
-    try:
-        current_strategy = strategy or config.strategy.default_strategy.lower()
-        
-        if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
-            stop_loss_pct = -config.strategy.three_out_of_four.stop_loss_pct
-        elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
-            stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
-        else:
-            stop_loss_pct = -2.0
-        
-        if pnl_pct <= stop_loss_pct:
-            log(f"🔴 [{side.upper()}] FIXED STOP LOSS: PnL {pnl_pct:.2f}% ≤ Stop {stop_loss_pct:.2f}% → CLOSE", level="WARNING")
-            return True
-            
-    except Exception as e:
-        log(f"❌ Stop loss check error: {e} - Using default -2%", level="ERROR")
-        if pnl_pct <= -2.0:
-            log(f"🔴 [{side.upper()}] DEFAULT STOP: PnL {pnl_pct:.2f}% ≤ -2.0% → CLOSE", level="WARNING")
-            return True
-    
-    return False
-
 async def handle_existing_position(symbol, real_run=True, dry_run=False):
     """
-    ✅ CORRECTION: Gestion améliorée des positions existantes
+    ✅ CORRECTION MAJEURE: Gestion des positions existantes avec trailing stop corrigé
     """
     try:
         # Récupération des positions réelles
@@ -439,12 +404,16 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
             log(f"⚠️ [{symbol}] No valid position found", level="WARNING")
             return
 
-        # Extraction des données de position
+        # ✅ CORRECTION: Extraction sécurisée des données
         side = pos.get("side")
         entry_price = safe_float(pos.get("entry_price"), 0.0)
         amount = safe_float(pos.get("amount"), 0.0)
         leverage = safe_float(pos.get("leverage", 1), 1.0)
         ts = safe_float(pos.get("timestamp", datetime.utcnow().timestamp()), datetime.utcnow().timestamp())
+
+        if entry_price <= 0 or amount <= 0:
+            log(f"❌ [{symbol}] Invalid position data: entry_price={entry_price}, amount={amount}", level="ERROR")
+            return
 
         # Calcul du PnL réel
         pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
@@ -461,29 +430,19 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
 
         pnl_pct = safe_float(pnl_percent, 0.0)
 
-        # ✅ CORRECTION: Appel avec tous les paramètres requis
+        # ✅ CORRECTION: Appel corrigé du trailing stop avec tous les paramètres
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
 
         duration_sec = datetime.utcnow().timestamp() - ts
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
 
-        # ✅ AFFICHAGE AMÉLIORÉ avec statut trailing
-        if trailing_stop is not None:
-            trailing_status = f"✅ {trailing_stop:.2f}%"
-            trailing_emoji = "🟢" if pnl_pct > trailing_stop else "🔴"
-        else:
-            trailing_status = f"⏳ {MIN_PNL_FOR_TRAILING}%"
-            trailing_emoji = "⏸️"
-            
-        log(
-            f"📊 {trailing_emoji} [{symbol}] {side.upper()} | Entry {entry_price:.6f} | Mark {mark_price:.6f} | "
-            f"PnL: {pnl_pct:+.2f}% (${pnl_usdc:+.2f}) | Amount: {amount:.4f} | "
-            f"Duration: {duration_str} | Trailing: {trailing_status}",
-            level="INFO"
-        )
+        # ✅ LOG DE DEBUG POUR COMPRENDRE LE PROBLÈME
+        log(f"🔍 [{symbol}] CLOSE CHECK: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Duration={duration_sec}s, ShouldClose=?", level="INFO")
 
-        # ✅ Vérification de fermeture
+        # Vérification de fermeture
         should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
+        
+        log(f"🔍 [{symbol}] CLOSE CHECK: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Duration={duration_sec}s, ShouldClose={should_close}", level="INFO")
         
         if should_close:
             if real_run:
@@ -491,10 +450,9 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
                     close_reason = 'Trailing Stop Hit' if trailing_stop is not None else 'Fixed Stop Loss'
                     log(f"🚨 [{symbol}] CLOSING POSITION - Reason: {close_reason}", level="WARNING")
                     
-                    # Fermeture immédiate
                     await close_position_percent_async(symbol, 100)
                     
-                    # ✅ CORRECTION: Nettoyage avec le bon hash
+                    # Nettoyage du trailing stop
                     position_hash = get_position_hash(symbol, side, entry_price, amount)
                     if position_hash in TRAILING_STOPS:
                         del TRAILING_STOPS[position_hash]
@@ -555,30 +513,30 @@ async def get_position_stats() -> dict:
         log(t("live_engine.errors.position_stats", error=e), level="ERROR")
         return {}
 
-async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: bool, args=None):
-    """
-    Parcours tous les symboles et déclenche la stratégie en parallèle.
-    """
-    log("🔍 Lancement du scan indicateurs et trading en parallèle…", level="INFO")
-    tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
-
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-# ✅ FONCTION DE DEBUG pour surveiller les trailing stops
+# ✅ NOUVELLE FONCTION DE DEBUG
 def debug_trailing_stops():
-    """Affiche l'état de tous les trailing stops actifs"""
+    """Affiche l'état de tous les trailing stops actifs pour debug"""
     if not TRAILING_STOPS:
-        log("🔍 No active trailing stops", level="DEBUG")
+        log("🔍 No active trailing stops tracked", level="DEBUG")
         return
         
-    log("🔍 Active Trailing Stops:", level="INFO")
+    log(f"🔍 Active Trailing Stops ({len(TRAILING_STOPS)} total):", level="INFO")
     for hash_key, data in TRAILING_STOPS.items():
         status = "🟢 ACTIVE" if data['active'] else "⏳ WAITING"
-        log(f"  {status} [{data['symbol']}] Hash: {hash_key[:8]} | Max PnL: {data['max_pnl']:.2f}% | Trailing: {data.get('value', 'N/A')}", level="INFO")
+        symbol = data.get('symbol', 'UNKNOWN')
+        side = data.get('side', 'UNKNOWN')
+        max_pnl = data.get('max_pnl', 0)
+        trailing_val = data.get('value', 'N/A')
+        log(f"  {status} [{symbol}] {side.upper()} Hash:{hash_key[:8]} | Max PnL: {max_pnl:.2f}% | Trailing: {trailing_val}", level="INFO")
 
-
-# ✅ Appel de debug à intégrer dans votre boucle principale
-async def main_trading_loop_with_debug(pool, symbols, real_run, dry_run, args):
-    """Boucle principale avec debug des trailing stops"""
-    debug_trailing_stops()  # Debug avant chaque cycle
-    await scan_and_trade_all_symbols(pool, symbols, real_run, dry_run, args)
+async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: bool, args=None):
+    """
+    ✅ CORRECTION: Parcours avec debug des trailing stops
+    """
+    log("🔍 Lancement du scan indicateurs et trading en parallèle…", level="INFO")
+    
+    # ✅ AJOUT: Debug des trailing stops avant chaque cycle
+    debug_trailing_stops()
+    
+    tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
+    await asyncio.gather(*tasks, return_exceptions=True)
