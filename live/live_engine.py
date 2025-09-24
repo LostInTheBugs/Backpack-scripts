@@ -254,12 +254,7 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
             log(f"✅ [{side.upper()}] Trailing safe: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
             return False
     
-    # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe avec durée minimale très réduite
-    min_duration = 0.1  # ✅ RÉDUCTION: 0.1s pour permettre activation immédiate
-    
-    if duration_sec < min_duration:
-        log(f"⏱️ [{side.upper()}] Duration {duration_sec:.1f}s < {min_duration}s - Skip fixed stop loss check", level="DEBUG")
-        return False
+    # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe IMMÉDIAT (pas de durée minimale)
     
     try:
         current_strategy = strategy or config.strategy.default_strategy.lower()
