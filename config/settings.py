@@ -19,6 +19,8 @@ class TradingConfig(BaseSettings):
     trailing_stop_trigger: float = Field(0.5, description="Trailing stop trigger in %")
     max_positions: int = Field(10, description="Maximum simultaneous positions")
     min_pnl_for_trailing: float = Field(0.3, description="Minimum PnL % before activating trailing stop")
+    fixed_stop_loss_pct: float = Field(-2.0, description="fixed stop lost")
+    min_duration_for_stop_loss: float = Field(0.0, description="duration boefore close")
 
 class DatabaseConfig(BaseSettings):
     """Database configuration settings"""
@@ -191,4 +193,5 @@ def get_risk_config() -> RiskConfig:
     return get_config().risk
 
 def get_logging_config() -> LoggingConfig:
+
     return get_config().logging
