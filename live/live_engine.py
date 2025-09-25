@@ -386,6 +386,18 @@ def parse_position(pos):
             return None
     return None
 
+def cleanup_trailing_stop(symbol, side, entry_price, amount):
+    """
+    ✅ NEW: Clean up trailing stop data when position is closed
+    """
+    try:
+        position_hash = get_position_hash(symbol, side, entry_price, amount)
+        if position_hash in TRAILING_STOPS:
+            del TRAILING_STOPS[position_hash]
+            log(f"🧹 [{symbol}] Trailing stop data cleaned up - Hash: {position_hash[:8]}", level="DEBUG")
+    except Exception as e:
+        log(f"❌ Error cleaning up trailing stop for {symbol}: {e}", level="ERROR")
+        
 async def handle_existing_position(symbol, real_run=True, dry_run=False):
     """
     ✅ CORRECTION MAJEURE: Gestion des positions existantes avec trailing stop corrigé
@@ -438,9 +450,10 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         # Vérification de fermeture
         should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
         
-        log(f"🔍 [{symbol}] CLOSE CHECK: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Duration={duration_sec}s, ShouldClose={should_close}", level="INFO")
+        ShouldClose
         
         if should_close:
+            log(f"🔍 [{symbol}] TRY CLOSE, level="INFO")
             if real_run:
                 try:
                     close_reason = 'Trailing Stop Hit' if trailing_stop is not None else 'Fixed Stop Loss'
@@ -536,4 +549,5 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
