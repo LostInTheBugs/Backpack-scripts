@@ -12,6 +12,7 @@ from utils.position_utils import position_already_open, get_real_pnl, get_open_p
 from utils.logger import log
 from utils.public import check_table_and_fresh_data
 from execute.async_wrappers import open_position_async, close_position_percent_async
+from execute.close_position_percent import close_position_percent
 from ScriptDatabase.pgsql_ohlcv import fetch_ohlcv_1s
 from signals.strategy_selector import get_strategy_for_market
 from config.settings import get_config
@@ -458,7 +459,7 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
                     close_reason = 'Trailing Stop Hit' if trailing_stop is not None else 'Fixed Stop Loss'
                     log(f"🚨 [{symbol}] CLOSING POSITION - Reason: {close_reason}", level="WARNING")
                     
-                    await close_position_percent_async(symbol, 100)
+                    await close_position_percent(symbol, 100)
                     
                     # Nettoyage du trailing stop
                     position_hash = get_position_hash(symbol, side, entry_price, amount)
@@ -548,6 +549,7 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 
