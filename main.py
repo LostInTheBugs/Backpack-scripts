@@ -130,62 +130,98 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
 
 async def get_trailing_stop_info(symbol, side, entry_price, mark_price, amount=1.0):
     """
-    ✅ CORRECTION URGENTE: Ajout du déclenchement des fermetures dans l'affichage dashboard
+    ✅ VERSION SIMPLIFIÉE: Focus sur fermeture des positions en perte critique
     """
     try:
-        from live.live_engine import get_position_trailing_stop, should_close_position
-        from execute.async_wrappers import close_position_percent_async
-        
         # Calcul du PnL actuel
         if side == "long":
             pnl_pct = ((mark_price - entry_price) / entry_price) * 100
         else:  # short
             pnl_pct = ((entry_price - mark_price) / entry_price) * 100
         
-        # Récupération du trailing stop
-        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
+        log(f"[STOP LOSS CHECK] {symbol}: PnL={pnl_pct:.2f}%", level="INFO")
         
-        log(f"[DISPLAY DEBUG] {symbol}: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}", level="INFO")
-        
-        # ✅ CORRECTION CRITIQUE: Vérifier si la position doit être fermée
-        should_close = should_close_position(pnl_pct, trailing_stop, side, 999, strategy=config.strategy.default_strategy)
-        
-        if should_close:
-            log(f"🚨 URGENT: {symbol} should be closed! PnL={pnl_pct:.2f}%, Trailing={trailing_stop}", level="WARNING")
+        # ✅ FERMETURE IMMÉDIATE si PnL ≤ -2%
+        if pnl_pct <= -2.0:
+            log(f"🚨 STOP LOSS TRIGGERED: {symbol} PnL={pnl_pct:.2f}% ≤ -2.0%", level="WARNING")
             
-            # ✅ FERMETURE IMMÉDIATE dans le dashboard
             try:
-                await close_position_percent_async(symbol, 100)
-                log(f"✅ {symbol} Position closed via dashboard trigger", level="WARNING")
+                # Import des fonctions de fermeture
+                from execute.close_position_percent import close_position_percent
                 
-                # Nettoyer les trackers
-                from live.live_engine import TRAILING_STOPS, get_position_hash
-                position_hash = get_position_hash(symbol, side, entry_price, amount)
-                if position_hash in TRAILING_STOPS:
-                    del TRAILING_STOPS[position_hash]
-                    log(f"🧹 {symbol} Trailing tracker cleaned", level="INFO")
-                    
-                return "CLOSED ❌"
-            except Exception as e:
-                log(f"❌ {symbol} Error closing position in dashboard: {e}", level="ERROR")
-                return "ERROR ❌"
+                # Fermer la position immédiatement
+                result = await close_position_percent(symbol, 100.0)
+                
+                log(f"✅ {symbol} Position closed due to stop loss. Result: {result}", level="WARNING")
+                
+                return "CLOSED 🔴"
+                
+            except Exception as close_error:
+                log(f"❌ {symbol} Error closing position: {close_error}", level="ERROR")
+                return f"FAILED 🔴"
         
-        if trailing_stop is not None:
-            # Position avec trailing stop actif
-            will_trigger_soon = pnl_pct <= (trailing_stop + 0.1)  # Alerte si proche
-            status = "⚠️" if will_trigger_soon else "✅"
-            return f"{trailing_stop:+.1f}% {status}"
-        else:
-            # Stop loss fixe par défaut - AFFICHER L'ÉTAT CRITIQUE
-            if pnl_pct <= -2.0:
-                return f"{pnl_pct:+.1f}% 🚨"  # Critique - devrait être fermé
+        # ✅ Tentative de récupération du trailing stop (sans erreur critique)
+        try:
+            from live.live_engine import get_position_trailing_stop
+            trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
+            
+            if trailing_stop is not None:
+                # Position avec trailing stop actif
+                will_trigger_soon = pnl_pct <= (trailing_stop + 0.1)
+                status = "⚠️" if will_trigger_soon else "✅"
+                return f"{trailing_stop:+.1f}% {status}"
+            else:
+                # Pas de trailing stop actif
+                if pnl_pct > 0:
+                    return f"+{pnl_pct:.1f}% 🟢"  # En profit
+                else:
+                    return f"-2.0% ⏸️"  # Stop loss fixe
+                    
+        except Exception as trailing_error:
+            log(f"Warning: Could not get trailing stop for {symbol}: {trailing_error}", level="DEBUG")
+            
+            # Fallback simple sans trailing stop
+            if pnl_pct > 0:
+                return f"+{pnl_pct:.1f}% 🟢"
             else:
                 return f"-2.0% ⏸️"
                 
     except Exception as e:
-        log(f"Erreur récupération trailing stop pour {symbol}: {e}", level="ERROR")
+        log(f"Error in get_trailing_stop_info for {symbol}: {e}", level="ERROR")
         return "ERROR"
 
+async def force_close_critical_positions():
+    """
+    ✅ FONCTION D'URGENCE: Ferme toutes les positions avec PnL ≤ -2%
+    """
+    try:
+        from utils.position_utils import get_real_positions
+        from execute.close_position_percent import close_position_percent
+        
+        positions = await get_real_positions()
+        closed_count = 0
+        
+        for pos in positions:
+            symbol = pos['symbol']
+            pnl_pct = pos['pnl_pct']
+            
+            if pnl_pct <= -2.0:
+                try:
+                    log(f"🚨 FORCE CLOSING: {symbol} with PnL {pnl_pct:.2f}%", level="WARNING")
+                    result = await close_position_percent(symbol, 100.0)
+                    log(f"✅ {symbol} Force closed successfully", level="WARNING")
+                    closed_count += 1
+                except Exception as e:
+                    log(f"❌ {symbol} Force close failed: {e}", level="ERROR")
+        
+        if closed_count > 0:
+            log(f"🎯 Force closed {closed_count} critical positions", level="WARNING")
+        
+        return closed_count
+        
+    except Exception as e:
+        log(f"Error in force_close_critical_positions: {e}", level="ERROR")
+        return 0
 
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     """✅ CORRECTION: Dashboard qui déclenche aussi les fermetures de positions"""
@@ -506,6 +542,7 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         sys.exit(1)
+
 
 
 
