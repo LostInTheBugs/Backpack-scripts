@@ -225,6 +225,10 @@ async def force_close_critical_positions():
 
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
     """✅ CORRECTION: Dashboard qui déclenche aussi les fermetures de positions"""
+    closed_count = await force_close_critical_positions()
+    if closed_count > 0:
+       print(f"🚨 EMERGENCY: Force closed {closed_count} positions due to stop loss")
+       await asyncio.sleep(1)  # Attendre un peu avant de rafraîchir l'affichage
     import os
     from datetime import datetime
     from tabulate import tabulate
@@ -542,6 +546,7 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         sys.exit(1)
+
 
 
 
