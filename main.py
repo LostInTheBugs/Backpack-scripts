@@ -128,59 +128,50 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         await asyncio.sleep(sleep_time)
 
 
-async def get_trailing_stop_info(symbol, side, entry_price, mark_price, amount=1.0):
-    """
-    ✅ VERSION SIMPLIFIÉE: Focus sur fermeture des positions en perte critique
-    """
+async def get_trailing_stop_info(symbol, side, entry_price, mark_price, amount):
+    """✅ FIXED: Corrected trailing stop info display"""
     try:
-        # Calcul du PnL actuel
-        if side == "long":
-            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
-        else:  # short
-            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
+        from utils.position_utils import safe_float
         
-        log(f"[STOP LOSS CHECK] {symbol}: PnL={pnl_pct:.2f}%", level="INFO")
+        # Calculate current PnL
+        entry_p = safe_float(entry_price, 0.0)
+        mark_p = safe_float(mark_price, 0.0)
         
-        # ✅ FERMETURE IMMÉDIATE si PnL ≤ -2%
-        if pnl_pct <= -2.0:
-            log(f"🚨 STOP LOSS TRIGGERED: {symbol} PnL={pnl_pct:.2f}% ≤ -2.0%", level="WARNING")
+        if entry_p <= 0 or mark_p <= 0:
+            return "INVALID PRICES"
             
-            try:
-                # Import des fonctions de fermeture
-                from execute.close_position_percent import close_position_percent
-                
-                # Fermer la position immédiatement
-                result = await close_position_percent(symbol, 100.0)
-                
-                log(f"✅ {symbol} Position closed due to stop loss. Result: {result}", level="WARNING")
-                
-                return "CLOSED 🔴"
-                
-            except Exception as close_error:
-                log(f"❌ {symbol} Error closing position: {close_error}", level="ERROR")
-                return f"FAILED 🔴"
-        
-        # ✅ Tentative de récupération du trailing stop (sans erreur critique)
+        if side.lower() == "long":
+            pnl_pct = ((mark_p - entry_p) / entry_p) * 100
+        else:  # SHORT
+            pnl_pct = ((entry_p - mark_p) / entry_p) * 100
+            
         try:
             from live.live_engine import get_position_trailing_stop
             trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
             
             if trailing_stop is not None:
-                # Position avec trailing stop actif
-                will_trigger_soon = pnl_pct <= (trailing_stop + 0.1)
-                status = "⚠️" if will_trigger_soon else "✅"
-                return f"{trailing_stop:+.1f}% {status}"
-            else:
-                # Pas de trailing stop actif
-                if pnl_pct > 0:
-                    return f"+{pnl_pct:.1f}% 🟢"  # En profit
+                # ✅ CORRECTION: Check if position will trigger soon
+                buffer = 0.1  # 0.1% buffer
+                will_trigger_soon = pnl_pct <= (trailing_stop + buffer)
+                
+                if will_trigger_soon:
+                    return f"{trailing_stop:+.1f}% 🚨"  # Critical - about to trigger
                 else:
-                    return f"-2.0% ⏸️"  # Stop loss fixe
+                    return f"{trailing_stop:+.1f}% ✅"  # Active and safe
+            else:
+                # No trailing stop active - check if in profit or loss
+                if pnl_pct >= config.trading.min_pnl_for_trailing:
+                    # Should have trailing stop but doesn't - potential issue
+                    return f"NO TRAIL 🔧"
+                elif pnl_pct > 0:
+                    return f"+{pnl_pct:.1f}% 🟢"  # In profit, no trailing yet
+                else:
+                    return f"-2.0% ⏸️"  # Fixed stop loss
                     
         except Exception as trailing_error:
             log(f"Warning: Could not get trailing stop for {symbol}: {trailing_error}", level="DEBUG")
             
-            # Fallback simple sans trailing stop
+            # Fallback without trailing stop
             if pnl_pct > 0:
                 return f"+{pnl_pct:.1f}% 🟢"
             else:
@@ -546,6 +537,7 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         sys.exit(1)
+
 
 
 
