@@ -449,9 +449,7 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
 
         # Vérification de fermeture
         should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
-        
-        ShouldClose
-        
+                
         if should_close:
             log(f"🔍 [{symbol}] TRY CLOSE", level="INFO")
             if real_run:
@@ -550,6 +548,7 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 
