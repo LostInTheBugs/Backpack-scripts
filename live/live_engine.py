@@ -51,72 +51,71 @@ def get_position_hash(symbol, side, entry_price, amount):
     position_data = f"{symbol}_{side}_{rounded_entry}_{rounded_amount}"
     return hashlib.md5(position_data.encode()).hexdigest()[:16]
 
-async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amount=1.0):
+async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amount):
     """
-    ✅ CORRECTION MAJEURE: Logique de trailing stop entièrement réécrite avec hash stable
+    ✅ FIXED: Corrected trailing stop calculation and logic
     """
     try:
-        # Calcul du PnL actuel
-        if side == "long":
-            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
-        else:  # short
-            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
-        
-        # Hash stable pour cette position
+        # Generate stable hash
         position_hash = get_position_hash(symbol, side, entry_price, amount)
         
-        # Initialisation du tracking si première fois
+        # Calculate current PnL
+        entry_p = safe_float(entry_price, 0.0)
+        mark_p = safe_float(mark_price, 0.0)
+        
+        if entry_p <= 0 or mark_p <= 0:
+            log(f"❌ [{symbol}] Invalid prices: entry={entry_p}, mark={mark_p}", level="ERROR")
+            return None
+            
+        if side.lower() == "long":
+            pnl_pct = ((mark_p - entry_p) / entry_p) * 100
+        else:  # SHORT
+            pnl_pct = ((entry_p - mark_p) / entry_p) * 100
+        
+        # Initialize tracker if not exists
         if position_hash not in TRAILING_STOPS:
             TRAILING_STOPS[position_hash] = {
                 'value': None,
                 'max_pnl': pnl_pct,
                 'active': False,
                 'symbol': symbol,
-                'side': side,
-                'entry_price': float(entry_price),
-                'created_at': datetime.utcnow().isoformat()
+                'side': side.lower()
             }
-            log(f"🔧 [{symbol}] Trailing tracker created - Hash: {position_hash[:8]} - Initial PnL: {pnl_pct:.2f}%", level="INFO")
+            log(f"🆕 [{symbol}] New trailing stop tracker created - Hash: {position_hash[:8]}", level="DEBUG")
         
         tracker = TRAILING_STOPS[position_hash]
         
-        # ✅ CORRECTION: Mise à jour du PnL maximum
+        # ✅ CORRECTION: Update max PnL only if current PnL is higher
         if pnl_pct > tracker['max_pnl']:
             old_max = tracker['max_pnl']
             tracker['max_pnl'] = pnl_pct
             log(f"📈 [{symbol}] Hash:{position_hash[:8]} Max PnL updated: {old_max:.2f}% → {pnl_pct:.2f}%", level="INFO")
         
-        # ✅ DEBUG: Affichage des seuils de configuration
-        log(f"🔧 [{symbol}] Config check - MIN_PNL_FOR_TRAILING: {MIN_PNL_FOR_TRAILING}%, TRAILING_STOP_TRIGGER: {TRAILING_STOP_TRIGGER}%", level="DEBUG")
-        
-        # ✅ ACTIVATION du trailing stop quand le PnL atteint le seuil minimum
+        # ✅ ACTIVATION: Enable trailing stop when reaching minimum PnL
         if not tracker['active'] and pnl_pct >= MIN_PNL_FOR_TRAILING:
             tracker['active'] = True
-            tracker['value'] = pnl_pct - TRAILING_STOP_TRIGGER
-            log(f"🟢 [{symbol}] Hash:{position_hash[:8]} TRAILING STOP ACTIVATED! PnL {pnl_pct:.2f}% ≥ {MIN_PNL_FOR_TRAILING}% - Trailing: {tracker['value']:.2f}%", level="WARNING")
+            tracker['value'] = tracker['max_pnl'] - TRAILING_STOP_TRIGGER
+            log(f"🟢 [{symbol}] TRAILING STOP ACTIVATED! PnL: {pnl_pct:.2f}% ≥ {MIN_PNL_FOR_TRAILING}% → Trailing: {tracker['value']:.2f}%", level="WARNING")
             return tracker['value']
         
-        # ✅ MISE À JOUR du trailing stop si déjà actif
+        # ✅ UPDATE: Adjust trailing stop if already active
         if tracker['active']:
-            # Le trailing stop suit le PnL maximum moins le trigger
+            # Calculate new trailing stop based on max PnL
             new_trailing = tracker['max_pnl'] - TRAILING_STOP_TRIGGER
             
-            # Le trailing stop ne peut que monter (ou rester identique)
+            # ✅ CORRECTION: Trailing stop can only move up (for protection)
             if new_trailing > tracker['value']:
                 old_trailing = tracker['value']
                 tracker['value'] = new_trailing
-                log(f"🔼 [{symbol}] Hash:{position_hash[:8]} Trailing updated: {old_trailing:.2f}% → {tracker['value']:.2f}% (Max: {tracker['max_pnl']:.2f}%)", level="INFO")
+                log(f"🔼 [{symbol}] Trailing updated: {old_trailing:.2f}% → {tracker['value']:.2f}%", level="INFO")
             
-            log(f"✅ [{symbol}] Hash:{position_hash[:8]} Trailing check - Current: {pnl_pct:.2f}% | Trailing: {tracker['value']:.2f}% | Max: {tracker['max_pnl']:.2f}%", level="DEBUG")
             return tracker['value']
         
-        # ✅ Pas encore activé - message informatif
-        log(f"⏳ [{symbol}] Hash:{position_hash[:8]} Waiting activation - PnL: {pnl_pct:.2f}% < {MIN_PNL_FOR_TRAILING}%", level="DEBUG")
+        # Not active yet
         return None
-            
+        
     except Exception as e:
-        log(f"❌ [{symbol}] Trailing stop calculation error: {e}", level="ERROR")
-        traceback.print_exc()
+        log(f"❌ Error in get_position_trailing_stop for {symbol}: {e}", level="ERROR")
         return None
 
 def handle_live_symbol(symbol, current_price, side, entry_price, amount):
@@ -537,3 +536,4 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
