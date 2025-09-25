@@ -453,8 +453,9 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
         ShouldClose
         
         if should_close:
-            log(f"🔍 [{symbol}] TRY CLOSE, level="INFO")
+            log(f"🔍 [{symbol}] TRY CLOSE", level="INFO")
             if real_run:
+                log(f"🔍 [{symbol}] TRY CLOSE REAL_RUN", level="INFO")
                 try:
                     close_reason = 'Trailing Stop Hit' if trailing_stop is not None else 'Fixed Stop Loss'
                     log(f"🚨 [{symbol}] CLOSING POSITION - Reason: {close_reason}", level="WARNING")
@@ -549,5 +550,6 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
