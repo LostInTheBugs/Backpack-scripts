@@ -128,12 +128,13 @@ async def main_loop(symbols: list, pool, real_run: bool, dry_run: bool, auto_sel
         await asyncio.sleep(sleep_time)
 
 
-async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
+async def get_trailing_stop_info(symbol, side, entry_price, mark_price, amount=1.0):
     """
-    ✅ MODIFICATION: Ajout du déclenchement immédiat dans l'affichage
+    ✅ CORRECTION URGENTE: Ajout du déclenchement des fermetures dans l'affichage dashboard
     """
     try:
-        from live.live_engine import get_position_trailing_stop
+        from live.live_engine import get_position_trailing_stop, should_close_position
+        from execute.async_wrappers import close_position_percent_async
         
         # Calcul du PnL actuel
         if side == "long":
@@ -141,71 +142,53 @@ async def get_trailing_stop_info(symbol, side, entry_price, mark_price):
         else:  # short
             pnl_pct = ((entry_price - mark_price) / entry_price) * 100
         
-        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price)
+        # Récupération du trailing stop
+        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
         
         log(f"[DISPLAY DEBUG] {symbol}: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}", level="INFO")
         
+        # ✅ CORRECTION CRITIQUE: Vérifier si la position doit être fermée
+        should_close = should_close_position(pnl_pct, trailing_stop, side, 999, strategy=config.strategy.default_strategy)
+        
+        if should_close:
+            log(f"🚨 URGENT: {symbol} should be closed! PnL={pnl_pct:.2f}%, Trailing={trailing_stop}", level="WARNING")
+            
+            # ✅ FERMETURE IMMÉDIATE dans le dashboard
+            try:
+                await close_position_percent_async(symbol, 100)
+                log(f"✅ {symbol} Position closed via dashboard trigger", level="WARNING")
+                
+                # Nettoyer les trackers
+                from live.live_engine import TRAILING_STOPS, get_position_hash
+                position_hash = get_position_hash(symbol, side, entry_price, amount)
+                if position_hash in TRAILING_STOPS:
+                    del TRAILING_STOPS[position_hash]
+                    log(f"🧹 {symbol} Trailing tracker cleaned", level="INFO")
+                    
+                return "CLOSED ❌"
+            except Exception as e:
+                log(f"❌ {symbol} Error closing position in dashboard: {e}", level="ERROR")
+                return "ERROR ❌"
+        
         if trailing_stop is not None:
-            # ✅ DÉCLENCHEMENT IMMÉDIAT: Check si doit fermer maintenant
-            will_trigger_now = pnl_pct <= trailing_stop
-            
-            # ✅ NOUVEAU: Si Will trigger=True, déclencher la fermeture immédiate
-            if will_trigger_now:
-                status = "⚠️"
-                log(f"[DISPLAY DEBUG] {symbol}: Will trigger=True, Status={status}", level="INFO")
-                
-                # ✅ EXÉCUTION IMMÉDIATE: Déclencher la fermeture ici même
-                asyncio.create_task(trigger_immediate_close(symbol, pnl_pct, trailing_stop))
-                
-            else:
-                status = "✅"
-                log(f"[DISPLAY DEBUG] {symbol}: Will trigger=False, Status={status}", level="INFO")
-            
+            # Position avec trailing stop actif
+            will_trigger_soon = pnl_pct <= (trailing_stop + 0.1)  # Alerte si proche
+            status = "⚠️" if will_trigger_soon else "✅"
             return f"{trailing_stop:+.1f}% {status}"
         else:
-            # Stop loss fixe par défaut
-            current_strategy = config.strategy.default_strategy.lower()
-            
-            if "threeoutoffour" in current_strategy:
-                default_stop = config.strategy.three_out_of_four.stop_loss_pct
-            elif "twooutoffourscalp" in current_strategy:
-                default_stop = config.strategy.two_out_of_four_scalp.stop_loss_pct
+            # Stop loss fixe par défaut - AFFICHER L'ÉTAT CRITIQUE
+            if pnl_pct <= -2.0:
+                return f"{pnl_pct:+.1f}% 🚨"  # Critique - devrait être fermé
             else:
-                default_stop = 2.0
-            
-            return f"-{default_stop:.1f}% ⏸️"
+                return f"-2.0% ⏸️"
                 
     except Exception as e:
         log(f"Erreur récupération trailing stop pour {symbol}: {e}", level="ERROR")
         return "ERROR"
 
-async def trigger_immediate_close(symbol, pnl_pct, trailing_stop):
-    """
-    ✅ NOUVELLE FONCTION: Déclenche la fermeture immédiate de la position
-    """
-    try:
-        log(f"🚨 IMMEDIATE TRIGGER: {symbol} PnL {pnl_pct:.2f}% <= Trailing {trailing_stop:.2f}%", level="INFO")
-        
-        # Import des fonctions nécessaires
-        from execute.async_wrappers import close_position_percent_async
-        from live.live_engine import TRAILING_STOPS
-        
-        # Fermer la position immédiatement
-        await close_position_percent_async(symbol, 100)
-        
-        # Nettoyer le trailing stop de la mémoire
-        keys_to_remove = [k for k in TRAILING_STOPS.keys() if k.startswith(symbol)]
-        for key in keys_to_remove:
-            del TRAILING_STOPS[key]
-            log(f"🧹 {symbol} Trailing stop tracker cleaned", level="INFO")
-        
-        log(f"✅ {symbol} Position closed immediately via trailing stop", level="INFO")
-        
-    except Exception as e:
-        log(f"❌ {symbol} Error in immediate close: {e}", level="ERROR")
 
 async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
-    """Rafraîchit le dashboard avec les compteurs corrects"""
+    """✅ CORRECTION: Dashboard qui déclenche aussi les fermetures de positions"""
     import os
     from datetime import datetime
     from tabulate import tabulate
@@ -225,6 +208,7 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
         if positions:
             positions_data = []
             total_pnl = 0.0
+            positions_to_close = []  # ✅ NOUVEAU: Liste des positions à fermer
             
             for pos in positions:
                 side_icon = "🟢" if pos["side"] == "long" else "🔴"
@@ -238,12 +222,19 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                     
                 simple_symbol = pos['symbol'].split('_')[0]
                 
+                # ✅ CORRECTION: Passer le montant pour hash stable
                 trailing_stop_info = await get_trailing_stop_info(
                     pos['symbol'], 
                     pos['side'], 
                     pos['entry_price'], 
-                    pos['mark_price']
+                    pos['mark_price'],
+                    pos.get('amount', 1.0)  # Passer le montant réel
                 )
+                
+                # ✅ DÉTECTION: Position qui devrait être fermée
+                if pos['pnl_pct'] <= -2.0:
+                    positions_to_close.append(pos['symbol'])
+                    pnl_icon = "🚨"  # Alerte critique
                 
                 positions_data.append([
                     f"{side_icon} {simple_symbol}",
@@ -259,6 +250,11 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                 total_pnl += pos["pnl_usd"]
             
             print(f"💰 PnL Total: ${total_pnl:+.2f}")
+            
+            # ✅ ALERTE: Afficher les positions critiques
+            if positions_to_close:
+                print(f"🚨 CRITICAL: {len(positions_to_close)} positions should be closed: {positions_to_close}")
+            
             print("=" * 120)
             
             print(tabulate(
@@ -267,7 +263,6 @@ async def refresh_dashboard_with_counts(active_symbols, ignored_symbols):
                 tablefmt="grid"
             ))
             print("=" * 120)
-            # ✅ UTILISATION DIRECTE DE LA CONFIG
             print(f"Legend: ✅ = Trailing stop active | ⏸️ = Fixed stop loss ({config.strategy.default_strategy}) | "
                   f"Trigger: {config.trading.trailing_stop_trigger}% | Min PnL: {config.trading.min_pnl_for_trailing}%")
             print("=" * 120)
@@ -511,5 +506,6 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         sys.exit(1)
+
 
 
