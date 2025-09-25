@@ -13,7 +13,8 @@ async def open_position_async(symbol: str, usdc_amount: float, direction: str, d
 
 async def close_position_percent_async(symbol: str, percent: float):
     # close_position_percent semble synchrone → ok d'utiliser run_in_executor
-    log(f"🚨 [{symbol}] CLOSE POSITION PERCENT ASYNC")
+    log(f"🚨 [{symbol}] CLOSE POSITION PERCENT ASYNC", level="WARNING")
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, sync_close_position, public_key, secret_key, symbol, percent)
+
 
