@@ -401,81 +401,81 @@ def cleanup_trailing_stop(symbol, side, entry_price, amount):
         
 async def handle_existing_position(symbol, real_run=True, dry_run=False):
     """
-    ✅ CORRECTION MAJEURE: Gestion des positions existantes avec trailing stop corrigé
+    ✅ CORRECTION: Gestion simplifiée et robuste des positions
     """
     try:
-        # Récupération des positions réelles
+        # 1. Récupération de la position
         raw_positions = await get_real_positions()
         parsed_positions = [parse_position(p) for p in raw_positions if parse_position(p) is not None]
-
+        
         pos = next((p for p in parsed_positions if p["symbol"] == symbol), None)
         if not pos:
-            log(f"⚠️ [{symbol}] No valid position found", level="WARNING")
+            log(f"⚠️ [{symbol}] No position found", level="DEBUG")
             return
 
-        # ✅ CORRECTION: Extraction sécurisée des données
-        side = pos.get("side")
+        # 2. Extraction des données essentielles
+        side = pos.get("side", "").lower()
         entry_price = safe_float(pos.get("entry_price"), 0.0)
         amount = safe_float(pos.get("amount"), 0.0)
         leverage = safe_float(pos.get("leverage", 1), 1.0)
         ts = safe_float(pos.get("timestamp", datetime.utcnow().timestamp()), datetime.utcnow().timestamp())
 
         if entry_price <= 0 or amount <= 0:
-            log(f"❌ [{symbol}] Invalid position data: entry_price={entry_price}, amount={amount}", level="ERROR")
+            log(f"❌ [{symbol}] Invalid position data", level="ERROR")
             return
 
-        # Calcul du PnL réel
-        pnl_data = await get_real_pnl(symbol, side, entry_price, amount, leverage)
+        # 3. Récupération du prix actuel
+        from bpx.public import Public
+        public = Public()
+        ticker = await asyncio.to_thread(public.get_ticker, symbol)
+        mark_price = safe_float(ticker.get("lastPrice"), entry_price)
+
+        # 4. Calcul du PnL
+        if side == "long":
+            pnl_pct = ((mark_price - entry_price) / entry_price) * 100
+        else:  # short
+            pnl_pct = ((entry_price - mark_price) / entry_price) * 100
         
-        if isinstance(pnl_data, dict):
-            pnl_usdc = safe_float(pnl_data.get("pnl_usd", 0), 0.0)
-            pnl_percent = safe_float(pnl_data.get("pnl_percent", 0), 0.0)
-            mark_price = safe_float(pnl_data.get("mark_price", entry_price), entry_price)
-        else:
-            log(f"⚠️ [{symbol}] Unexpected PnL data type: {type(pnl_data)}", level="WARNING")
-            pnl_usdc = 0.0
-            pnl_percent = 0.0
-            mark_price = entry_price
-
-        pnl_pct = safe_float(pnl_percent, 0.0)
-
-        # ✅ CORRECTION: Appel corrigé du trailing stop avec tous les paramètres
-        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
-
+        pnl_usdc = (abs(mark_price - entry_price) * amount * leverage) * (1 if pnl_pct > 0 else -1)
+        
+        # 5. Durée de la position
         duration_sec = datetime.utcnow().timestamp() - ts
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
 
-        # ✅ LOG DE DEBUG POUR COMPRENDRE LE PROBLÈME
-        
-        # Vérification de fermeture
-        should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=config.strategy.default_strategy)
-        log(f"🔍 [{symbol}] CLOSE CHECK: PnL={pnl_pct:.2f}%, Trailing={trailing_stop}, Duration={duration_sec}s, ShouldClose={should_close}", level="INFO")
+        # 6. Trailing stop
+        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
+
+        # 7. LOG CRITIQUE POUR DEBUG
+        log(f"📊 [{symbol}] {side.upper()} | Entry: ${entry_price:.2f} | Mark: ${mark_price:.2f} | PnL: {pnl_pct:+.2f}% (${pnl_usdc:+.2f}) | Trailing: {trailing_stop} | Duration: {duration_str}", level="INFO")
+
+        # 8. VÉRIFICATION DE FERMETURE
+        should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec)
         
         if should_close:
-            log(f"🔍 [{symbol}] TRY CLOSE", level="INFO")
+            close_reason = 'Trailing Stop' if trailing_stop is not None else 'Fixed Stop Loss'
+            log(f"🚨 [{symbol}] CLOSING - Reason: {close_reason} | PnL: {pnl_pct:.2f}%", level="WARNING")
+            
             if real_run:
-                log(f"🔍 [{symbol}] TRY CLOSE REAL_RUN", level="INFO")
                 try:
-                    close_reason = 'Trailing Stop Hit' if trailing_stop is not None else 'Fixed Stop Loss'
-                    log(f"🚨 [{symbol}] CLOSING POSITION - Reason: {close_reason}", level="WARNING")
-                    
                     await close_position_percent(symbol, 100)
                     
-                    # Nettoyage du trailing stop
+                    # Nettoyage
                     position_hash = get_position_hash(symbol, side, entry_price, amount)
                     if position_hash in TRAILING_STOPS:
                         del TRAILING_STOPS[position_hash]
-                        log(f"🧹 [{symbol}] Trailing tracker cleaned (Hash: {position_hash[:8]})", level="INFO")
                     
                     log(f"✅ [{symbol}] Position closed successfully", level="INFO")
                     
                 except Exception as e:
-                    log(f"❌ [{symbol}] Error closing position: {e}", level="ERROR")
+                    log(f"❌ [{symbol}] Close error: {e}", level="ERROR")
+                    traceback.print_exc()
             elif dry_run:
-                log(f"🔄 [{symbol}] DRY RUN: Would close position immediately", level="INFO")
+                log(f"🔄 [{symbol}] DRY RUN: Would close", level="INFO")
+        else:
+            log(f"✅ [{symbol}] Position maintained (PnL OK)", level="DEBUG")
 
     except Exception as e:
-        log(f"❌ [{symbol}] Position handling error: {e}", level="ERROR")
+        log(f"❌ [{symbol}] Error: {e}", level="ERROR")
         traceback.print_exc()
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
@@ -549,6 +549,7 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 
