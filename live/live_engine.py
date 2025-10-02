@@ -401,81 +401,85 @@ def cleanup_trailing_stop(symbol, side, entry_price, amount):
         
 async def handle_existing_position(symbol, real_run=True, dry_run=False):
     """
-    ✅ CORRECTION: Gestion simplifiée et robuste des positions
+    ✅ CORRECTION: Calcul PnL avec précision complète
     """
     try:
-        # 1. Récupération de la position
+        # 1. Position
         raw_positions = await get_real_positions()
         parsed_positions = [parse_position(p) for p in raw_positions if parse_position(p) is not None]
         
         pos = next((p for p in parsed_positions if p["symbol"] == symbol), None)
         if not pos:
-            log(f"⚠️ [{symbol}] No position found", level="DEBUG")
             return
 
-        # 2. Extraction des données essentielles
+        # 2. Données position (SANS ARRONDIR)
         side = pos.get("side", "").lower()
-        entry_price = safe_float(pos.get("entry_price"), 0.0)
-        amount = safe_float(pos.get("amount"), 0.0)
-        leverage = safe_float(pos.get("leverage", 1), 1.0)
-        ts = safe_float(pos.get("timestamp", datetime.utcnow().timestamp()), datetime.utcnow().timestamp())
+        entry_price = float(pos.get("entry_price", 0))
+        amount = float(pos.get("amount", 0))
+        leverage = float(pos.get("leverage", 1))
+        ts = float(pos.get("timestamp", datetime.utcnow().timestamp()))
 
         if entry_price <= 0 or amount <= 0:
-            log(f"❌ [{symbol}] Invalid position data", level="ERROR")
+            log(f"❌ [{symbol}] Invalid data: entry={entry_price}, amount={amount}", level="ERROR")
             return
 
-        # 3. Récupération du prix actuel
+        # 3. Prix actuel RÉEL (pas depuis cache)
         from bpx.public import Public
         public = Public()
         ticker = await asyncio.to_thread(public.get_ticker, symbol)
-        mark_price = safe_float(ticker.get("lastPrice"), entry_price)
+        mark_price = float(ticker.get("lastPrice", entry_price))
 
-        # 4. Calcul du PnL
+        # 4. Calcul PnL PRÉCIS
         if side == "long":
             pnl_pct = ((mark_price - entry_price) / entry_price) * 100
+            pnl_usdc = (mark_price - entry_price) * amount * leverage
         else:  # short
             pnl_pct = ((entry_price - mark_price) / entry_price) * 100
-        
-        pnl_usdc = (abs(mark_price - entry_price) * amount * leverage) * (1 if pnl_pct > 0 else -1)
-        
-        # 5. Durée de la position
+            pnl_usdc = (entry_price - mark_price) * amount * leverage
+
+        # 5. Durée
         duration_sec = datetime.utcnow().timestamp() - ts
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
 
         # 6. Trailing stop
         trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
 
-        # 7. LOG CRITIQUE POUR DEBUG
-        log(f"📊 [{symbol}] {side.upper()} | Entry: ${entry_price:.2f} | Mark: ${mark_price:.2f} | PnL: {pnl_pct:+.2f}% (${pnl_usdc:+.2f}) | Trailing: {trailing_stop} | Duration: {duration_str}", level="INFO")
+        # 7. LOG DÉTAILLÉ (4 décimales pour voir la vraie différence)
+        log(f"📊 [{symbol}] {side.upper()} | Entry: ${entry_price:.4f} | Mark: ${mark_price:.4f} | "
+            f"PnL: {pnl_pct:+.2f}% (${pnl_usdc:+.2f}) | Trailing: {trailing_stop} | "
+            f"Duration: {duration_str}", level="INFO")
 
-        # 8. VÉRIFICATION DE FERMETURE
+        # 8. VÉRIFICATION FERMETURE avec logs détaillés
         should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec)
+        
+        # LOG DE DEBUG CRITIQUE
+        log(f"🔍 [{symbol}] Close check: PnL={pnl_pct:.4f}%, Trailing={trailing_stop}, "
+            f"ShouldClose={should_close}, StopLoss=-2.0%", level="INFO")
         
         if should_close:
             close_reason = 'Trailing Stop' if trailing_stop is not None else 'Fixed Stop Loss'
-            log(f"🚨 [{symbol}] CLOSING - Reason: {close_reason} | PnL: {pnl_pct:.2f}%", level="WARNING")
+            log(f"🚨 [{symbol}] CLOSING - {close_reason} | PnL: {pnl_pct:.2f}%", level="WARNING")
             
             if real_run:
                 try:
-                    await close_position_percent(symbol, 100)
+                    log(f"🔄 [{symbol}] Calling close_position_percent('{symbol}', 100)...", level="INFO")
+                    result = await close_position_percent(symbol, 100)
+                    log(f"✅ [{symbol}] Close result: {result}", level="INFO")
                     
                     # Nettoyage
                     position_hash = get_position_hash(symbol, side, entry_price, amount)
                     if position_hash in TRAILING_STOPS:
                         del TRAILING_STOPS[position_hash]
-                    
-                    log(f"✅ [{symbol}] Position closed successfully", level="INFO")
+                        log(f"🧹 [{symbol}] Trailing cleaned", level="DEBUG")
                     
                 except Exception as e:
-                    log(f"❌ [{symbol}] Close error: {e}", level="ERROR")
+                    log(f"❌ [{symbol}] CLOSE FAILED: {e}", level="ERROR")
                     traceback.print_exc()
             elif dry_run:
                 log(f"🔄 [{symbol}] DRY RUN: Would close", level="INFO")
-        else:
-            log(f"✅ [{symbol}] Position maintained (PnL OK)", level="DEBUG")
 
     except Exception as e:
-        log(f"❌ [{symbol}] Error: {e}", level="ERROR")
+        log(f"❌ [{symbol}] Error in handle_existing_position: {e}", level="ERROR")
         traceback.print_exc()
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
@@ -549,6 +553,7 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 
