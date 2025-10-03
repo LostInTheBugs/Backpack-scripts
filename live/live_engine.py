@@ -244,14 +244,14 @@ def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=N
     """
     ✅ CORRECTION: Logique de fermeture avec activation immédiate des trailing stops
     """
-    
+    log(f"[{side.upper()}] Function Should_close_position", level="WARNING")
     # ✅ CAS 1: TRAILING STOP ACTIVÉ - Fermer IMMÉDIATEMENT si PnL <= trailing stop
     if trailing_stop is not None:
         if pnl_pct <= trailing_stop:
             log(f"🚨 [{side.upper()}] TRAILING STOP TRIGGERED: PnL {pnl_pct:.2f}% ≤ Trailing {trailing_stop:.2f}% → IMMEDIATE CLOSE", level="WARNING")
             return True
         else:
-            log(f"✅ [{side.upper()}] Trailing safe: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="DEBUG")
+            log(f"✅ [{side.upper()}] Trailing safe: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="WARNING")
             return False
     
     # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe IMMÉDIAT (pas de durée minimale)
@@ -553,6 +553,7 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 
