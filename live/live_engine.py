@@ -396,7 +396,8 @@ async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, a
         
         if position_exists:
             # ✅ CORRECTION: Appel direct à la fonction corrigée
-            await handle_existing_position(symbol, real_run, dry_run)
+            from utils.table_display import handle_existing_position_with_table
+            await handle_existing_position_with_table(symbol, real_run, dry_run)
             # ✅ Alternative si vous voulez garder l'affichage tableau
             # await handle_existing_position_with_table(symbol, real_run, dry_run)
             return
@@ -620,6 +621,7 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 
