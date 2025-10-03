@@ -43,82 +43,91 @@ secret_key = config.bpx_bot_secret_key or os.environ.get("bpx_bot_secret_key")
 
 def get_position_hash(symbol, side, entry_price, amount):
     """
-    ✅ CORRECTION: Génère un hash unique et stable pour chaque position
+    Génère un hash unique et stable pour chaque position.
+    Utilise des arrondis pour éviter les variations de précision flottante.
     """
-    # Arrondir pour éviter les variations de précision
     rounded_entry = round(float(entry_price), 8)
     rounded_amount = round(float(amount), 6)
-    
     position_data = f"{symbol}_{side}_{rounded_entry}_{rounded_amount}"
     return hashlib.md5(position_data.encode()).hexdigest()[:16]
 
-async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amount):
+async def get_position_trailing_stop(symbol, side, entry_price, mark_price, amount, current_pnl_pct):
     """
-    ✅ FIXED: Corrected trailing stop calculation and logic
+    ✅ CORRECTION MAJEURE: Utilise le PnL déjà calculé pour éviter les incohérences de prix.
+    
+    Args:
+        symbol: Symbole de trading
+        side: 'long' ou 'short'
+        entry_price: Prix d'entrée
+        mark_price: Prix mark actuel (pour référence seulement)
+        amount: Quantité
+        current_pnl_pct: PnL DÉJÀ CALCULÉ par handle_existing_position
+        
+    Returns:
+        float: Valeur du trailing stop en % si actif, None sinon
     """
     try:
-        # Generate stable hash
         position_hash = get_position_hash(symbol, side, entry_price, amount)
         
-        # Calculate current PnL
-        entry_p = safe_float(entry_price, 0.0)
-        mark_p = safe_float(mark_price, 0.0)
-        
-        if entry_p <= 0 or mark_p <= 0:
-            log(f"❌ [{symbol}] Invalid prices: entry={entry_p}, mark={mark_p}", level="ERROR")
+        # Validation du PnL reçu
+        if not isinstance(current_pnl_pct, (int, float)):
+            log(f"❌ [{symbol}] Invalid PnL type: {type(current_pnl_pct)}", level="ERROR")
             return None
-            
-        if side.lower() == "long":
-            pnl_pct = ((mark_p - entry_p) / entry_p) * 100
-        else:  # SHORT
-            pnl_pct = ((entry_p - mark_p) / entry_p) * 100
         
-        # Initialize tracker if not exists
+        pnl_pct = float(current_pnl_pct)
+        
+        # Initialiser le tracker si nécessaire
         if position_hash not in TRAILING_STOPS:
             TRAILING_STOPS[position_hash] = {
                 'value': None,
                 'max_pnl': pnl_pct,
                 'active': False,
                 'symbol': symbol,
-                'side': side.lower()
+                'side': side.lower(),
+                'entry_price': entry_price,
+                'amount': amount
             }
-            log(f"🆕 [{symbol}] New trailing stop tracker created - Hash: {position_hash[:8]}", level="DEBUG")
+            log(f"🆕 [{symbol}] New trailing tracker | Hash:{position_hash[:8]} | Initial PnL: {pnl_pct:.2f}%", level="INFO")
         
         tracker = TRAILING_STOPS[position_hash]
         
-        # ✅ CORRECTION: Update max PnL only if current PnL is higher
+        # ✅ CORRECTION: Mettre à jour max PnL UNIQUEMENT si supérieur
         if pnl_pct > tracker['max_pnl']:
             old_max = tracker['max_pnl']
             tracker['max_pnl'] = pnl_pct
-            log(f"📈 [{symbol}] Hash:{position_hash[:8]} Max PnL updated: {old_max:.2f}% → {pnl_pct:.2f}%", level="INFO")
+            log(f"📈 [{symbol}] Hash:{position_hash[:8]} | Max PnL: {old_max:.2f}% → {pnl_pct:.2f}%", level="INFO")
         
-        # ✅ ACTIVATION: Enable trailing stop when reaching minimum PnL
+        # ✅ ACTIVATION: Déclencher le trailing à MIN_PNL_FOR_TRAILING (défaut: 1.0%)
         if not tracker['active'] and pnl_pct >= MIN_PNL_FOR_TRAILING:
             tracker['active'] = True
             tracker['value'] = tracker['max_pnl'] - TRAILING_STOP_TRIGGER
-            log(f"🟢 [{symbol}] TRAILING STOP ACTIVATED! PnL: {pnl_pct:.2f}% ≥ {MIN_PNL_FOR_TRAILING}% → Trailing: {tracker['value']:.2f}%", level="WARNING")
+            log(f"🟢 [{symbol}] TRAILING ACTIVATED! | PnL: {pnl_pct:.2f}% ≥ {MIN_PNL_FOR_TRAILING}% | "
+                f"Trailing set to: {tracker['value']:.2f}% | Trigger distance: {TRAILING_STOP_TRIGGER}%", 
+                level="WARNING")
             return tracker['value']
         
-        # ✅ UPDATE: Adjust trailing stop if already active
+        # ✅ UPDATE: Ajuster le trailing si déjà actif
         if tracker['active']:
-            # Calculate new trailing stop based on max PnL
             new_trailing = tracker['max_pnl'] - TRAILING_STOP_TRIGGER
             
-            # ✅ CORRECTION: Trailing stop can only move up (for protection)
-            if new_trailing > tracker['value']:
+            # Le trailing ne peut que monter (protection renforcée)
+            if new_trailing > (tracker['value'] or -999):
                 old_trailing = tracker['value']
                 tracker['value'] = new_trailing
-                log(f"🔼 [{symbol}] Trailing updated: {old_trailing:.2f}% → {tracker['value']:.2f}%", level="INFO")
+                log(f"🔼 [{symbol}] Trailing updated | {old_trailing:.2f}% → {new_trailing:.2f}% | "
+                    f"Max PnL: {tracker['max_pnl']:.2f}%", level="INFO")
             
             return tracker['value']
         
-        # Not active yet
+        # Pas encore activé
+        log(f"⏳ [{symbol}] Trailing not active | Current: {pnl_pct:.2f}% | Need: {MIN_PNL_FOR_TRAILING}%", level="DEBUG")
         return None
         
     except Exception as e:
         log(f"❌ Error in get_position_trailing_stop for {symbol}: {e}", level="ERROR")
+        traceback.print_exc()
         return None
-
+        
 def handle_live_symbol(symbol, current_price, side, entry_price, amount):
     if symbol not in trackers:
         trackers[symbol] = PositionTracker(symbol, side, entry_price, amount, trailing_percent=1.0)
@@ -240,44 +249,73 @@ async def ensure_indicators(df, symbol):
 
     return df
 
-def should_close_position(pnl_pct, trailing_stop, side, duration_sec, strategy=None):
+def should_close_position(pnl_pct, trailing_stop, side, duration_sec, symbol="UNKNOWN", strategy=None):
     """
-    ✅ CORRECTION: Logique de fermeture avec activation immédiate des trailing stops
+    ✅ CORRECTION MAJEURE: Logique de fermeture avec logs détaillés et vérifications strictes.
+    
+    Args:
+        pnl_pct: PnL actuel en %
+        trailing_stop: Valeur du trailing stop si actif, None sinon
+        side: 'long' ou 'short'
+        duration_sec: Durée de la position en secondes
+        symbol: Symbole (pour logs)
+        strategy: Stratégie utilisée (optionnel)
+        
+    Returns:
+        bool: True si la position doit être fermée
     """
-    log(f"[{side.upper()}] Function Should_close_position Trailing={trailing_stop if trailing_stop is not None else 'None'}", level="WARNING")
-    # ✅ CAS 1: TRAILING STOP ACTIVÉ - Fermer IMMÉDIATEMENT si PnL <= trailing stop
+    # Log d'entrée pour debugging
+    log(f"🔍 [{symbol}] should_close_position called | PnL: {pnl_pct:.4f}% | Trailing: {trailing_stop} | Side: {side.upper()}", 
+        level="INFO")
+    
+    # ✅ CAS 1: TRAILING STOP ACTIF - Priorité absolue
     if trailing_stop is not None:
-        if pnl_pct <= trailing_stop:
-            log(f"🚨 [{side.upper()}] TRAILING STOP TRIGGERED: PnL {pnl_pct:.2f}% ≤ Trailing {trailing_stop:.2f}% → IMMEDIATE CLOSE", level="WARNING")
-            return True
-        else:
-            log(f"✅ [{side.upper()}] Trailing safe: PnL {pnl_pct:.2f}% > Trailing {trailing_stop:.2f}%", level="WARNING")
-            return False
+        try:
+            trailing_val = float(trailing_stop)
+            log(f"🎯 [{symbol}] TRAILING CHECK | Current PnL: {pnl_pct:.4f}% | Trailing: {trailing_val:.4f}% | "
+                f"Must close if: {pnl_pct:.4f} <= {trailing_val:.4f}", level="WARNING")
+            
+            if pnl_pct <= trailing_val:
+                log(f"🚨 [{symbol}] TRAILING STOP TRIGGERED! | PnL {pnl_pct:.2f}% <= Trailing {trailing_val:.2f}% | "
+                    f"✅ CLOSING POSITION NOW", level="ERROR")
+                return True
+            else:
+                log(f"✅ [{symbol}] Trailing safe | PnL {pnl_pct:.2f}% > Trailing {trailing_val:.2f}%", level="INFO")
+                return False
+                
+        except (ValueError, TypeError) as e:
+            log(f"❌ [{symbol}] Invalid trailing stop value: {trailing_stop} | Error: {e}", level="ERROR")
+            # Continue vers stop-loss fixe en cas d'erreur
     
-    # ✅ CAS 2: TRAILING STOP PAS ENCORE ACTIVÉ - Stop loss fixe IMMÉDIAT (pas de durée minimale)
-    
+    # ✅ CAS 2: PAS DE TRAILING - Stop-loss fixe IMMÉDIAT (pas de durée minimale)
     try:
+        # Déterminer le stop-loss selon la stratégie
         current_strategy = strategy or config.strategy.default_strategy.lower()
         
-        # Stop-loss plus agressif basé sur votre préférence
         if "threeoutoffour" in current_strategy or "three_out_of_four" in current_strategy:
             stop_loss_pct = -config.strategy.three_out_of_four.stop_loss_pct
         elif "twooutoffourscalp" in current_strategy or "two_out_of_four_scalp" in current_strategy:
             stop_loss_pct = -config.strategy.two_out_of_four_scalp.stop_loss_pct
         else:
-            # VOTRE PRÉFÉRENCE : Stop-loss à -2%
+            # Défaut: Stop-loss à -2%
             stop_loss_pct = -2.0
         
+        log(f"📊 [{symbol}] FIXED STOP CHECK | Current PnL: {pnl_pct:.4f}% | Stop Loss: {stop_loss_pct:.2f}%", 
+            level="DEBUG")
+        
         if pnl_pct <= stop_loss_pct:
-            log(f"🔴 [{side.upper()}] FIXED STOP LOSS: PnL {pnl_pct:.2f}% ≤ Stop {stop_loss_pct:.2f}% → CLOSE POSITION", level="WARNING")
+            log(f"🔴 [{symbol}] FIXED STOP LOSS HIT! | PnL {pnl_pct:.2f}% <= Stop {stop_loss_pct:.2f}% | "
+                f"✅ CLOSING POSITION NOW", level="ERROR")
             return True
             
     except Exception as e:
-        log(f"❌ Stop loss check error: {e} - Using default -2%", level="ERROR")
+        log(f"❌ [{symbol}] Stop loss check error: {e} | Using default -2%", level="ERROR")
         if pnl_pct <= -2.0:
-            log(f"🔴 [{side.upper()}] DEFAULT STOP LOSS: PnL {pnl_pct:.2f}% ≤ -2.0% → CLOSE POSITION", level="WARNING")
+            log(f"🔴 [{symbol}] DEFAULT STOP LOSS | PnL {pnl_pct:.2f}% <= -2.0% | CLOSING", level="ERROR")
             return True
     
+    # Position OK
+    log(f"✅ [{symbol}] Position safe | No close conditions met", level="DEBUG")
     return False
 
 async def handle_live_symbol(symbol: str, pool, real_run: bool, dry_run: bool, args=None):
@@ -389,47 +427,58 @@ def parse_position(pos):
 
 def cleanup_trailing_stop(symbol, side, entry_price, amount):
     """
-    ✅ NEW: Clean up trailing stop data when position is closed
+    Nettoie les données du trailing stop quand une position est fermée.
     """
     try:
         position_hash = get_position_hash(symbol, side, entry_price, amount)
         if position_hash in TRAILING_STOPS:
+            tracker = TRAILING_STOPS[position_hash]
+            log(f"🧹 [{symbol}] Cleaning trailing data | Hash: {position_hash[:8]} | "
+                f"Final Max PnL: {tracker.get('max_pnl', 'N/A')}%", level="INFO")
             del TRAILING_STOPS[position_hash]
-            log(f"🧹 [{symbol}] Trailing stop data cleaned up - Hash: {position_hash[:8]}", level="DEBUG")
+        else:
+            log(f"🧹 [{symbol}] No trailing data to clean", level="DEBUG")
     except Exception as e:
-        log(f"❌ Error cleaning up trailing stop for {symbol}: {e}", level="ERROR")
+        log(f"❌ [{symbol}] Error cleaning trailing stop: {e}", level="ERROR")
         
 async def handle_existing_position(symbol, real_run=True, dry_run=False):
     """
-    ✅ CORRECTION: Calcul PnL avec précision complète
+    ✅ CORRECTION COMPLÈTE: Gestion cohérente du prix et du PnL avec un seul appel API.
     """
     try:
-        # 1. Position
+        # 1. Récupérer la position depuis l'exchange
         raw_positions = await get_real_positions()
         parsed_positions = [parse_position(p) for p in raw_positions if parse_position(p) is not None]
         
         pos = next((p for p in parsed_positions if p["symbol"] == symbol), None)
         if not pos:
+            log(f"ℹ️ [{symbol}] No position found", level="DEBUG")
             return
 
-        # 2. Données position (SANS ARRONDIR)
+        # 2. Extraire les données de position (SANS ARRONDIR - précision maximale)
         side = pos.get("side", "").lower()
         entry_price = float(pos.get("entry_price", 0))
         amount = float(pos.get("amount", 0))
         leverage = float(pos.get("leverage", 1))
-        ts = float(pos.get("timestamp", datetime.utcnow().timestamp()))
+        timestamp = float(pos.get("timestamp", datetime.utcnow().timestamp()))
 
+        # Validation des données
         if entry_price <= 0 or amount <= 0:
-            log(f"❌ [{symbol}] Invalid data: entry={entry_price}, amount={amount}", level="ERROR")
+            log(f"❌ [{symbol}] Invalid position data | Entry: {entry_price} | Amount: {amount}", level="ERROR")
             return
 
-        # 3. Prix actuel RÉEL (pas depuis cache)
+        # 3. ✅ CORRECTION CRITIQUE: UN SEUL APPEL pour obtenir le prix actuel
         from bpx.public import Public
         public = Public()
-        ticker = await asyncio.to_thread(public.get_ticker, symbol)
-        mark_price = float(ticker.get("lastPrice", entry_price))
+        
+        try:
+            ticker = await asyncio.to_thread(public.get_ticker, symbol)
+            mark_price = float(ticker.get("lastPrice", entry_price))
+        except Exception as e:
+            log(f"❌ [{symbol}] Failed to get ticker: {e}", level="ERROR")
+            mark_price = entry_price
 
-        # 4. Calcul PnL PRÉCIS
+        # 4. ✅ CALCUL PNL UNE SEULE FOIS avec précision maximale
         if side == "long":
             pnl_pct = ((mark_price - entry_price) / entry_price) * 100
             pnl_usdc = (mark_price - entry_price) * amount * leverage
@@ -437,50 +486,67 @@ async def handle_existing_position(symbol, real_run=True, dry_run=False):
             pnl_pct = ((entry_price - mark_price) / entry_price) * 100
             pnl_usdc = (entry_price - mark_price) * amount * leverage
 
-        # 5. Durée
-        duration_sec = datetime.utcnow().timestamp() - ts
+        # 5. Calculer la durée
+        duration_sec = datetime.utcnow().timestamp() - timestamp
         duration_str = f"{int(duration_sec // 3600)}h{int((duration_sec % 3600) // 60)}m"
 
-        # 6. Trailing stop
-        trailing_stop = await get_position_trailing_stop(symbol, side, entry_price, mark_price, amount)
+        # 6. ✅ CORRECTION: Passer le PnL calculé au trailing (pas recalculer)
+        trailing_stop = await get_position_trailing_stop(
+            symbol=symbol,
+            side=side,
+            entry_price=entry_price,
+            mark_price=mark_price,
+            amount=amount,
+            current_pnl_pct=pnl_pct  # ← Le PnL déjà calculé
+        )
 
-        # 7. LOG DÉTAILLÉ (4 décimales pour voir la vraie différence)
+        # 7. Log détaillé avec précision
         log(f"📊 [{symbol}] {side.upper()} | Entry: ${entry_price:.4f} | Mark: ${mark_price:.4f} | "
-            f"PnL: {pnl_pct:+.2f}% (${pnl_usdc:+.2f}) | Trailing: {trailing_stop} | "
+            f"PnL: {pnl_pct:+.2f}% (${pnl_usdc:+.2f}) | Trailing: {trailing_stop if trailing_stop else 'None'} | "
             f"Duration: {duration_str}", level="INFO")
 
-        # 8. VÉRIFICATION FERMETURE avec logs détaillés
-        should_close = should_close_position(pnl_pct, trailing_stop, side, duration_sec)
+        # 8. ✅ VÉRIFICATION FERMETURE avec logs exhaustifs
+        should_close = should_close_position(
+            pnl_pct=pnl_pct,
+            trailing_stop=trailing_stop,
+            side=side,
+            duration_sec=duration_sec,
+            symbol=symbol
+        )
         
-        # LOG DE DEBUG CRITIQUE
-        log(f"🔍 [{symbol}] Close check: PnL={pnl_pct:.4f}%, Trailing={trailing_stop}, "
-            f"ShouldClose={should_close}, StopLoss={trailing_stop}", level="INFO")
+        # Log de synthèse
+        log(f"🔍 [{symbol}] Close decision | PnL: {pnl_pct:.4f}% | Trailing: {trailing_stop} | "
+            f"ShouldClose: {should_close}", level="INFO")
         
+        # 9. ✅ FERMETURE si nécessaire
         if should_close:
             close_reason = 'Trailing Stop' if trailing_stop is not None else 'Fixed Stop Loss'
-            log(f"🚨 [{symbol}] CLOSING - {close_reason} | PnL: {pnl_pct:.2f}%", level="WARNING")
+            log(f"🚨 [{symbol}] CLOSING POSITION | Reason: {close_reason} | Final PnL: {pnl_pct:.2f}%", 
+                level="WARNING")
             
             if real_run:
                 try:
-                    log(f"🔄 [{symbol}] Calling close_position_percent('{symbol}', 100)...", level="INFO")
+                    log(f"🔄 [{symbol}] Executing close_position_percent('{symbol}', 100)...", level="INFO")
                     result = await close_position_percent(symbol, 100)
-                    log(f"✅ [{symbol}] Close result: {result}", level="INFO")
+                    log(f"✅ [{symbol}] Position closed successfully | Result: {result}", level="INFO")
                     
-                    # Nettoyage
-                    position_hash = get_position_hash(symbol, side, entry_price, amount)
-                    if position_hash in TRAILING_STOPS:
-                        del TRAILING_STOPS[position_hash]
-                        log(f"🧹 [{symbol}] Trailing cleaned", level="DEBUG")
+                    # Nettoyage du tracker
+                    cleanup_trailing_stop(symbol, side, entry_price, amount)
                     
-                except Exception as e:
-                    log(f"❌ [{symbol}] CLOSE FAILED: {e}", level="ERROR")
+                except Exception as close_error:
+                    log(f"❌ [{symbol}] CLOSE FAILED | Error: {close_error}", level="ERROR")
                     traceback.print_exc()
+                    
             elif dry_run:
-                log(f"🔄 [{symbol}] DRY RUN: Would close", level="INFO")
+                log(f"🔄 [{symbol}] DRY RUN | Would close position here", level="INFO")
+                
+        else:
+            log(f"✅ [{symbol}] Position maintained | No close condition met", level="DEBUG")
 
     except Exception as e:
         log(f"❌ [{symbol}] Error in handle_existing_position: {e}", level="ERROR")
         traceback.print_exc()
+
 
 async def handle_new_position(symbol: str, signal: str, real_run: bool, dry_run: bool):
     direction = "long" if signal=="BUY" else "short"
@@ -528,19 +594,20 @@ async def get_position_stats() -> dict:
 
 # ✅ NOUVELLE FONCTION DE DEBUG
 def debug_trailing_stops():
-    """Affiche l'état de tous les trailing stops actifs pour debug"""
+    """Affiche l'état de tous les trailing stops actifs pour debug."""
     if not TRAILING_STOPS:
         log("🔍 No active trailing stops tracked", level="DEBUG")
         return
         
     log(f"🔍 Active Trailing Stops ({len(TRAILING_STOPS)} total):", level="INFO")
     for hash_key, data in TRAILING_STOPS.items():
-        status = "🟢 ACTIVE" if data['active'] else "⏳ WAITING"
+        status = "🟢 ACTIVE" if data.get('active', False) else "⏳ WAITING"
         symbol = data.get('symbol', 'UNKNOWN')
-        side = data.get('side', 'UNKNOWN')
+        side = data.get('side', 'unknown')
         max_pnl = data.get('max_pnl', 0)
         trailing_val = data.get('value', 'N/A')
-        log(f"  {status} [{symbol}] {side.upper()} Hash:{hash_key[:8]} | Max PnL: {max_pnl:.2f}% | Trailing: {trailing_val}", level="INFO")
+        log(f"  {status} [{symbol}] {side.upper()} Hash:{hash_key[:8]} | "
+            f"Max PnL: {max_pnl:.2f}% | Trailing: {trailing_val}", level="INFO")
 
 async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: bool, args=None):
     """
@@ -553,6 +620,7 @@ async def scan_and_trade_all_symbols(pool, symbols, real_run: bool, dry_run: boo
     
     tasks = [handle_live_symbol(symbol, pool, real_run, dry_run, args) for symbol in symbols]
     await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 
